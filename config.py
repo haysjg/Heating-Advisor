@@ -10,6 +10,9 @@ LOCATION = {
     "longitude": 2.2655,
     # URL directe météociel (laissez vide pour détection auto)
     "meteociel_url": "",
+    # IP du NAS pour le lien dans les emails
+    "nas_ip": "192.168.1.2",
+    "nas_port": 8888,
 }
 
 # ── Tarifs EDF Tempo (€/kWh) – saison 2024-2025 ─────────────
@@ -63,3 +66,13 @@ SURFACE_M2 = 80  # m²
 
 # ── Rafraîchissement automatique ─────────────────────────────
 REFRESH_INTERVAL_MINUTES = 30
+
+# ── Notifications email ───────────────────────────────────────
+EMAIL = {
+    "enabled": True,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "sender": "hays.jg@gmail.com",
+    "app_password": "REMPLACER_PAR_MOT_DE_PASSE_APP",  # mot de passe d'application Gmail
+    "recipients": ["hays.jg@gmail.com"],
+}
