@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  heating-advisor:
+    build: .
+    container_name: heating-advisor
+    restart: unless-stopped
+    ports:
+      - "5000:5000"   # Changez le port gauche si 5000 est déjà utilisé sur votre NAS
+    environment:
+      - TZ=Europe/Paris
+    # volumes:
+    #   - ./config.py:/app/config.py  # Décommentez pour éditer la config sans rebuild

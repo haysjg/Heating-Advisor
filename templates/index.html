@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conseiller Chauffage – {{ config.LOCATION.city }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <span class="header-icon">🏠</span>
+      <div>
+        <h1>Conseiller Chauffage</h1>
+        <p class="header-sub">{{ config.LOCATION.city }} ({{ config.LOCATION.postal_code }})</p>
+      </div>
+      <button class="btn-refresh" onclick="refresh()">⟳ Actualiser</button>
+    </div>
+  </header>
+
+  <main>
+    {% if not data %}
+      <div class="card card-error">
+        <h2>Erreur de chargement</h2>
+        <p>{{ error or "Données indisponibles" }}</p>
+      </div>
+    {% else %}
+
+    {# ── Recommandation principale ── #}
+    {% set rec = data.recommendation %}
+    <section class="card card-{{ rec.level }}{% if rec.system == 'none' %} card-night{% endif %}" id="recommendation">
+      <div class="rec-icon">
+        {% if rec.system == "clim" %}❄️{% elif rec.system == "poele" %}🔥{% elif rec.system == "none" %}🌙{% else %}⚠️{% endif %}
+      </div>
+      <div class="rec-content">
+        <h2>{{ rec.title }}</h2>
+        <p>{{ rec.explanation }}</p>
+        {% if rec.savings_per_hour > 0 %}
+          <span class="badge">Économie : {{ "%.3f"|format(rec.savings_per_hour) }} €/h</span>
+        {% endif %}
+      </div>
+    </section>
+
+    {# ── Conditions actuelles ── #}
+    <section class="grid-2">
+
+      {# Météo #}
+      <div class="card">
+        <h3>🌡️ Température extérieure</h3>
+        {% if data.weather.temperature is not none %}
+          <p class="value-big">{{ "%.1f"|format(data.weather.temperature) }} °C</p>
+          <p class="value-sub">Cible intérieure : {{ config.TARGET_TEMP }}°C</p>
+          <p class="value-sub">Source : {{ data.weather.source }}</p>
+        {% else %}
+          <p class="error-text">{{ data.weather.error or "Indisponible" }}</p>
+        {% endif %}
+      </div>
+
+      {# Tempo #}
+      {% set today = data.tempo.today %}
+      <div class="card card-tempo-{{ today.color | lower }}">
+        <h3>⚡ Tarif EDF Tempo</h3>
+        <p class="value-big">{{ today.emoji }} {{ today.label }}</p>
+        <p class="value-sub">
+          Période actuelle :
+          <strong>{{ data.tempo.current_period }}</strong>
+          ({{ data.tempo.hp_start }}h–{{ data.tempo.hp_end }}h = HP)
+        </p>
+        {% set color = today.color %}
+        {% set period = data.tempo.current_period %}
+        <p class="value-sub">
+          Tarif actuel :
+          <strong>{{ "%.4f"|format(config.TEMPO_PRICES[color][period]) }} €/kWh</strong>
+        </p>
+        {% set tom = data.tempo.tomorrow %}
+        <p class="value-sub">Demain : {{ tom.emoji }} {{ tom.label }}</p>
+      </div>
+
+    </section>
+
+    {# ── Comparatif des coûts ── #}
+    <section class="card">
+      <h3>📊 Comparatif coût horaire</h3>
+      <div class="grid-2">
+
+        {# Clim #}
+        <div class="cost-block {% if rec.system == 'clim' %}cost-winner{% elif data.clim.comfort_insufficient %}cost-comfort-ko{% endif %}">
+          <h4>❄️ Climatisation <small>({{ config.CLIM.model }})</small></h4>
+          {% if data.clim.available %}
+            <p class="cost-value {% if data.clim.comfort_insufficient %}cost-value-dimmed{% endif %}">
+              {{ "%.3f"|format(data.clim.cost_per_hour) }} €/h
+            </p>
+            {% if data.clim.comfort_insufficient %}
+              <p class="comfort-warning">⚠️ Confort insuffisant en dessous de {{ config.CLIM.comfort_min_temp }}°C</p>
+            {% endif %}
+            <ul class="cost-details">
+              <li>COP : <strong>{{ data.clim.cop }}</strong></li>
+              <li>Puissance absorbée : <strong>{{ data.clim.power_input_kw }} kW</strong></li>
+              <li>Puissance thermique : <strong>{{ data.clim.thermal_output_kw }} kW</strong></li>
+              <li>Prix élec : <strong>{{ "%.4f"|format(data.clim.elec_price_kwh) }} €/kWh</strong></li>
+            </ul>
+          {% else %}
+            <p class="error-text">{{ data.clim.note }}</p>
+          {% endif %}
+        </div>
+
+        {# Poêle #}
+        <div class="cost-block {% if rec.system == 'poele' %}cost-winner{% endif %}">
+          <h4>🔥 Poêle à granulés</h4>
+          {% if data.poele.available %}
+            <p class="cost-value">{{ "%.3f"|format(data.poele.cost_per_hour) }} €/h</p>
+            <ul class="cost-details">
+              <li>Consommation : <strong>{{ data.poele.consumption_kg_per_hour }} kg/h</strong></li>
+              <li>Prix granulés : <strong>{{ data.poele.pellet_price_per_kg }} €/kg</strong></li>
+              <li>Rendement : <strong>{{ (data.poele.efficiency * 100)|int }} %</strong></li>
+              <li>Puissance thermique : <strong>{{ data.poele.thermal_output_kw }} kW</strong></li>
+            </ul>
+          {% else %}
+            <p class="error-text">{{ data.poele.note }}</p>
+          {% endif %}
+        </div>
+
+      </div>
+    </section>
+
+    {# ── Estimation journalière ── #}
+    {% if data.daily_estimate %}
+    <section class="card">
+      <h3>📅 Estimation sur {{ data.daily_estimate.hours }}h <small>(plage de chauffage {{ config.HP_START }}h–{{ config.HP_END }}h, température constante)</small></h3>
+      <div class="grid-2">
+        <div class="cost-block {% if data.daily_estimate.clim <= data.daily_estimate.poele %}cost-winner{% endif %}">
+          <h4>❄️ Climatisation</h4>
+          <p class="cost-value">{{ "%.2f"|format(data.daily_estimate.clim) }} €/jour</p>
+        </div>
+        <div class="cost-block {% if data.daily_estimate.poele <= data.daily_estimate.clim %}cost-winner{% endif %}">
+          <h4>🔥 Poêle</h4>
+          <p class="cost-value">{{ "%.2f"|format(data.daily_estimate.poele) }} €/jour</p>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    {# ── Footer info ── #}
+    <p class="footer-note">
+      Dernière mise à jour : {{ data.timestamp[:19] | replace("T", " ") }} —
+      Actualisation auto toutes les {{ config.REFRESH_INTERVAL_MINUTES }} min
+    </p>
+
+    {% endif %}
+  </main>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
