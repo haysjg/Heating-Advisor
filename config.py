@@ -33,19 +33,20 @@ TARGET_TEMP = 21
 # ── Climatisation réversible ─────────────────────────────────
 CLIM = {
     "model": "Mitsubishi MSZ-FA35VA",
-    "nominal_capacity_kw": 4.0,   # kW thermiques nominaux en chauffage (3,5 kW = puissance froid)
-    "nominal_cop": 4.5,           # COP nominal estimé (A7°C / W20°C) — FD35VA similaire = 4,62
+    "nominal_capacity_kw": 4.0,   # kW thermiques nominaux en chauffage
+    "nominal_cop": 2.8,           # COP estimé réel : modèle années 2000 (COP d'origine ~3,0-3,2)
+                                  # + dégradation liée à l'âge (~20%) → estimation prudente à 2,8
     "min_outdoor_temp": -10,      # température extérieure minimale d'utilisation (°C)
     "comfort_min_temp": 7,        # en dessous de cette température, la clim chauffe insuffisamment (confort)
-    # Courbe COP simplifiée : liste de tuples (temp_extérieure, COP)
+    # Courbe COP réaliste pour un appareil ancien des années 2000 (valeurs prudentes)
     # Interpolation linéaire entre les points
     "cop_curve": [
-        (-10, 2.3),
-        (-7,  2.8),
-        ( 0,  3.5),
-        ( 7,  4.5),
-        (12,  5.0),
-        (20,  5.8),
+        (-10, 1.5),
+        (-7,  1.8),
+        ( 0,  2.2),
+        ( 7,  2.8),
+        (12,  3.2),
+        (20,  3.8),
     ],
 }
 
