@@ -41,6 +41,35 @@
       </div>
     </section>
 
+    {# ── Recommandation demain ── #}
+    {% if data.tomorrow %}
+    {% set tom = data.tomorrow %}
+    {% set trec = tom.recommendation %}
+    <section class="card card-{{ trec.level }}{% if trec.system == 'none' %} card-night{% endif %} card-tomorrow">
+      <div class="tomorrow-label">DEMAIN</div>
+      <div class="rec-icon rec-icon-sm">
+        {% if trec.system == "clim" %}❄️{% elif trec.system == "poele" %}🔥{% elif trec.system == "none" %}☀️{% else %}⚠️{% endif %}
+      </div>
+      <div class="rec-content">
+        <h2>{{ trec.title }}</h2>
+        <p>{{ trec.explanation }}</p>
+        {% if trec.savings_per_hour > 0 %}
+          <span class="badge">Économie : {{ "%.3f"|format(trec.savings_per_hour) }} €/h</span>
+        {% endif %}
+        {% if tom.daily_estimate %}
+          <span class="badge badge-gray">
+            Estimation : clim {{ "%.2f"|format(tom.daily_estimate.clim) }} € / poêle {{ "%.2f"|format(tom.daily_estimate.poele) }} € ({{ tom.daily_estimate.hours }}h)
+          </span>
+        {% endif %}
+        {% if tom.weather.temperature is not none %}
+          <span class="badge badge-gray">
+            🌡️ Prévision : {{ tom.weather.temp_min }}°C – {{ tom.weather.temp_max }}°C (moy. {{ tom.weather.temperature }}°C)
+          </span>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+
     {# ── Conditions actuelles ── #}
     <section class="grid-2">
 
@@ -139,6 +168,37 @@
       </div>
     </section>
     {% endif %}
+
+    {# ── Tableau des tarifs Tempo ── #}
+    <section class="card">
+      <h3>📋 Tarifs EDF Tempo ({{ config.HP_START }}h–{{ config.HP_END }}h = HP)</h3>
+      <table class="tarif-table">
+        <thead>
+          <tr>
+            <th>Jour</th>
+            <th>Heure Pleine (HP)</th>
+            <th>Heure Creuse (HC)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="tarif-blue">
+            <td>🔵 Bleu</td>
+            <td>{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HP) }} €/kWh</td>
+            <td>{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HC) }} €/kWh</td>
+          </tr>
+          <tr class="tarif-white">
+            <td>⚪ Blanc</td>
+            <td>{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HP) }} €/kWh</td>
+            <td>{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HC) }} €/kWh</td>
+          </tr>
+          <tr class="tarif-red">
+            <td>🔴 Rouge</td>
+            <td>{{ "%.4f"|format(config.TEMPO_PRICES.RED.HP) }} €/kWh</td>
+            <td>{{ "%.4f"|format(config.TEMPO_PRICES.RED.HC) }} €/kWh</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
 
     {# ── Footer info ── #}
     <p class="footer-note">

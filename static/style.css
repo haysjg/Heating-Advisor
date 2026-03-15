@@ -92,16 +92,40 @@ main {
   gap: 1.25rem;
 }
 .rec-icon { font-size: 3rem; line-height: 1; flex-shrink: 0; }
+.rec-icon-sm { font-size: 2rem; line-height: 1; flex-shrink: 0; }
 .rec-content h2 { font-size: 1.3rem; margin-bottom: 0.4rem; }
 .rec-content p  { color: var(--text-sub); line-height: 1.5; }
 .badge {
   display: inline-block;
   margin-top: 0.5rem;
+  margin-right: 0.4rem;
   background: rgba(255,255,255,0.08);
   border-radius: 6px;
   padding: 0.2rem 0.6rem;
   font-size: 0.8rem;
   color: var(--green);
+}
+.badge-gray { color: var(--text-sub); }
+
+/* ── Tomorrow card ────────────────────────────────────────── */
+.card-tomorrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+  position: relative;
+  opacity: 0.92;
+}
+.tomorrow-label {
+  position: absolute;
+  top: -1px;
+  right: 1rem;
+  background: var(--border);
+  color: var(--text-sub);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0 0 6px 6px;
 }
 
 /* ── Grid ─────────────────────────────────────────────────── */
@@ -158,6 +182,29 @@ main {
 }
 .cost-details li { font-size: 0.82rem; color: var(--text-sub); }
 .cost-details li strong { color: var(--text); }
+
+/* ── Tarif table ──────────────────────────────────────────── */
+.tarif-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.tarif-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  color: var(--text-sub);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.tarif-table td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.tarif-table tbody tr:last-child td { border-bottom: none; }
+.tarif-table td:not(:first-child) { font-weight: 700; font-family: monospace; font-size: 0.95rem; }
+.tarif-blue td:first-child  { color: var(--blue); }
+.tarif-white td:first-child { color: #cbd5e1; }
+.tarif-red td:first-child   { color: var(--red); }
 
 /* ── Footer ───────────────────────────────────────────────── */
 .footer-note {

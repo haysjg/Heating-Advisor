@@ -4,10 +4,11 @@ Source principale : météociel.fr (scraping)
 Fallback         : Open-Meteo API (gratuit, sans clé)
 """
 
+import json
 import logging
 import re
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,6 @@ def get_temperature_openmeteo(lat: float, lon: float) -> float | None:
         f"&timezone=Europe%2FParis"
     )
     try:
-        import json
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
@@ -107,6 +107,50 @@ def get_temperature_openmeteo(lat: float, lon: float) -> float | None:
         return float(temp)
     except Exception as e:
         logger.warning("Open-Meteo échoué : %s", e)
+    return None
+
+
+def get_tomorrow_forecast_openmeteo(lat: float, lon: float, hp_start: int = 6, hp_end: int = 22) -> dict | None:
+    """
+    Récupère les prévisions de demain via Open-Meteo.
+    Retourne la température min, max et moyenne sur la plage de chauffage (HP).
+    """
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&hourly=temperature_2m"
+        f"&forecast_days=2"
+        f"&timezone=Europe%2FParis"
+    )
+    try:
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+
+        times = data["hourly"]["time"]
+        temps = data["hourly"]["temperature_2m"]
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Filtrer les heures de demain dans la plage HP
+        hp_temps = [
+            t for time, t in zip(times, temps)
+            if time.startswith(tomorrow) and hp_start <= int(time[11:13]) < hp_end
+        ]
+
+        if not hp_temps:
+            return None
+
+        avg = round(sum(hp_temps) / len(hp_temps), 1)
+        logger.info("Open-Meteo demain (plage %dh-%dh) : min=%.1f max=%.1f moy=%.1f",
+                    hp_start, hp_end, min(hp_temps), max(hp_temps), avg)
+        return {
+            "temperature": avg,
+            "temp_min": round(min(hp_temps), 1),
+            "temp_max": round(max(hp_temps), 1),
+            "source": "Open-Meteo (prévision)",
+        }
+    except Exception as e:
+        logger.warning("Open-Meteo prévision demain échouée : %s", e)
     return None
 
 
@@ -138,4 +182,21 @@ def get_current_temperature(config: dict) -> dict:
         return result
 
     result["error"] = "Impossible de récupérer la température (météociel.fr et Open-Meteo inaccessibles)"
+    return result
+
+
+def get_tomorrow_weather(config: dict) -> dict:
+    """Retourne la prévision météo de demain (plage de chauffage HP)."""
+    result = {"temperature": None, "temp_min": None, "temp_max": None,
+              "source": None, "error": None}
+
+    forecast = get_tomorrow_forecast_openmeteo(
+        config["latitude"], config["longitude"],
+        config.get("hp_start", 6), config.get("hp_end", 22),
+    )
+    if forecast:
+        result.update(forecast)
+        return result
+
+    result["error"] = "Prévision météo de demain indisponible"
     return result

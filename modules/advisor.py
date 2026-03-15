@@ -279,3 +279,83 @@ def analyze(weather: dict, tempo: dict, config: dict) -> dict:
         "recommendation": recommendation,
         "daily_estimate": daily_estimate,
     }
+
+
+def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
+    """
+    Analyse simplifiée pour demain : utilise la température moyenne prévue
+    et la couleur Tempo de demain.
+    """
+    temp = tomorrow_weather.get("temperature")
+    color = tempo["tomorrow"]["color"]
+    target_temp = config.get("TARGET_TEMP", 21)
+    hp_hours = config["HP_END"] - config["HP_START"]
+
+    # Pas de chauffage si temp >= cible
+    if temp is not None and temp >= target_temp:
+        return {
+            "weather": tomorrow_weather,
+            "recommendation": {
+                "system": "none",
+                "level": "info",
+                "title": "Pas de chauffage nécessaire",
+                "explanation": f"Température prévue ({temp:.1f}°C) ≥ température cible ({target_temp}°C).",
+                "savings_per_hour": 0,
+            },
+            "daily_estimate": None,
+        }
+
+    # Jour rouge → toujours le poêle
+    if color == "RED":
+        poele_result = compute_poele_cost(config["POELE"])
+        hp_price = config["TEMPO_PRICES"]["RED"]["HP"]
+        clim_result = compute_clim_cost(temp, config["CLIM"], hp_price) if temp is not None else {
+            "available": False, "cost_per_hour": None
+        }
+        clim_cost = clim_result.get("cost_per_hour")
+        poele_cost = poele_result["cost_per_hour"]
+        return {
+            "weather": tomorrow_weather,
+            "recommendation": {
+                "system": "poele",
+                "level": "danger",
+                "title": "Poêle à granulés — JOUR ROUGE EDF",
+                "explanation": (
+                    f"Demain est un jour Tempo ROUGE : la climatisation est exclue. "
+                    f"Prévision température : {temp:.1f}°C (moy. journée)."
+                    + (f" Clim (indicatif) : {clim_cost:.3f} €/h — Poêle : {poele_cost:.3f} €/h." if clim_cost else "")
+                ),
+                "savings_per_hour": round(abs(clim_cost - poele_cost), 4) if clim_cost else 0,
+                "red_day_override": True,
+            },
+            "daily_estimate": {
+                "clim": round(clim_cost * hp_hours, 2) if clim_cost else None,
+                "poele": round(poele_cost * hp_hours, 2),
+                "hours": hp_hours,
+            },
+        }
+
+    # Jours bleu/blanc → comparaison des coûts
+    hp_price = config["TEMPO_PRICES"][color]["HP"]
+    clim_result = compute_clim_cost(temp, config["CLIM"], hp_price) if temp is not None else {
+        "available": False, "cost_per_hour": None
+    }
+    poele_result = compute_poele_cost(config["POELE"])
+
+    recommendation = make_recommendation(temp, clim_result, poele_result, color, "HP")
+
+    daily_estimate = None
+    if clim_result.get("available") and temp is not None:
+        clim_daily = (clim_result["cost_per_hour"] or 0) * hp_hours
+        poele_daily = poele_result["cost_per_hour"] * hp_hours
+        daily_estimate = {
+            "clim": round(clim_daily, 2),
+            "poele": round(poele_daily, 2),
+            "hours": hp_hours,
+        }
+
+    return {
+        "weather": tomorrow_weather,
+        "recommendation": recommendation,
+        "daily_estimate": daily_estimate,
+    }

@@ -9,9 +9,9 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify
 
 import config
-from modules.weather import get_current_temperature
+from modules.weather import get_current_temperature, get_tomorrow_weather
 from modules.tempo import get_tempo_info
-from modules.advisor import analyze
+from modules.advisor import analyze, analyze_tomorrow
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -47,8 +47,14 @@ def get_analysis(force_refresh: bool = False) -> dict:
     cfg = _build_config_dict()
 
     weather = get_current_temperature(config.LOCATION)
+    tomorrow_weather = get_tomorrow_weather({
+        **config.LOCATION,
+        "hp_start": config.HP_START,
+        "hp_end": config.HP_END,
+    })
     tempo = get_tempo_info(config.HP_START, config.HP_END)
     result = analyze(weather, tempo, cfg)
+    result["tomorrow"] = analyze_tomorrow(tomorrow_weather, tempo, cfg)
 
     _cache["data"] = result
     _cache["expires_at"] = now + ttl
