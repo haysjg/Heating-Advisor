@@ -6,7 +6,7 @@ services:
     container_name: heating-advisor
     restart: unless-stopped
     ports:
-      - "5000:5000"   # Changez le port gauche si 5000 est déjà utilisé sur votre NAS
+      - "8888:5000"   # Port 5000 et 5001 occupés par nginx sur le NAS JG
     environment:
       - TZ=Europe/Paris
     # volumes:
