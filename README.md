@@ -14,13 +14,27 @@ en fonction de la température extérieure et des tarifs EDF Tempo.
 
 ### Sur le NAS Synology (Container Manager)
 
-1. Copiez ce dossier sur votre NAS (ex: `/volume1/docker/heating-advisor`)
-2. Via SSH ou Container Manager, lancez :
+1. Télécharger et extraire le projet :
    ```bash
-   cd /volume1/docker/heating-advisor
-   docker compose up -d
+   cd /volume1/docker
+   wget https://github.com/haysjg/Heating-Advisor/archive/refs/heads/main.tar.gz -O ha.tar.gz
+   tar xzf ha.tar.gz && mv Heating-Advisor-main heating-advisor && rm ha.tar.gz
    ```
-3. Accédez à `http://IP_NAS:5000`
+2. Lancer le conteneur :
+   ```bash
+   cd heating-advisor
+   sudo docker-compose up -d --build
+   ```
+3. Accédez à `http://IP_NAS:8888`
+
+### Mettre à jour le code sur le NAS
+
+```bash
+cd /volume1/docker/heating-advisor
+wget https://github.com/haysjg/Heating-Advisor/archive/refs/heads/main.tar.gz -O ha.tar.gz
+tar xzf ha.tar.gz --strip-components=1 && rm ha.tar.gz
+sudo docker-compose up -d --build   # ⚠️ --build obligatoire pour recharger le code
+```
 
 ### En local (développement)
 
