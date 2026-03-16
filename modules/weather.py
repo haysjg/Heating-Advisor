@@ -169,6 +169,37 @@ def get_current_temperature(config: dict) -> dict:
     return result
 
 
+def get_hourly_forecast(lat: float, lon: float, hours: int = 48) -> list:
+    """
+    Retourne les températures horaires pour les prochaines `hours` heures.
+    Format : [{"time": "2026-03-16T14:00", "temp": 11.2}, ...]
+    """
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&hourly=temperature_2m"
+        f"&forecast_days=3"
+        f"&timezone=Europe%2FParis"
+    )
+    try:
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+
+        now = datetime.now()
+        result = []
+        for time_str, temp in zip(data["hourly"]["time"], data["hourly"]["temperature_2m"]):
+            dt = datetime.fromisoformat(time_str)
+            if dt >= now.replace(minute=0, second=0, microsecond=0):
+                result.append({"time": time_str, "temp": temp})
+            if len(result) >= hours:
+                break
+        return result
+    except Exception as e:
+        logger.warning("Open-Meteo prévision horaire échouée : %s", e)
+    return []
+
+
 def get_tomorrow_weather(config: dict) -> dict:
     """Retourne la prévision météo de demain (plage de chauffage HP)."""
     result = {"temperature": None, "temp_min": None, "temp_max": None,

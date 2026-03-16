@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify
 
 import config
-from modules.weather import get_current_temperature, get_tomorrow_weather
+from modules.weather import get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze, analyze_tomorrow
 
@@ -55,6 +55,7 @@ def get_analysis(force_refresh: bool = False) -> dict:
     tempo = get_tempo_info(config.HP_START, config.HP_END)
     result = analyze(weather, tempo, cfg)
     result["tomorrow"] = analyze_tomorrow(tomorrow_weather, tempo, cfg)
+    result["hourly_forecast"] = get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48)
 
     _cache["data"] = result
     _cache["expires_at"] = now + ttl

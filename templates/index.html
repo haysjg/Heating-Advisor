@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Conseiller Chauffage – {{ config.LOCATION.city }}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header>
@@ -79,7 +80,11 @@
         {% if data.weather.temperature is not none %}
           <p class="value-big">{{ "%.1f"|format(data.weather.temperature) }} °C</p>
           <p class="value-sub">Cible intérieure : {{ config.TARGET_TEMP }}°C</p>
-          <p class="value-sub">Source : {{ data.weather.source }}</p>
+          {% if data.weather.source == "météociel.fr" %}
+            <span class="source-badge source-real">📡 {{ data.weather.source }} — mesure réelle</span>
+          {% else %}
+            <span class="source-badge source-model">🌐 {{ data.weather.source }} — modèle (fallback)</span>
+          {% endif %}
         {% else %}
           <p class="error-text">{{ data.weather.error or "Indisponible" }}</p>
         {% endif %}
@@ -106,6 +111,73 @@
       </div>
 
     </section>
+
+    {# ── Graphique températures 48h ── #}
+    {% if data.hourly_forecast %}
+    <section class="card">
+      <h3>📈 Prévision températures — 48h <small>(Open-Meteo)</small></h3>
+      <div style="position:relative;height:180px">
+        <canvas id="tempChart"></canvas>
+      </div>
+    </section>
+    <script>
+    (function() {
+      const forecast = {{ data.hourly_forecast | tojson }};
+      const labels = forecast.map(d => {
+        const dt = new Date(d.time);
+        return dt.getHours() === 0
+          ? dt.toLocaleDateString('fr-FR', {weekday:'short', day:'numeric'})
+          : dt.getHours() + 'h';
+      });
+      const temps  = forecast.map(d => d.temp);
+      const target = {{ config.TARGET_TEMP }};
+
+      new Chart(document.getElementById('tempChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Température (°C)',
+              data: temps,
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59,130,246,0.08)',
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.3,
+              fill: true,
+            },
+            {
+              label: 'Cible ' + target + '°C',
+              data: Array(temps.length).fill(target),
+              borderColor: 'rgba(239,68,68,0.4)',
+              borderWidth: 1,
+              borderDash: [6, 4],
+              pointRadius: 0,
+              fill: false,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#8892a4', boxWidth: 12, font: { size: 11 } } } },
+          scales: {
+            x: {
+              ticks: { color: '#8892a4', maxTicksLimit: 12, font: { size: 10 } },
+              grid:  { color: 'rgba(255,255,255,0.05)' }
+            },
+            y: {
+              ticks: { color: '#8892a4', font: { size: 11 },
+                       callback: v => v + '°C' },
+              grid:  { color: 'rgba(255,255,255,0.05)' }
+            }
+          }
+        }
+      });
+    })();
+    </script>
+    {% endif %}
 
     {# ── Comparatif des coûts ── #}
     <section class="card">

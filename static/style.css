@@ -167,6 +167,17 @@ main {
   opacity: 0.75;
 }
 .cost-value-dimmed { color: var(--text-sub); }
+.source-badge {
+  display: inline-block;
+  margin-top: 6px;
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.source-real  { background: rgba(34,197,94,0.12);  color: #22c55e; }
+.source-model { background: rgba(245,158,11,0.12); color: #f59e0b; }
+
 .comfort-warning {
   font-size: 0.82rem;
   color: var(--yellow);
