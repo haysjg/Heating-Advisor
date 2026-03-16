@@ -9,5 +9,6 @@ services:
       - "8888:5000"   # Port 5000 et 5001 occupés par nginx sur le NAS JG
     environment:
       - TZ=Europe/Paris
-    # volumes:
-    #   - ./config.py:/app/config.py  # Décommentez pour éditer la config sans rebuild
+    volumes:
+      - ./data:/app/data              # Persistance de config_override.json
+    # - ./config.py:/app/config.py   # Décommentez pour éditer la config sans rebuild

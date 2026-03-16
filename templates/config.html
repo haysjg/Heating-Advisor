@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuration – Conseiller Chauffage</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .form-section { margin-bottom: 0; }
+    .form-section h3 { font-size: 1rem; color: var(--text-sub); margin-bottom: 1rem; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem 1.25rem;
+    }
+    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+    .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
+    .form-group label { font-size: 0.82rem; color: var(--text-sub); }
+    .form-group input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.5rem 0.75rem;
+      font-size: 0.95rem;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+    .form-group input:focus { outline: none; border-color: var(--blue); }
+    .form-group input[readonly] { color: var(--text-sub); cursor: default; }
+    .form-group .hint { font-size: 0.75rem; color: var(--text-sub); opacity: 0.7; }
+    .computed-value {
+      background: rgba(59,130,246,0.06);
+      border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.95rem;
+      color: var(--blue);
+      font-weight: 600;
+      font-family: monospace;
+    }
+    .btn-save {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.6rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn-save:hover { opacity: 0.85; }
+    .btn-back {
+      background: var(--border);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn-back:hover { background: #3a3d54; }
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast-ok  { background: rgba(34,197,94,0.15); border: 1px solid var(--green); color: var(--green); }
+    .toast-err { background: rgba(239,68,68,0.15); border: 1px solid var(--red); color: var(--red); }
+    .section-divider { border: none; border-top: 1px solid var(--border); margin: 0.25rem 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <span class="header-icon">⚙️</span>
+      <div>
+        <h1>Configuration</h1>
+        <p class="header-sub">Conseiller Chauffage – {{ config.LOCATION.city }}</p>
+      </div>
+      <a href="/" class="btn-back">← Retour</a>
+    </div>
+  </header>
+
+  <main>
+
+    {# ── Poêle à granulés ── #}
+    <div class="card form-section">
+      <h3>🔥 Poêle à granulés</h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>Nombre de sacs</label>
+          <input type="number" id="nb_sacs" min="1" step="1"
+                 value="{{ purchase.nb_sacs if purchase.nb_sacs else 72 }}"
+                 oninput="calcPelletPrice()">
+        </div>
+
+        <div class="form-group">
+          <label>Prix total livraison (€)</label>
+          <input type="number" id="prix_livraison" min="0" step="0.01"
+                 value="{{ purchase.prix_livraison if purchase.prix_livraison else '457.20' }}"
+                 oninput="calcPelletPrice()">
+        </div>
+
+        <div class="form-group">
+          <label>Poids par sac (kg)</label>
+          <input type="number" id="poids_sac" min="1" step="0.5"
+                 value="{{ purchase.poids_sac if purchase.poids_sac else 15 }}"
+                 oninput="calcPelletPrice()">
+        </div>
+
+        <div class="form-group">
+          <label>Prix calculé (€/kg)</label>
+          <div class="computed-value" id="pellet_price_display">
+            {{ "%.4f"|format(config.POELE.pellet_price_per_kg) }}
+          </div>
+          <span class="hint">= prix livraison ÷ (nb sacs × poids sac)</span>
+        </div>
+
+        <div class="form-group">
+          <label>Consommation (kg/h)</label>
+          <input type="number" id="consumption_kg_per_hour" min="0.1" step="0.05"
+                 value="{{ config.POELE.consumption_kg_per_hour }}">
+          <span class="hint">Débit réel du poêle en fonctionnement normal</span>
+        </div>
+
+        <div class="form-group">
+          <label>Rendement (%)</label>
+          <input type="number" id="efficiency" min="50" max="100" step="1"
+                 value="{{ (config.POELE.efficiency * 100)|int }}">
+        </div>
+
+        <div class="form-group">
+          <label>Puissance thermique (kW)</label>
+          <input type="number" id="poele_thermal_output_kw" min="1" step="0.5"
+                 value="{{ config.POELE.thermal_output_kw }}">
+        </div>
+
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    {# ── Climatisation ── #}
+    <div class="card form-section">
+      <h3>❄️ Climatisation réversible <small style="font-weight:400">({{ config.CLIM.model }})</small></h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>COP nominal</label>
+          <input type="number" id="nominal_cop" min="1" max="6" step="0.1"
+                 value="{{ config.CLIM.nominal_cop }}">
+          <span class="hint">Coefficient de performance estimé réel</span>
+        </div>
+
+        <div class="form-group">
+          <label>Température de confort minimum (°C)</label>
+          <input type="number" id="comfort_min_temp" min="-20" max="15" step="1"
+                 value="{{ config.CLIM.comfort_min_temp }}">
+          <span class="hint">En dessous, la clim chauffe insuffisamment</span>
+        </div>
+
+        <div class="form-group">
+          <label>Capacité nominale (kW)</label>
+          <input type="number" id="clim_capacity_kw" min="1" max="20" step="0.5"
+                 value="{{ config.CLIM.nominal_capacity_kw }}">
+        </div>
+
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    {# ── Paramètres généraux ── #}
+    <div class="card form-section">
+      <h3>🏠 Paramètres généraux</h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>Température cible intérieure (°C)</label>
+          <input type="number" id="target_temp" min="15" max="25" step="0.5"
+                 value="{{ config.TARGET_TEMP }}">
+        </div>
+
+        <div class="form-group">
+          <label>Surface à chauffer (m²)</label>
+          <input type="number" id="surface_m2" min="10" step="5"
+                 value="{{ config.SURFACE_M2 }}">
+        </div>
+
+        <div class="form-group">
+          <label>Intervalle de rafraîchissement (min)</label>
+          <input type="number" id="refresh_interval" min="5" max="120" step="5"
+                 value="{{ config.REFRESH_INTERVAL_MINUTES }}">
+        </div>
+
+        <div class="form-group">
+          <label>Début Heures Pleines (h)</label>
+          <input type="number" id="hp_start" min="0" max="23" step="1"
+                 value="{{ config.HP_START }}">
+        </div>
+
+        <div class="form-group">
+          <label>Fin Heures Pleines (h)</label>
+          <input type="number" id="hp_end" min="0" max="23" step="1"
+                 value="{{ config.HP_END }}">
+        </div>
+
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    {# ── Localisation ── #}
+    <div class="card form-section">
+      <h3>📍 Localisation</h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>Ville</label>
+          <input type="text" id="city" value="{{ config.LOCATION.city }}">
+        </div>
+
+        <div class="form-group">
+          <label>Code postal</label>
+          <input type="text" id="postal_code" value="{{ config.LOCATION.postal_code }}">
+        </div>
+
+        <div class="form-group">
+          <label>Latitude</label>
+          <input type="number" id="latitude" step="0.0001"
+                 value="{{ config.LOCATION.latitude }}">
+        </div>
+
+        <div class="form-group">
+          <label>Longitude</label>
+          <input type="number" id="longitude" step="0.0001"
+                 value="{{ config.LOCATION.longitude }}">
+        </div>
+
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>URL station météociel.fr</label>
+          <input type="text" id="meteociel_url" value="{{ config.LOCATION.meteociel_url }}">
+        </div>
+
+        <div class="form-group">
+          <label>IP du NAS</label>
+          <input type="text" id="nas_ip" value="{{ config.LOCATION.nas_ip }}">
+        </div>
+
+        <div class="form-group">
+          <label>Port NAS</label>
+          <input type="number" id="nas_port" min="1" max="65535"
+                 value="{{ config.LOCATION.nas_port }}">
+        </div>
+
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    {# ── Tarifs EDF Tempo ── #}
+    <div class="card form-section">
+      <h3>⚡ Tarifs EDF Tempo (€/kWh)</h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>🔵 Bleu HP</label>
+          <input type="number" id="blue_hp" step="0.0001"
+                 value="{{ config.TEMPO_PRICES.BLUE.HP }}">
+        </div>
+        <div class="form-group">
+          <label>🔵 Bleu HC</label>
+          <input type="number" id="blue_hc" step="0.0001"
+                 value="{{ config.TEMPO_PRICES.BLUE.HC }}">
+        </div>
+
+        <div class="form-group">
+          <label>⚪ Blanc HP</label>
+          <input type="number" id="white_hp" step="0.0001"
+                 value="{{ config.TEMPO_PRICES.WHITE.HP }}">
+        </div>
+        <div class="form-group">
+          <label>⚪ Blanc HC</label>
+          <input type="number" id="white_hc" step="0.0001"
+                 value="{{ config.TEMPO_PRICES.WHITE.HC }}">
+        </div>
+
+        <div class="form-group">
+          <label>🔴 Rouge HP</label>
+          <input type="number" id="red_hp" step="0.0001"
+                 value="{{ config.TEMPO_PRICES.RED.HP }}">
+        </div>
+        <div class="form-group">
+          <label>🔴 Rouge HC</label>
+          <input type="number" id="red_hc" step="0.0001"
+                 value="{{ config.TEMPO_PRICES.RED.HC }}">
+        </div>
+
+      </div>
+    </div>
+
+    {# ── Actions ── #}
+    <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem">
+      <a href="/" class="btn-back">Annuler</a>
+      <button class="btn-save" onclick="saveConfig()">💾 Enregistrer</button>
+    </div>
+
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  function calcPelletPrice() {
+    const nb   = parseFloat(document.getElementById('nb_sacs').value) || 0;
+    const prix = parseFloat(document.getElementById('prix_livraison').value) || 0;
+    const pds  = parseFloat(document.getElementById('poids_sac').value) || 1;
+    const total_kg = nb * pds;
+    const el = document.getElementById('pellet_price_display');
+    if (total_kg > 0) {
+      el.textContent = (prix / total_kg).toFixed(4);
+    } else {
+      el.textContent = '—';
+    }
+  }
+
+  function showToast(msg, ok) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  function getVal(id) { return document.getElementById(id).value; }
+
+  function saveConfig() {
+    const nb_sacs = parseFloat(getVal('nb_sacs'));
+    const prix    = parseFloat(getVal('prix_livraison'));
+    const poids   = parseFloat(getVal('poids_sac'));
+
+    const payload = {
+      nb_sacs, prix_livraison: prix, poids_sac: poids,
+      consumption_kg_per_hour: parseFloat(getVal('consumption_kg_per_hour')),
+      efficiency: parseFloat(getVal('efficiency')) / 100,
+      poele_thermal_output_kw: parseFloat(getVal('poele_thermal_output_kw')),
+      nominal_cop: parseFloat(getVal('nominal_cop')),
+      comfort_min_temp: parseFloat(getVal('comfort_min_temp')),
+      clim_capacity_kw: parseFloat(getVal('clim_capacity_kw')),
+      target_temp: parseFloat(getVal('target_temp')),
+      surface_m2: parseInt(getVal('surface_m2')),
+      refresh_interval: parseInt(getVal('refresh_interval')),
+      hp_start: parseInt(getVal('hp_start')),
+      hp_end: parseInt(getVal('hp_end')),
+      city: getVal('city'),
+      postal_code: getVal('postal_code'),
+      latitude: parseFloat(getVal('latitude')),
+      longitude: parseFloat(getVal('longitude')),
+      meteociel_url: getVal('meteociel_url'),
+      nas_ip: getVal('nas_ip'),
+      nas_port: parseInt(getVal('nas_port')),
+      blue_hp:  parseFloat(getVal('blue_hp')),
+      blue_hc:  parseFloat(getVal('blue_hc')),
+      white_hp: parseFloat(getVal('white_hp')),
+      white_hc: parseFloat(getVal('white_hc')),
+      red_hp:   parseFloat(getVal('red_hp')),
+      red_hc:   parseFloat(getVal('red_hc')),
+    };
+
+    fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') {
+        showToast('✓ Configuration enregistrée', true);
+      } else {
+        showToast('Erreur : ' + (d.error || 'inconnue'), false);
+      }
+    })
+    .catch(() => showToast('Erreur réseau', false));
+  }
+
+  // Init
+  calcPelletPrice();
+  </script>
+</body>
+</html>
