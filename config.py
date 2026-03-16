@@ -58,7 +58,7 @@ POELE = {
     "pellet_price_per_kg": 0.4233,    # €/kg — 457,20 € pour 72 sacs × 15 kg = 1 080 kg
     "consumption_kg_per_hour": 1.0,   # kg/h — 1 sac de 15 kg dure ~15h (fourchette 14-16h)
     "efficiency": 0.90,               # rendement du poêle
-    "thermal_output_kw": 6.0,         # puissance thermique en fonctionnement normal
+    "thermal_output_kw": 7.2,         # puissance thermique en fonctionnement normal
 }
 
 # ── Superficie à chauffer (pour info) ────────────────────────
