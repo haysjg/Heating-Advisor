@@ -13,7 +13,7 @@
       grid-template-columns: 1fr 1fr;
       gap: 0.75rem 1.25rem;
     }
-    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 600px) { .form-grid { grid-column: 1fr; } }
     .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
     .form-group label { font-size: 0.82rem; color: var(--text-sub); }
     .form-group input {
@@ -27,7 +27,6 @@
       width: 100%;
     }
     .form-group input:focus { outline: none; border-color: var(--blue); }
-    .form-group input[readonly] { color: var(--text-sub); cursor: default; }
     .form-group .hint { font-size: 0.75rem; color: var(--text-sub); opacity: 0.7; }
     .computed-value {
       background: rgba(59,130,246,0.06);
@@ -81,6 +80,36 @@
     .toast-ok  { background: rgba(34,197,94,0.15); border: 1px solid var(--green); color: var(--green); }
     .toast-err { background: rgba(239,68,68,0.15); border: 1px solid var(--red); color: var(--red); }
     .section-divider { border: none; border-top: 1px solid var(--border); margin: 0.25rem 0; }
+    /* Section avancée */
+    details.advanced {
+      margin-top: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    details.advanced summary {
+      padding: 0.6rem 0.9rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: var(--text-sub);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      user-select: none;
+    }
+    details.advanced summary::-webkit-details-marker { display: none; }
+    details.advanced summary::before {
+      content: '▶';
+      font-size: 0.7rem;
+      transition: transform 0.2s;
+    }
+    details.advanced[open] summary::before { transform: rotate(90deg); }
+    details.advanced summary:hover { color: var(--text); }
+    details.advanced .advanced-body {
+      padding: 0.75rem 0.9rem 0.9rem;
+      border-top: 1px solid var(--border);
+    }
   </style>
 </head>
 <body>
@@ -106,21 +135,21 @@
           <label>Nombre de sacs</label>
           <input type="number" id="nb_sacs" min="1" step="1"
                  value="{{ purchase.nb_sacs if purchase.nb_sacs else 72 }}"
-                 oninput="calcPelletPrice()">
+                 oninput="calcPoele()">
         </div>
 
         <div class="form-group">
           <label>Prix total livraison (€)</label>
           <input type="number" id="prix_livraison" min="0" step="0.01"
                  value="{{ purchase.prix_livraison if purchase.prix_livraison else '457.20' }}"
-                 oninput="calcPelletPrice()">
+                 oninput="calcPoele()">
         </div>
 
         <div class="form-group">
           <label>Poids par sac (kg)</label>
           <input type="number" id="poids_sac" min="1" step="0.5"
                  value="{{ purchase.poids_sac if purchase.poids_sac else 15 }}"
-                 oninput="calcPelletPrice()">
+                 oninput="calcPoele()">
         </div>
 
         <div class="form-group">
@@ -132,10 +161,19 @@
         </div>
 
         <div class="form-group">
-          <label>Consommation (kg/h)</label>
-          <input type="number" id="consumption_kg_per_hour" min="0.1" step="0.05"
-                 value="{{ config.POELE.consumption_kg_per_hour }}">
-          <span class="hint">Débit réel du poêle en fonctionnement normal</span>
+          <label>Durée d'un sac (heures)</label>
+          <input type="number" id="hours_per_bag" min="1" max="50" step="0.5"
+                 value="{{ purchase.hours_per_bag if purchase.hours_per_bag else (config.POELE.poids_sac_default | default(15) / config.POELE.consumption_kg_per_hour) | round(1) }}"
+                 oninput="calcPoele()">
+          <span class="hint">Durée réelle observée (ex: 14h pour un sac de 15 kg)</span>
+        </div>
+
+        <div class="form-group">
+          <label>Consommation calculée (kg/h)</label>
+          <div class="computed-value" id="consumption_display">
+            {{ "%.2f"|format(config.POELE.consumption_kg_per_hour) }}
+          </div>
+          <span class="hint">= poids sac ÷ durée sac</span>
         </div>
 
         <div class="form-group">
@@ -240,18 +278,6 @@
           <input type="text" id="postal_code" value="{{ config.LOCATION.postal_code }}">
         </div>
 
-        <div class="form-group">
-          <label>Latitude</label>
-          <input type="number" id="latitude" step="0.0001"
-                 value="{{ config.LOCATION.latitude }}">
-        </div>
-
-        <div class="form-group">
-          <label>Longitude</label>
-          <input type="number" id="longitude" step="0.0001"
-                 value="{{ config.LOCATION.longitude }}">
-        </div>
-
         <div class="form-group" style="grid-column: 1 / -1">
           <label>URL station météociel.fr</label>
           <input type="text" id="meteociel_url" value="{{ config.LOCATION.meteociel_url }}">
@@ -269,6 +295,25 @@
         </div>
 
       </div>
+
+      <details class="advanced">
+        <summary>Paramètres avancés (Open-Meteo / fallback météo)</summary>
+        <div class="advanced-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Latitude</label>
+              <input type="number" id="latitude" step="0.0001"
+                     value="{{ config.LOCATION.latitude }}">
+            </div>
+            <div class="form-group">
+              <label>Longitude</label>
+              <input type="number" id="longitude" step="0.0001"
+                     value="{{ config.LOCATION.longitude }}">
+            </div>
+          </div>
+        </div>
+      </details>
+
     </div>
 
     <hr class="section-divider">
@@ -325,17 +370,18 @@
   <div class="toast" id="toast"></div>
 
   <script>
-  function calcPelletPrice() {
-    const nb   = parseFloat(document.getElementById('nb_sacs').value) || 0;
-    const prix = parseFloat(document.getElementById('prix_livraison').value) || 0;
-    const pds  = parseFloat(document.getElementById('poids_sac').value) || 1;
-    const total_kg = nb * pds;
-    const el = document.getElementById('pellet_price_display');
-    if (total_kg > 0) {
-      el.textContent = (prix / total_kg).toFixed(4);
-    } else {
-      el.textContent = '—';
-    }
+  function calcPoele() {
+    const nb    = parseFloat(document.getElementById('nb_sacs').value) || 0;
+    const prix  = parseFloat(document.getElementById('prix_livraison').value) || 0;
+    const poids = parseFloat(document.getElementById('poids_sac').value) || 1;
+    const hours = parseFloat(document.getElementById('hours_per_bag').value) || 1;
+
+    const priceEl = document.getElementById('pellet_price_display');
+    const total_kg = nb * poids;
+    priceEl.textContent = total_kg > 0 ? (prix / total_kg).toFixed(4) : '—';
+
+    const consEl = document.getElementById('consumption_display');
+    consEl.textContent = hours > 0 ? (poids / hours).toFixed(2) : '—';
   }
 
   function showToast(msg, ok) {
@@ -349,36 +395,37 @@
   function getVal(id) { return document.getElementById(id).value; }
 
   function saveConfig() {
-    const nb_sacs = parseFloat(getVal('nb_sacs'));
-    const prix    = parseFloat(getVal('prix_livraison'));
-    const poids   = parseFloat(getVal('poids_sac'));
+    const poids = parseFloat(getVal('poids_sac'));
+    const hours = parseFloat(getVal('hours_per_bag'));
 
     const payload = {
-      nb_sacs, prix_livraison: prix, poids_sac: poids,
-      consumption_kg_per_hour: parseFloat(getVal('consumption_kg_per_hour')),
-      efficiency: parseFloat(getVal('efficiency')) / 100,
+      nb_sacs:              parseFloat(getVal('nb_sacs')),
+      prix_livraison:       parseFloat(getVal('prix_livraison')),
+      poids_sac:            poids,
+      hours_per_bag:        hours,
+      efficiency:           parseFloat(getVal('efficiency')) / 100,
       poele_thermal_output_kw: parseFloat(getVal('poele_thermal_output_kw')),
-      nominal_cop: parseFloat(getVal('nominal_cop')),
-      comfort_min_temp: parseFloat(getVal('comfort_min_temp')),
-      clim_capacity_kw: parseFloat(getVal('clim_capacity_kw')),
-      target_temp: parseFloat(getVal('target_temp')),
-      surface_m2: parseInt(getVal('surface_m2')),
-      refresh_interval: parseInt(getVal('refresh_interval')),
-      hp_start: parseInt(getVal('hp_start')),
-      hp_end: parseInt(getVal('hp_end')),
-      city: getVal('city'),
-      postal_code: getVal('postal_code'),
-      latitude: parseFloat(getVal('latitude')),
-      longitude: parseFloat(getVal('longitude')),
-      meteociel_url: getVal('meteociel_url'),
-      nas_ip: getVal('nas_ip'),
-      nas_port: parseInt(getVal('nas_port')),
-      blue_hp:  parseFloat(getVal('blue_hp')),
-      blue_hc:  parseFloat(getVal('blue_hc')),
-      white_hp: parseFloat(getVal('white_hp')),
-      white_hc: parseFloat(getVal('white_hc')),
-      red_hp:   parseFloat(getVal('red_hp')),
-      red_hc:   parseFloat(getVal('red_hc')),
+      nominal_cop:          parseFloat(getVal('nominal_cop')),
+      comfort_min_temp:     parseFloat(getVal('comfort_min_temp')),
+      clim_capacity_kw:     parseFloat(getVal('clim_capacity_kw')),
+      target_temp:          parseFloat(getVal('target_temp')),
+      surface_m2:           parseInt(getVal('surface_m2')),
+      refresh_interval:     parseInt(getVal('refresh_interval')),
+      hp_start:             parseInt(getVal('hp_start')),
+      hp_end:               parseInt(getVal('hp_end')),
+      city:                 getVal('city'),
+      postal_code:          getVal('postal_code'),
+      latitude:             parseFloat(getVal('latitude')),
+      longitude:            parseFloat(getVal('longitude')),
+      meteociel_url:        getVal('meteociel_url'),
+      nas_ip:               getVal('nas_ip'),
+      nas_port:             parseInt(getVal('nas_port')),
+      blue_hp:              parseFloat(getVal('blue_hp')),
+      blue_hc:              parseFloat(getVal('blue_hc')),
+      white_hp:             parseFloat(getVal('white_hp')),
+      white_hc:             parseFloat(getVal('white_hc')),
+      red_hp:               parseFloat(getVal('red_hp')),
+      red_hc:               parseFloat(getVal('red_hc')),
     };
 
     fetch('/api/config', {
@@ -398,7 +445,7 @@
   }
 
   // Init
-  calcPelletPrice();
+  calcPoele();
   </script>
 </body>
 </html>

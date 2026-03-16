@@ -138,9 +138,11 @@ def api_config_save():
         nb_sacs = float(data.get("nb_sacs", 1))
         prix = float(data.get("prix_livraison", 0))
         poids = float(data.get("poids_sac", 1))
+        hours_per_bag = float(data.get("hours_per_bag", 15))
         price_per_kg = round(prix / max(nb_sacs * poids, 0.001), 6)
+        consumption_kg_per_hour = round(poids / max(hours_per_bag, 0.1), 4)
         override = {
-            "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids},
+            "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids, "hours_per_bag": hours_per_bag},
             "TARGET_TEMP": float(data["target_temp"]),
             "SURFACE_M2": int(data["surface_m2"]),
             "REFRESH_INTERVAL_MINUTES": int(data["refresh_interval"]),
@@ -148,7 +150,7 @@ def api_config_save():
             "HP_END": int(data["hp_end"]),
             "POELE": {
                 "pellet_price_per_kg": price_per_kg,
-                "consumption_kg_per_hour": float(data["consumption_kg_per_hour"]),
+                "consumption_kg_per_hour": consumption_kg_per_hour,
                 "efficiency": float(data["efficiency"]),
                 "thermal_output_kw": float(data["poele_thermal_output_kw"]),
             },
