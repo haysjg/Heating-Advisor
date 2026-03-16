@@ -21,71 +21,55 @@ HEADERS = {
 
 
 # ── Météociel.fr ─────────────────────────────────────────────
+# Structure HTML de la page d'observations :
+#   - Tableau horaire : bgcolor="#EBFAF7" — colonnes : Heure|Néb.|Temps|Visi|Température|...
+#   - Ligne la plus récente = rows[1] (ordre décroissant)
+#   - Encodage : ISO-8859-1
 
-def _meteociel_search_url(city: str, postal_code: str) -> str | None:
-    """Cherche la ville sur météociel et retourne l'URL de sa page."""
-    import urllib.parse
-
-    query = urllib.parse.quote_plus(city)
-    search_url = f"https://www.meteociel.fr/villes/communes.php?q={query}&pays=fr"
+def get_temperature_meteociel(city: str, postal_code: str, forced_url: str = "") -> float | None:
+    """Récupère la dernière température observée depuis la page d'observations météociel.fr."""
+    if not forced_url:
+        logger.warning("Météociel : URL non configurée, scraping ignoré")
+        return None
     try:
-        req = urllib.request.Request(search_url, headers=HEADERS)
+        from bs4 import BeautifulSoup
+        req = urllib.request.Request(forced_url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
+            raw = resp.read()
 
-        # Chercher un lien de prévisions contenant le code postal ou le nom de ville
-        pattern = r'href="(/previsions/\d+/[^"]+\.htm)"'
-        matches = re.findall(pattern, html)
-        city_slug = city.lower().replace(" ", "-").replace("'", "-")
+        soup = BeautifulSoup(raw.decode("iso-8859-1", errors="replace"), "lxml")
 
-        for m in matches:
-            if city_slug in m or postal_code in html:
-                return "https://www.meteociel.fr" + m
+        # Tableau des observations horaires (identifié par son bgcolor unique)
+        hourly_table = soup.find("table", attrs={"bgcolor": "#EBFAF7"})
+        if not hourly_table:
+            logger.warning("Météociel : tableau horaire introuvable")
+            return None
 
-        # Prendre le premier résultat si pas de correspondance exacte
-        if matches:
-            return "https://www.meteociel.fr" + matches[0]
+        rows = hourly_table.find_all("tr")
+        if len(rows) < 2:
+            logger.warning("Météociel : pas de données dans le tableau")
+            return None
 
-    except Exception as e:
-        logger.warning("Recherche météociel échouée : %s", e)
+        # Première ligne de données = observation la plus récente
+        cells = rows[1].find_all("td")
+        if len(cells) < 5:
+            logger.warning("Météociel : structure de ligne inattendue (%d cellules)", len(cells))
+            return None
 
-    return None
+        temp_text = cells[4].get_text(strip=True)  # colonne 4 = Température
+        m = re.search(r"(-?\d+(?:\.\d+)?)", temp_text)
+        if not m:
+            logger.warning("Météociel : température non parsée depuis '%s'", temp_text)
+            return None
 
-
-def _scrape_meteociel(url: str) -> float | None:
-    """Scrape la température actuelle depuis une page météociel.fr."""
-    try:
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-
-        # Patterns possibles pour la température sur météociel
-        patterns = [
-            r'Temp[ée]rature\s*:\s*([-\d]+(?:\.\d+)?)\s*°C',
-            r'"temperature"\s*:\s*([-\d]+(?:\.\d+)?)',
-            r'<b>([-\d]+(?:\.\d+)?)\s*°C</b>',
-            r'([-\d]+(?:\.\d+)?)\s*°C',
-        ]
-        for p in patterns:
-            m = re.search(p, html, re.IGNORECASE)
-            if m:
-                temp = float(m.group(1))
-                if -30 <= temp <= 50:
-                    logger.info("Météociel : %.1f°C (pattern: %s)", temp, p)
-                    return temp
+        temp = float(m.group(1))
+        hour_text = cells[0].get_text(strip=True)
+        logger.info("Météociel : %.1f°C (obs. %s)", temp, hour_text)
+        return temp
 
     except Exception as e:
         logger.warning("Scraping météociel échoué : %s", e)
-
     return None
-
-
-def get_temperature_meteociel(city: str, postal_code: str, forced_url: str = "") -> float | None:
-    """Récupère la température via météociel.fr."""
-    url = forced_url or _meteociel_search_url(city, postal_code)
-    if not url:
-        return None
-    return _scrape_meteociel(url)
 
 
 # ── Open-Meteo (fallback) ─────────────────────────────────────

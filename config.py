@@ -8,8 +8,8 @@ LOCATION = {
     "postal_code": "91370",
     "latitude": 48.7484,
     "longitude": 2.2655,
-    # URL directe météociel (laissez vide pour détection auto)
-    "meteociel_url": "",
+    # Station météociel la plus proche : Orsay (~5 km)
+    "meteociel_url": "https://www.meteociel.fr/temps-reel/obs_villes.php?code2=7149",
     # IP du NAS pour le lien dans les emails
     "nas_ip": "192.168.1.2",
     "nas_port": 8888,
