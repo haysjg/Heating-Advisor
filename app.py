@@ -13,39 +13,14 @@ import config
 from modules.weather import get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze, analyze_tomorrow
+from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-OVERRIDE_FILE = os.path.join(os.path.dirname(__file__), "data", "config_override.json")
-
-
-def _apply_overrides(data: dict) -> None:
-    for key in ("TARGET_TEMP", "SURFACE_M2", "REFRESH_INTERVAL_MINUTES", "HP_START", "HP_END"):
-        if key in data:
-            setattr(config, key, data[key])
-    for key in ("POELE", "CLIM", "LOCATION"):
-        if key in data and isinstance(data[key], dict):
-            getattr(config, key).update(data[key])
-    if "TEMPO_PRICES" in data:
-        for color, prices in data["TEMPO_PRICES"].items():
-            if color in config.TEMPO_PRICES and isinstance(prices, dict):
-                config.TEMPO_PRICES[color].update(prices)
-
-
-def _load_overrides() -> None:
-    if os.path.exists(OVERRIDE_FILE):
-        try:
-            with open(OVERRIDE_FILE) as f:
-                _apply_overrides(json.load(f))
-            logger.info("Overrides chargés depuis %s", OVERRIDE_FILE)
-        except Exception as e:
-            logger.warning("Impossible de charger les overrides : %s", e)
-
-
-_load_overrides()
+load_overrides(config)
 
 # Cache simple en mémoire pour éviter de surcharger les APIs
 _cache: dict = {"data": None, "expires_at": None}
@@ -141,6 +116,11 @@ def api_config_save():
         hours_per_bag = float(data.get("hours_per_bag", 15))
         price_per_kg = round(prix / max(nb_sacs * poids, 0.001), 6)
         consumption_kg_per_hour = round(poids / max(hours_per_bag, 0.1), 4)
+
+        # Mot de passe : ne mettre à jour que si un nouveau est fourni
+        new_password = str(data.get("app_password", "")).strip()
+        final_password = new_password if new_password else config.EMAIL.get("app_password", "")
+
         override = {
             "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids, "hours_per_bag": hours_per_bag},
             "TARGET_TEMP": float(data["target_temp"]),
@@ -174,11 +154,16 @@ def api_config_save():
                 "RED":     {"HP": float(data["red_hp"]),   "HC": float(data["red_hc"])},
                 "UNKNOWN": {"HP": float(data["white_hp"]), "HC": float(data["white_hc"])},
             },
+            "EMAIL": {
+                "enabled": bool(data.get("email_enabled", False)),
+                "app_password": final_password,
+                "recipients": [r.strip() for r in str(data.get("recipients", "")).split(",") if r.strip()],
+            },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
         with open(OVERRIDE_FILE, "w") as f:
             json.dump(override, f, indent=2, ensure_ascii=False)
-        _apply_overrides(override)
+        apply_overrides(config, override)
         _cache["data"] = None
         _cache["expires_at"] = None
         return jsonify({"status": "ok"})

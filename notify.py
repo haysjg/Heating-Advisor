@@ -12,12 +12,15 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import config
+from modules.overrides import load as load_overrides
 from modules.weather import get_tomorrow_weather
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze_tomorrow
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+load_overrides(config)
 
 
 # ── Helpers ───────────────────────────────────────────────────
