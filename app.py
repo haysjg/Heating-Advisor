@@ -205,6 +205,7 @@ def api_config_save():
             },
             "EMAIL": {
                 "enabled": bool(data.get("email_enabled", False)),
+                "smtp_login": str(data.get("smtp_login", config.EMAIL.get("smtp_login", ""))).strip(),
                 "sender": str(data.get("email_sender", config.EMAIL.get("sender", ""))),
                 "app_password": final_password,
                 "recipients": [r.strip() for r in str(data.get("recipients", "")).split(",") if r.strip()],

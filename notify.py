@@ -147,7 +147,8 @@ def send_email(subject: str, html: str) -> bool:
         with smtplib.SMTP(cfg["smtp_host"], cfg["smtp_port"]) as server:
             server.ehlo()
             server.starttls()
-            server.login(cfg["sender"], decrypt_password(cfg["app_password"]))
+            smtp_login = cfg.get("smtp_login") or cfg["sender"]
+            server.login(smtp_login, decrypt_password(cfg["app_password"]))
             server.sendmail(cfg["sender"], cfg["recipients"], msg.as_string())
         logger.info("Mail envoyé à %s", cfg["recipients"])
         return True

@@ -376,9 +376,15 @@
       <div class="form-grid">
 
         <div class="form-group">
-          <label>Adresse expéditrice (sender)</label>
+          <label>Adresse expéditrice (From)</label>
           <input type="email" id="email_sender" value="{{ config.EMAIL.sender }}">
-          <span class="hint">Le compte Gmail dédié à l'appli</span>
+          <span class="hint">Adresse affichée dans le mail reçu</span>
+        </div>
+
+        <div class="form-group">
+          <label>Login SMTP</label>
+          <input type="text" id="smtp_login" value="{{ config.EMAIL.smtp_login|default('') }}">
+          <span class="hint">Si différent de l'expéditeur (ex: Brevo). Laisser vide pour Gmail.</span>
         </div>
 
         <div class="form-group">
@@ -493,6 +499,7 @@
       red_hc:               parseFloat(getVal('red_hc')),
       email_enabled:        document.getElementById('email_enabled').checked,
       email_sender:         getVal('email_sender'),
+      smtp_login:           getVal('smtp_login'),
       app_password:         getVal('app_password'),
       recipients:           getVal('recipients'),
       smtp_host:            getVal('smtp_host'),

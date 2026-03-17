@@ -72,6 +72,7 @@ EMAIL = {
     "enabled": True,
     "smtp_host": "smtp.gmail.com",
     "smtp_port": 587,
+    "smtp_login": "",     # login SMTP (si vide, utilise sender) — utile pour Brevo etc.
     "sender": "hays.jg@gmail.com",
     "app_password": "REMPLACER_PAR_MOT_DE_PASSE_APP",  # mot de passe d'application Gmail
     "recipients": ["hays.jg@gmail.com"],
