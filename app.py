@@ -156,8 +156,11 @@ def api_config_save():
             },
             "EMAIL": {
                 "enabled": bool(data.get("email_enabled", False)),
+                "sender": str(data.get("email_sender", config.EMAIL.get("sender", ""))),
                 "app_password": final_password,
                 "recipients": [r.strip() for r in str(data.get("recipients", "")).split(",") if r.strip()],
+                "smtp_host": str(data.get("smtp_host", config.EMAIL.get("smtp_host", "smtp.gmail.com"))),
+                "smtp_port": int(data.get("smtp_port", config.EMAIL.get("smtp_port", 587))),
             },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)

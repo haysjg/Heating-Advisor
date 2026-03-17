@@ -376,18 +376,34 @@
       <div class="form-grid">
 
         <div class="form-group">
-          <label>Mot de passe d'application Gmail</label>
+          <label>Adresse expéditrice (sender)</label>
+          <input type="email" id="email_sender" value="{{ config.EMAIL.sender }}">
+          <span class="hint">Le compte Gmail dédié à l'appli</span>
+        </div>
+
+        <div class="form-group">
+          <label>Mot de passe d'application</label>
           <input type="password" id="app_password"
                  placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.EMAIL.app_password != 'REMPLACER_PAR_MOT_DE_PASSE_APP' else 'Coller le mot de passe ici' }}">
-          <span class="hint">
-            Générer sur <strong>myaccount.google.com</strong> → Sécurité → Mots de passe d'application
-          </span>
+          <span class="hint">myaccount.google.com → Sécurité → Mots de passe d'application</span>
         </div>
 
         <div class="form-group">
           <label>Destinataires (séparés par une virgule)</label>
-          <input type="text" id="recipients"
-                 value="{{ config.EMAIL.recipients | join(', ') }}">
+          <input type="text" id="recipients" value="{{ config.EMAIL.recipients | join(', ') }}">
+        </div>
+
+        <div class="form-group"></div>
+
+        <div class="form-group">
+          <label>Serveur SMTP</label>
+          <input type="text" id="smtp_host" value="{{ config.EMAIL.smtp_host }}">
+        </div>
+
+        <div class="form-group">
+          <label>Port SMTP</label>
+          <input type="number" id="smtp_port" min="1" max="65535"
+                 value="{{ config.EMAIL.smtp_port }}">
         </div>
 
       </div>
@@ -461,8 +477,11 @@
       red_hp:               parseFloat(getVal('red_hp')),
       red_hc:               parseFloat(getVal('red_hc')),
       email_enabled:        document.getElementById('email_enabled').checked,
+      email_sender:         getVal('email_sender'),
       app_password:         getVal('app_password'),
       recipients:           getVal('recipients'),
+      smtp_host:            getVal('smtp_host'),
+      smtp_port:            parseInt(getVal('smtp_port')),
     };
 
     fetch('/api/config', {
