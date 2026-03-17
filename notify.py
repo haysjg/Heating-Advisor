@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 
 import config
 from modules.overrides import load as load_overrides
+from modules.crypto import decrypt_password
 from modules.weather import get_tomorrow_weather
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze_tomorrow
@@ -146,7 +147,7 @@ def send_email(subject: str, html: str) -> bool:
         with smtplib.SMTP(cfg["smtp_host"], cfg["smtp_port"]) as server:
             server.ehlo()
             server.starttls()
-            server.login(cfg["sender"], cfg["app_password"])
+            server.login(cfg["sender"], decrypt_password(cfg["app_password"]))
             server.sendmail(cfg["sender"], cfg["recipients"], msg.as_string())
         logger.info("Mail envoyé à %s", cfg["recipients"])
         return True

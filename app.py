@@ -16,6 +16,7 @@ from modules.weather import get_current_temperature, get_tomorrow_weather, get_h
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze, analyze_tomorrow
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE
+from modules.crypto import encrypt_password, is_configured
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -162,9 +163,12 @@ def api_config_save():
         price_per_kg = round(prix / max(nb_sacs * poids, 0.001), 6)
         consumption_kg_per_hour = round(poids / max(hours_per_bag, 0.1), 4)
 
-        # Mot de passe : ne mettre à jour que si un nouveau est fourni
+        # Mot de passe : ne mettre à jour que si un nouveau est fourni, puis chiffrer
         new_password = str(data.get("app_password", "")).strip()
-        final_password = new_password if new_password else config.EMAIL.get("app_password", "")
+        if new_password:
+            final_password = encrypt_password(new_password)
+        else:
+            final_password = config.EMAIL.get("app_password", "")
 
         override = {
             "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids, "hours_per_bag": hours_per_bag},

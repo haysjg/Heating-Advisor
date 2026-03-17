@@ -384,7 +384,7 @@
         <div class="form-group">
           <label>Mot de passe d'application</label>
           <input type="password" id="app_password"
-                 placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.EMAIL.app_password != 'REMPLACER_PAR_MOT_DE_PASSE_APP' else 'Coller le mot de passe ici' }}">
+                 placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.EMAIL.app_password and config.EMAIL.app_password != 'REMPLACER_PAR_MOT_DE_PASSE_APP' else 'Coller le mot de passe ici' }}">
           <span class="hint">myaccount.google.com → Sécurité → Mots de passe d'application</span>
         </div>
 
