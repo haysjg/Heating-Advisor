@@ -44,7 +44,10 @@ def _tempo_color_fr(color: str) -> str:
 
 def build_email(data: dict, tempo: dict) -> tuple[str, str]:
     """Retourne (sujet, corps HTML) du mail."""
-    tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%A %d %B %Y").capitalize()
+    _jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"]
+    _mois  = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"]
+    _d = datetime.now() + timedelta(days=1)
+    tomorrow_date = f"{_jours[_d.weekday()].capitalize()} {_d.day} {_mois[_d.month - 1]} {_d.year}"
     rec = data["recommendation"]
     weather = data.get("weather", {})
     estimate = data.get("daily_estimate")
