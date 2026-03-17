@@ -6,6 +6,10 @@
   <title>Conseiller Chauffage – {{ config.LOCATION.city }}</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    .btn-ha-on  { background: rgba(34,197,94,0.15);  border: 1px solid #22c55e; color: #22c55e; }
+    .btn-ha-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; }
+  </style>
 </head>
 <body>
   <header>
@@ -15,6 +19,14 @@
         <h1>Conseiller Chauffage</h1>
         <p class="header-sub">{{ config.LOCATION.city }} ({{ config.LOCATION.postal_code }})</p>
       </div>
+      {% if config.HOME_ASSISTANT.enabled %}
+      <button class="btn-refresh btn-ha-toggle {% if config.HOME_ASSISTANT.auto_control %}btn-ha-on{% else %}btn-ha-off{% endif %}"
+              id="btn-ha-toggle"
+              onclick="toggleHA()"
+              title="Pilotage automatique Home Assistant">
+        🏠 Auto {{ 'ON' if config.HOME_ASSISTANT.auto_control else 'OFF' }}
+      </button>
+      {% endif %}
       <a href="/config" class="btn-refresh" style="text-decoration:none">⚙️ Config</a>
       <button class="btn-refresh" onclick="refresh()">⟳ Actualiser</button>
     </div>
@@ -289,5 +301,24 @@
   </main>
 
   <script src="/static/script.js"></script>
+  <script>
+  function toggleHA() {
+    const btn = document.getElementById('btn-ha-toggle');
+    const isOn = btn.classList.contains('btn-ha-on');
+    fetch('/api/ha/auto_control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !isOn })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') {
+        btn.classList.toggle('btn-ha-on', d.auto_control);
+        btn.classList.toggle('btn-ha-off', !d.auto_control);
+        btn.textContent = '🏠 Auto ' + (d.auto_control ? 'ON' : 'OFF');
+      }
+    });
+  }
+  </script>
 </body>
 </html>

@@ -164,6 +164,27 @@ def api_ha_turn_off():
     return jsonify({"status": "ok" if ha_client.turn_off(config.HOME_ASSISTANT) else "error"})
 
 
+@app.route("/api/ha/auto_control", methods=["POST"])
+def api_ha_auto_control():
+    """Active ou désactive le pilotage automatique sans toucher au reste de la config."""
+    data = request.get_json(force=True)
+    enabled = bool(data.get("enabled", False))
+    config.HOME_ASSISTANT["auto_control"] = enabled
+    # Persiste dans le fichier d'overrides
+    try:
+        override = {}
+        if os.path.exists(OVERRIDE_FILE):
+            with open(OVERRIDE_FILE) as f:
+                override = json.load(f)
+        override.setdefault("HOME_ASSISTANT", {})["auto_control"] = enabled
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(override, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error("Sauvegarde auto_control échouée : %s", e)
+    logger.info("HA auto_control → %s", enabled)
+    return jsonify({"status": "ok", "auto_control": enabled})
+
+
 @app.route("/api/ha/state")
 def api_ha_state():
     if not ha_client.is_configured(config.HOME_ASSISTANT):
