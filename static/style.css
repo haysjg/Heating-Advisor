@@ -119,8 +119,8 @@ main {
   position: absolute;
   top: -1px;
   right: 1rem;
-  background: var(--border);
-  color: var(--text-sub);
+  background: var(--blue);
+  color: #fff;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.1em;
