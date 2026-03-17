@@ -157,7 +157,8 @@ def send_email(subject: str, html: str) -> bool:
 
 # ── Point d'entrée ────────────────────────────────────────────
 
-def main():
+def main() -> bool:
+    """Prépare et envoie la notification. Retourne True si succès."""
     logger.info("Préparation de la notification email…")
 
     cfg_dict = {
@@ -181,9 +182,8 @@ def main():
     subject, html = build_email(data, tempo)
     logger.info("Sujet : %s", subject)
 
-    success = send_email(subject, html)
-    sys.exit(0 if success else 1)
+    return send_email(subject, html)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(0 if main() else 1)

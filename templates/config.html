@@ -369,7 +369,7 @@
         <input type="checkbox" id="email_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
                {% if config.EMAIL.enabled %}checked{% endif %}>
         <label for="email_enabled" style="font-size:0.9rem;cursor:pointer">
-          Activer les notifications email quotidiennes (20h)
+          Activer les notifications email quotidiennes
         </label>
       </div>
 
@@ -393,7 +393,12 @@
           <input type="text" id="recipients" value="{{ config.EMAIL.recipients | join(', ') }}">
         </div>
 
-        <div class="form-group"></div>
+        <div class="form-group">
+          <label>Heure d'envoi</label>
+          <input type="time" id="notify_time"
+                 value="{{ '%02d:%02d'|format(config.EMAIL.notify_hour|default(20), config.EMAIL.notify_minute|default(0)) }}">
+          <span class="hint">Le mail sera envoyé chaque jour à cette heure</span>
+        </div>
 
         <div class="form-group">
           <label>Serveur SMTP</label>
@@ -407,6 +412,13 @@
         </div>
 
       </div>
+
+      <div style="margin-top:1rem">
+        <button type="button" class="btn-back" onclick="testNotify()" id="btn-test-notify">
+          📨 Envoyer un mail test maintenant
+        </button>
+      </div>
+
     </div>
 
     {# ── Actions ── #}
@@ -447,6 +459,9 @@
   function saveConfig() {
     const poids = parseFloat(getVal('poids_sac'));
     const hours = parseFloat(getVal('hours_per_bag'));
+    const notifyTimeParts = getVal('notify_time').split(':');
+    const notifyHour   = parseInt(notifyTimeParts[0]) || 20;
+    const notifyMinute = parseInt(notifyTimeParts[1]) || 0;
 
     const payload = {
       nb_sacs:              parseFloat(getVal('nb_sacs')),
@@ -482,6 +497,8 @@
       recipients:           getVal('recipients'),
       smtp_host:            getVal('smtp_host'),
       smtp_port:            parseInt(getVal('smtp_port')),
+      notify_hour:          notifyHour,
+      notify_minute:        notifyMinute,
     };
 
     fetch('/api/config', {
@@ -498,6 +515,22 @@
       }
     })
     .catch(() => showToast('Erreur réseau', false));
+  }
+
+  function testNotify() {
+    const btn = document.getElementById('btn-test-notify');
+    btn.disabled = true;
+    btn.textContent = '⏳ Envoi en cours…';
+    fetch('/api/notify-test', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        showToast(d.status === 'ok' ? '✓ Mail envoyé !' : 'Erreur : ' + (d.error || 'inconnue'), d.status === 'ok');
+      })
+      .catch(() => showToast('Erreur réseau', false))
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = '📨 Envoyer un mail test maintenant';
+      });
   }
 
   // Init

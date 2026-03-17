@@ -75,4 +75,6 @@ EMAIL = {
     "sender": "hays.jg@gmail.com",
     "app_password": "REMPLACER_PAR_MOT_DE_PASSE_APP",  # mot de passe d'application Gmail
     "recipients": ["hays.jg@gmail.com"],
+    "notify_hour": 20,    # heure d'envoi automatique (0-23)
+    "notify_minute": 0,   # minute d'envoi automatique (0-59)
 }

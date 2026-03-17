@@ -8,6 +8,8 @@ import json
 import os
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 import config
 from modules.weather import get_current_temperature, get_tomorrow_weather, get_hourly_forecast
@@ -21,6 +23,37 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 load_overrides(config)
+
+# ── Scheduler de notification ─────────────────────────────────
+
+_scheduler = BackgroundScheduler(timezone="Europe/Paris")
+_scheduler.start()
+
+
+def _run_notify():
+    """Lance la notification email (appelé par le scheduler ou manuellement)."""
+    from notify import main as notify_main
+    return notify_main()
+
+
+def _reschedule_notify():
+    """(Re)planifie le job de notification selon la config courante."""
+    _scheduler.remove_all_jobs()
+    if config.EMAIL.get("enabled"):
+        hour = int(config.EMAIL.get("notify_hour", 20))
+        minute = int(config.EMAIL.get("notify_minute", 0))
+        _scheduler.add_job(
+            _run_notify,
+            CronTrigger(hour=hour, minute=minute, timezone="Europe/Paris"),
+            id="notify_job",
+            misfire_grace_time=300,
+        )
+        logger.info("Notification planifiée chaque jour à %02dh%02d", hour, minute)
+    else:
+        logger.info("Notifications email désactivées — aucun job planifié")
+
+
+_reschedule_notify()
 
 # Cache simple en mémoire pour éviter de surcharger les APIs
 _cache: dict = {"data": None, "expires_at": None}
@@ -94,6 +127,18 @@ def api_refresh():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/notify-test", methods=["POST"])
+def api_notify_test():
+    try:
+        success = _run_notify()
+        if success:
+            return jsonify({"status": "ok"})
+        return jsonify({"error": "Envoi échoué — vérifiez les logs et la configuration SMTP"}), 500
+    except Exception as e:
+        logger.exception("Erreur test notification : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/config")
 def config_page():
     purchase = {}
@@ -161,6 +206,8 @@ def api_config_save():
                 "recipients": [r.strip() for r in str(data.get("recipients", "")).split(",") if r.strip()],
                 "smtp_host": str(data.get("smtp_host", config.EMAIL.get("smtp_host", "smtp.gmail.com"))),
                 "smtp_port": int(data.get("smtp_port", config.EMAIL.get("smtp_port", 587))),
+                "notify_hour": int(data.get("notify_hour", config.EMAIL.get("notify_hour", 20))),
+                "notify_minute": int(data.get("notify_minute", config.EMAIL.get("notify_minute", 0))),
             },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
@@ -169,6 +216,7 @@ def api_config_save():
         apply_overrides(config, override)
         _cache["data"] = None
         _cache["expires_at"] = None
+        _reschedule_notify()
         return jsonify({"status": "ok"})
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
