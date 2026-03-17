@@ -17,6 +17,7 @@ from modules.tempo import get_tempo_info
 from modules.advisor import analyze, analyze_tomorrow
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE
 from modules.crypto import encrypt_password, is_configured
+import modules.homeassistant as ha_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -34,7 +35,16 @@ _scheduler.start()
 def _run_notify():
     """Lance la notification email (appelé par le scheduler ou manuellement)."""
     from notify import main as notify_main
-    return notify_main()
+    success = notify_main()
+    # Pilotage automatique HA si activé
+    if config.HOME_ASSISTANT.get("auto_control"):
+        try:
+            data = get_analysis()
+            system = data.get("tomorrow", {}).get("recommendation", {}).get("system", "none")
+            ha_client.apply_recommendation(config.HOME_ASSISTANT, system)
+        except Exception as e:
+            logger.error("HA apply_recommendation échoué : %s", e)
+    return success
 
 
 def _reschedule_notify():
@@ -140,6 +150,30 @@ def api_notify_test():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/ha/turn_on", methods=["POST"])
+def api_ha_turn_on():
+    if not ha_client.is_configured(config.HOME_ASSISTANT):
+        return jsonify({"error": "Home Assistant non configuré"}), 400
+    return jsonify({"status": "ok" if ha_client.turn_on(config.HOME_ASSISTANT) else "error"})
+
+
+@app.route("/api/ha/turn_off", methods=["POST"])
+def api_ha_turn_off():
+    if not ha_client.is_configured(config.HOME_ASSISTANT):
+        return jsonify({"error": "Home Assistant non configuré"}), 400
+    return jsonify({"status": "ok" if ha_client.turn_off(config.HOME_ASSISTANT) else "error"})
+
+
+@app.route("/api/ha/state")
+def api_ha_state():
+    if not ha_client.is_configured(config.HOME_ASSISTANT):
+        return jsonify({"error": "Home Assistant non configuré"}), 400
+    state = ha_client.get_state(config.HOME_ASSISTANT)
+    if state is None:
+        return jsonify({"error": "Impossible de récupérer l'état"}), 500
+    return jsonify(state)
+
+
 @app.route("/config")
 def config_page():
     purchase = {}
@@ -163,12 +197,19 @@ def api_config_save():
         price_per_kg = round(prix / max(nb_sacs * poids, 0.001), 6)
         consumption_kg_per_hour = round(poids / max(hours_per_bag, 0.1), 4)
 
-        # Mot de passe : ne mettre à jour que si un nouveau est fourni, puis chiffrer
+        # Mot de passe SMTP : ne mettre à jour que si un nouveau est fourni, puis chiffrer
         new_password = str(data.get("app_password", "")).strip()
         if new_password:
             final_password = encrypt_password(new_password)
         else:
             final_password = config.EMAIL.get("app_password", "")
+
+        # Token HA : ne mettre à jour que si un nouveau est fourni, puis chiffrer
+        new_ha_token = str(data.get("ha_token", "")).strip()
+        if new_ha_token:
+            final_ha_token = encrypt_password(new_ha_token)
+        else:
+            final_ha_token = config.HOME_ASSISTANT.get("token", "")
 
         override = {
             "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids, "hours_per_bag": hours_per_bag},
@@ -213,6 +254,13 @@ def api_config_save():
                 "smtp_port": int(data.get("smtp_port", config.EMAIL.get("smtp_port", 587))),
                 "notify_hour": int(data.get("notify_hour", config.EMAIL.get("notify_hour", 20))),
                 "notify_minute": int(data.get("notify_minute", config.EMAIL.get("notify_minute", 0))),
+            },
+            "HOME_ASSISTANT": {
+                "enabled": bool(data.get("ha_enabled", False)),
+                "url": str(data.get("ha_url", config.HOME_ASSISTANT.get("url", "http://192.168.1.2:8123"))).rstrip("/"),
+                "token": final_ha_token,
+                "poele_entity_id": str(data.get("ha_entity_id", config.HOME_ASSISTANT.get("poele_entity_id", ""))),
+                "auto_control": bool(data.get("ha_auto_control", False)),
             },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)

@@ -17,7 +17,7 @@ def apply(cfg, data: dict) -> None:
     for key in ("TARGET_TEMP", "SURFACE_M2", "REFRESH_INTERVAL_MINUTES", "HP_START", "HP_END"):
         if key in data:
             setattr(cfg, key, data[key])
-    for key in ("POELE", "CLIM", "LOCATION", "EMAIL"):
+    for key in ("POELE", "CLIM", "LOCATION", "EMAIL", "HOME_ASSISTANT"):
         if key in data and isinstance(data[key], dict):
             getattr(cfg, key).update(data[key])
     if "TEMPO_PRICES" in data:

@@ -427,6 +427,64 @@
 
     </div>
 
+    <hr class="section-divider">
+
+    {# ── Home Assistant ── #}
+    <div class="card form-section">
+      <h3>🏠 Home Assistant <small style="font-weight:400;font-size:0.8em">(optionnel)</small></h3>
+
+      <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
+        <input type="checkbox" id="ha_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.HOME_ASSISTANT.enabled %}checked{% endif %}>
+        <label for="ha_enabled" style="font-size:0.9rem;cursor:pointer">
+          Activer l'intégration Home Assistant
+        </label>
+      </div>
+
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>URL Home Assistant</label>
+          <input type="text" id="ha_url" value="{{ config.HOME_ASSISTANT.url }}">
+          <span class="hint">Ex : http://192.168.1.2:8123</span>
+        </div>
+
+        <div class="form-group">
+          <label>Token d'accès longue durée</label>
+          <input type="password" id="ha_token"
+                 placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.HOME_ASSISTANT.token else 'Coller le token ici' }}">
+          <span class="hint">HA → Profil → Tokens d'accès longue durée</span>
+        </div>
+
+        <div class="form-group">
+          <label>Entity ID du poêle</label>
+          <input type="text" id="ha_entity_id" value="{{ config.HOME_ASSISTANT.poele_entity_id }}">
+          <span class="hint">Ex : climate.edilkamin_climate</span>
+        </div>
+
+        <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
+          <div style="display:flex; align-items:center; gap:0.75rem">
+            <input type="checkbox" id="ha_auto_control" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+                   {% if config.HOME_ASSISTANT.auto_control %}checked{% endif %}>
+            <label for="ha_auto_control" style="font-size:0.9rem;cursor:pointer">
+              Pilotage automatique (ON/OFF selon recommandation)
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="margin-top:1rem; display:flex; gap:0.75rem">
+        <button type="button" class="btn-back" onclick="haControl('turn_on')" id="btn-ha-on">
+          🔥 Allumer le poêle
+        </button>
+        <button type="button" class="btn-back" onclick="haControl('turn_off')" id="btn-ha-off">
+          ⏹ Éteindre le poêle
+        </button>
+      </div>
+
+    </div>
+
     {# ── Actions ── #}
     <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem">
       <a href="/" class="btn-back">Annuler</a>
@@ -497,6 +555,11 @@
       white_hc:             parseFloat(getVal('white_hc')),
       red_hp:               parseFloat(getVal('red_hp')),
       red_hc:               parseFloat(getVal('red_hc')),
+      ha_enabled:           document.getElementById('ha_enabled').checked,
+      ha_url:               getVal('ha_url'),
+      ha_token:             getVal('ha_token'),
+      ha_entity_id:         getVal('ha_entity_id'),
+      ha_auto_control:      document.getElementById('ha_auto_control').checked,
       email_enabled:        document.getElementById('email_enabled').checked,
       email_sender:         getVal('email_sender'),
       smtp_login:           getVal('smtp_login'),
@@ -538,6 +601,17 @@
         btn.disabled = false;
         btn.textContent = '📨 Envoyer un mail test maintenant';
       });
+  }
+
+  function haControl(action) {
+    const btnId = action === 'turn_on' ? 'btn-ha-on' : 'btn-ha-off';
+    const btn = document.getElementById(btnId);
+    btn.disabled = true;
+    fetch('/api/ha/' + action, { method: 'POST' })
+      .then(r => r.json())
+      .then(d => showToast(d.status === 'ok' ? '✓ Commande envoyée' : 'Erreur : ' + (d.error || 'inconnue'), d.status === 'ok'))
+      .catch(() => showToast('Erreur réseau', false))
+      .finally(() => { btn.disabled = false; });
   }
 
   // Init

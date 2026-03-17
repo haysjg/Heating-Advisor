@@ -67,6 +67,15 @@ SURFACE_M2 = 80  # m²
 # ── Rafraîchissement automatique ─────────────────────────────
 REFRESH_INTERVAL_MINUTES = 30
 
+# ── Home Assistant (optionnel) ───────────────────────────────
+HOME_ASSISTANT = {
+    "enabled": False,
+    "url": "http://192.168.1.2:8123",
+    "token": "",                          # token d'accès longue durée
+    "poele_entity_id": "climate.edilkamin_climate",
+    "auto_control": False,                # pilotage automatique ON/OFF selon recommandation
+}
+
 # ── Notifications email ───────────────────────────────────────
 EMAIL = {
     "enabled": True,
