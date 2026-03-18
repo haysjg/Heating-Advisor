@@ -335,14 +335,16 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
             },
         }
 
-    # Jours bleu/blanc → comparaison des coûts
-    hp_price = config["TEMPO_PRICES"][color]["HP"]
+    # Jours bleu/blanc (ou couleur inconnue → fallback Blanc) → comparaison des coûts
+    tempo_unknown = color == "UNKNOWN"
+    effective_color = color if not tempo_unknown else "WHITE"
+    hp_price = config["TEMPO_PRICES"][effective_color]["HP"]
     clim_result = compute_clim_cost(temp, config["CLIM"], hp_price) if temp is not None else {
         "available": False, "cost_per_hour": None
     }
     poele_result = compute_poele_cost(config["POELE"])
 
-    recommendation = make_recommendation(temp, clim_result, poele_result, color, "HP")
+    recommendation = make_recommendation(temp, clim_result, poele_result, effective_color, "HP")
 
     daily_estimate = None
     if clim_result.get("available") and temp is not None:
@@ -358,4 +360,5 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
         "weather": tomorrow_weather,
         "recommendation": recommendation,
         "daily_estimate": daily_estimate,
+        "tempo_unknown": tempo_unknown,
     }

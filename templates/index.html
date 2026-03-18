@@ -9,6 +9,7 @@
   <style>
     .btn-ha-on  { background: rgba(34,197,94,0.15);  border: 1px solid #22c55e; color: #22c55e; }
     .btn-ha-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; }
+    .tempo-unknown-warning { font-size: 0.82rem; color: #f59e0b; margin: 0 0 6px; }
   </style>
 </head>
 <body>
@@ -66,6 +67,9 @@
       </div>
       <div class="rec-content">
         <h2>{{ trec.title }}</h2>
+        {% if tom.tempo_unknown %}
+          <p class="tempo-unknown-warning">⚠️ Couleur Tempo de demain non encore publiée — estimation basée sur le tarif Blanc</p>
+        {% endif %}
         <p>{{ trec.explanation }}</p>
         {% if trec.savings_per_hour > 0 %}
           <span class="badge">Économie : {{ "%.3f"|format(trec.savings_per_hour) }} €/h</span>
