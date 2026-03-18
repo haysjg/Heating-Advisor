@@ -335,10 +335,17 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
             },
         }
 
-    # Jours bleu/blanc (ou couleur inconnue → fallback Blanc) → comparaison des coûts
-    tempo_unknown = color == "UNKNOWN"
-    effective_color = color if not tempo_unknown else "WHITE"
-    hp_price = config["TEMPO_PRICES"][effective_color]["HP"]
+    # Couleur Tempo de demain non encore publiée
+    if color == "UNKNOWN":
+        return {
+            "weather": tomorrow_weather,
+            "recommendation": None,
+            "daily_estimate": None,
+            "tempo_unknown": True,
+        }
+
+    # Jours bleu/blanc → comparaison des coûts
+    hp_price = config["TEMPO_PRICES"][color]["HP"]
     clim_result = compute_clim_cost(temp, config["CLIM"], hp_price) if temp is not None else {
         "available": False, "cost_per_hour": None
     }
@@ -360,5 +367,5 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
         "weather": tomorrow_weather,
         "recommendation": recommendation,
         "daily_estimate": daily_estimate,
-        "tempo_unknown": tempo_unknown,
+        "tempo_unknown": False,
     }
