@@ -403,6 +403,7 @@ def api_config_save():
                 "auto_control": config.HOME_ASSISTANT.get("auto_control", False),
             },
             "THERMOSTAT": {
+                "enabled": config.THERMOSTAT.get("enabled", False),
                 "temp_on": float(data.get("thermostat_temp_on", config.THERMOSTAT.get("temp_on", 20.0))),
                 "temp_off": float(data.get("thermostat_temp_off", config.THERMOSTAT.get("temp_off", 22.9))),
                 "min_on_minutes": int(data.get("thermostat_min_on", config.THERMOSTAT.get("min_on_minutes", 90))),
