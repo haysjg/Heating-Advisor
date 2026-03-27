@@ -25,12 +25,6 @@
         <p class="header-sub">{{ config.LOCATION.city }} ({{ config.LOCATION.postal_code }})</p>
       </div>
       {% if config.HOME_ASSISTANT.enabled %}
-      <button class="btn-refresh btn-ha-toggle {% if config.HOME_ASSISTANT.auto_control %}btn-ha-on{% else %}btn-ha-off{% endif %}"
-              id="btn-ha-toggle"
-              onclick="toggleHA()"
-              title="Pilotage automatique Home Assistant">
-        🏠 Auto {{ 'ON' if config.HOME_ASSISTANT.auto_control else 'OFF' }}
-      </button>
       <button class="btn-refresh {% if config.THERMOSTAT.enabled %}thermostat-on{% else %}thermostat-off{% endif %}"
               id="btn-thermostat-toggle"
               onclick="toggleThermostat()"
