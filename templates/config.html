@@ -479,6 +479,62 @@
 
     </div>
 
+    <hr class="section-divider">
+
+    {# ── Thermostat ── #}
+    <div class="card form-section">
+      <h3>🌡️ Thermostat automatique</h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>Seuil d'allumage (°C)</label>
+          <input type="number" id="thermostat_temp_on" min="10" max="25" step="0.1"
+                 value="{{ config.THERMOSTAT.temp_on }}">
+          <span class="hint">Allumage si temp intérieure &lt; cette valeur</span>
+        </div>
+
+        <div class="form-group">
+          <label>Seuil d'extinction (°C)</label>
+          <input type="number" id="thermostat_temp_off" min="10" max="30" step="0.1"
+                 value="{{ config.THERMOSTAT.temp_off }}">
+          <span class="hint">Extinction si temp intérieure ≥ cette valeur</span>
+        </div>
+
+        <div class="form-group">
+          <label>Durée minimale ON (min)</label>
+          <input type="number" id="thermostat_min_on" min="0" max="240" step="5"
+                 value="{{ config.THERMOSTAT.min_on_minutes }}">
+          <span class="hint">Durée min avant extinction sur seuil temp</span>
+        </div>
+
+        <div class="form-group">
+          <label>Grâce fin de plage (min)</label>
+          <input type="number" id="thermostat_grace" min="0" max="120" step="5"
+                 value="{{ config.THERMOSTAT.end_of_schedule_grace_minutes }}">
+          <span class="hint">Durée min ON avant extinction en fin de plage</span>
+        </div>
+
+      </div>
+
+      <p style="font-size:0.82rem;color:var(--text-sub);margin:1rem 0 0.5rem">Plages horaires d'allumage automatique</p>
+      <div style="display:grid;grid-template-columns:6rem 1fr 1fr;gap:0.5rem 1rem;align-items:center">
+        <span style="font-size:0.75rem;color:var(--text-sub)">Jour</span>
+        <span style="font-size:0.75rem;color:var(--text-sub)">Début</span>
+        <span style="font-size:0.75rem;color:var(--text-sub)">Fin</span>
+        {% set days = [('mon','Lundi'),('tue','Mardi'),('wed','Mercredi'),('thu','Jeudi'),('fri','Vendredi'),('sat','Samedi'),('sun','Dimanche')] %}
+        {% for key, label in days %}
+        <span style="font-size:0.88rem">{{ label }}</span>
+        <input type="time" id="sched_{{ key }}_start"
+               value="{{ config.THERMOSTAT.schedule[key].start }}"
+               style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.4rem 0.6rem;font-size:0.9rem">
+        <input type="time" id="sched_{{ key }}_end"
+               value="{{ config.THERMOSTAT.schedule[key].end }}"
+               style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.4rem 0.6rem;font-size:0.9rem">
+        {% endfor %}
+      </div>
+
+    </div>
+
     {# ── Actions ── #}
     <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem">
       <a href="/" class="btn-back">Annuler</a>
@@ -562,6 +618,19 @@
       smtp_port:            parseInt(getVal('smtp_port')),
       notify_hour:          notifyHour,
       notify_minute:        notifyMinute,
+      thermostat_temp_on:   parseFloat(getVal('thermostat_temp_on')),
+      thermostat_temp_off:  parseFloat(getVal('thermostat_temp_off')),
+      thermostat_min_on:    parseInt(getVal('thermostat_min_on')),
+      thermostat_grace:     parseInt(getVal('thermostat_grace')),
+      thermostat_schedule: {
+        mon: { start: getVal('sched_mon_start'), end: getVal('sched_mon_end') },
+        tue: { start: getVal('sched_tue_start'), end: getVal('sched_tue_end') },
+        wed: { start: getVal('sched_wed_start'), end: getVal('sched_wed_end') },
+        thu: { start: getVal('sched_thu_start'), end: getVal('sched_thu_end') },
+        fri: { start: getVal('sched_fri_start'), end: getVal('sched_fri_end') },
+        sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end') },
+        sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end') },
+      },
     };
 
     fetch('/api/config', {

@@ -380,6 +380,13 @@ def api_config_save():
                 "poele_entity_id": str(data.get("ha_entity_id", config.HOME_ASSISTANT.get("poele_entity_id", ""))),
                 "auto_control": config.HOME_ASSISTANT.get("auto_control", False),
             },
+            "THERMOSTAT": {
+                "temp_on": float(data.get("thermostat_temp_on", config.THERMOSTAT.get("temp_on", 20.0))),
+                "temp_off": float(data.get("thermostat_temp_off", config.THERMOSTAT.get("temp_off", 22.9))),
+                "min_on_minutes": int(data.get("thermostat_min_on", config.THERMOSTAT.get("min_on_minutes", 90))),
+                "end_of_schedule_grace_minutes": int(data.get("thermostat_grace", config.THERMOSTAT.get("end_of_schedule_grace_minutes", 45))),
+                "schedule": data.get("thermostat_schedule", config.THERMOSTAT.get("schedule", {})),
+            },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
         with open(OVERRIDE_FILE, "w") as f:
