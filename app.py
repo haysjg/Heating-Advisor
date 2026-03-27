@@ -18,6 +18,7 @@ from modules.advisor import analyze, analyze_tomorrow
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE
 from modules.crypto import encrypt_password, is_configured
 import modules.homeassistant as ha_client
+import modules.thermostat as thermostat_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -49,7 +50,10 @@ def _run_notify():
 
 def _reschedule_notify():
     """(Re)planifie le job de notification selon la config courante."""
-    _scheduler.remove_all_jobs()
+    try:
+        _scheduler.remove_job("notify_job")
+    except Exception:
+        pass
     if config.EMAIL.get("enabled"):
         hour = int(config.EMAIL.get("notify_hour", 20))
         minute = int(config.EMAIL.get("notify_minute", 0))
@@ -64,7 +68,38 @@ def _reschedule_notify():
         logger.info("Notifications email désactivées — aucun job planifié")
 
 
+def _run_thermostat():
+    """Vérifie la température intérieure et pilote le poêle via le thermostat."""
+    try:
+        data = get_analysis()
+        recommendation = data.get("recommendation", {}).get("system", "none")
+        thermostat_module.check_and_apply(config.HOME_ASSISTANT, config.THERMOSTAT, recommendation)
+    except Exception as e:
+        logger.error("Thermostat check échoué : %s", e)
+
+
+def _reschedule_thermostat():
+    """(Re)planifie le job thermostat selon la config courante."""
+    try:
+        _scheduler.remove_job("thermostat_job")
+    except Exception:
+        pass
+    if config.THERMOSTAT.get("enabled"):
+        interval = int(config.THERMOSTAT.get("check_interval_minutes", 10))
+        _scheduler.add_job(
+            _run_thermostat,
+            "interval",
+            minutes=interval,
+            id="thermostat_job",
+            misfire_grace_time=60,
+        )
+        logger.info("Thermostat planifié toutes les %d min", interval)
+    else:
+        logger.info("Thermostat désactivé — aucun job planifié")
+
+
 _reschedule_notify()
+_reschedule_thermostat()
 
 # Cache simple en mémoire pour éviter de surcharger les APIs
 _cache: dict = {"data": None, "expires_at": None}
@@ -118,10 +153,11 @@ def get_analysis(force_refresh: bool = False) -> dict:
 def index():
     try:
         data = get_analysis()
-        return render_template("index.html", data=data, config=config)
+        thermostat_state = thermostat_module.get_state()
+        return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
-        return render_template("index.html", data=None, error=str(e), config=config)
+        return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={})
 
 
 @app.route("/api/data")
@@ -197,6 +233,38 @@ def api_ha_state():
     if state is None:
         return jsonify({"error": "Impossible de récupérer l'état"}), 500
     return jsonify(state)
+
+
+@app.route("/api/thermostat/state")
+def api_thermostat_state():
+    state = thermostat_module.get_state()
+    return jsonify({
+        **state,
+        "enabled": config.THERMOSTAT.get("enabled", False),
+        "in_schedule": thermostat_module.is_in_schedule(config.THERMOSTAT),
+        "temp_on": config.THERMOSTAT.get("temp_on"),
+        "temp_off": config.THERMOSTAT.get("temp_off"),
+    })
+
+
+@app.route("/api/thermostat/toggle", methods=["POST"])
+def api_thermostat_toggle():
+    data = request.get_json(force=True)
+    enabled = bool(data.get("enabled", False))
+    config.THERMOSTAT["enabled"] = enabled
+    try:
+        override = {}
+        if os.path.exists(OVERRIDE_FILE):
+            with open(OVERRIDE_FILE) as f:
+                override = json.load(f)
+        override.setdefault("THERMOSTAT", {})["enabled"] = enabled
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(override, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error("Sauvegarde thermostat enabled échouée : %s", e)
+    _reschedule_thermostat()
+    logger.info("Thermostat → %s", "activé" if enabled else "désactivé")
+    return jsonify({"status": "ok", "enabled": enabled})
 
 
 @app.route("/config")

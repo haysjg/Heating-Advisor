@@ -10,6 +10,10 @@
     .btn-ha-on  { background: rgba(34,197,94,0.15);  border: 1px solid #22c55e; color: #22c55e; }
     .btn-ha-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; }
     .tempo-unknown-warning { font-size: 0.9rem; color: #8892a4; margin: 0; }
+    .thermostat-on  { background: rgba(251,146,60,0.15);  border: 1px solid #fb923c; color: #fb923c; }
+    .thermostat-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; }
+    .thermostat-badge-on  { background: rgba(251,146,60,0.15); border: 1px solid #fb923c; color: #fb923c; border-radius: 6px; padding: 0.15rem 0.5rem; font-size: 0.8rem; font-weight: 600; }
+    .thermostat-badge-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; border-radius: 6px; padding: 0.15rem 0.5rem; font-size: 0.8rem; }
   </style>
 </head>
 <body>
@@ -26,6 +30,12 @@
               onclick="toggleHA()"
               title="Pilotage automatique Home Assistant">
         🏠 Auto {{ 'ON' if config.HOME_ASSISTANT.auto_control else 'OFF' }}
+      </button>
+      <button class="btn-refresh {% if config.THERMOSTAT.enabled %}thermostat-on{% else %}thermostat-off{% endif %}"
+              id="btn-thermostat-toggle"
+              onclick="toggleThermostat()"
+              title="Thermostat automatique poêle">
+        🌡️ Thermostat {{ 'ON' if config.THERMOSTAT.enabled else 'OFF' }}
       </button>
       {% endif %}
       <a href="/config" class="btn-refresh" style="text-decoration:none">⚙️ Config</a>
@@ -95,6 +105,41 @@
       </div>
     </section>
     {% endif %}
+    {% endif %}
+
+    {# ── Thermostat ── #}
+    {% if config.HOME_ASSISTANT.enabled %}
+    <section class="card card-labeled">
+      <div class="today-label">AUJOURD'HUI</div>
+      <h3>🌡️ Thermostat automatique</h3>
+      <div class="grid-2">
+        <div>
+          <p class="value-sub">
+            État poêle :
+            <span class="{% if thermostat_state.state == 'on' %}thermostat-badge-on{% else %}thermostat-badge-off{% endif %}">
+              {{ '🔥 Allumé' if thermostat_state.state == 'on' else '⏸ Éteint' }}
+            </span>
+          </p>
+          <p class="value-sub">
+            Seuils : allumage &lt; <strong>{{ config.THERMOSTAT.temp_on }}°C</strong>
+            — extinction &gt;= <strong>{{ config.THERMOSTAT.temp_off }}°C</strong>
+          </p>
+          <p class="value-sub">Durée min ON : <strong>{{ config.THERMOSTAT.min_on_minutes }} min</strong>
+            — Fin de plage : <strong>{{ config.THERMOSTAT.end_of_schedule_grace_minutes }} min</strong></p>
+        </div>
+        <div>
+          {% if thermostat_state.last_turned_on %}
+            <p class="value-sub">Dernier allumage : <strong>{{ thermostat_state.last_turned_on[:16] | replace("T", " ") }}</strong></p>
+          {% endif %}
+          {% if thermostat_state.last_turned_off %}
+            <p class="value-sub">Dernière extinction : <strong>{{ thermostat_state.last_turned_off[:16] | replace("T", " ") }}</strong></p>
+          {% endif %}
+          {% if not config.THERMOSTAT.enabled %}
+            <p class="value-sub" style="color:#64748b">Thermostat désactivé — activez-le avec le bouton en haut.</p>
+          {% endif %}
+        </div>
+      </div>
+    </section>
     {% endif %}
 
     {# ── Conditions actuelles ── #}
@@ -338,6 +383,25 @@
 
   <script src="/static/script.js"></script>
   <script>
+  function toggleThermostat() {
+    const btn = document.getElementById('btn-thermostat-toggle');
+    const isOn = btn.classList.contains('thermostat-on');
+    fetch('/api/thermostat/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !isOn })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') {
+        btn.classList.toggle('thermostat-on', d.enabled);
+        btn.classList.toggle('thermostat-off', !d.enabled);
+        btn.textContent = '🌡️ Thermostat ' + (d.enabled ? 'ON' : 'OFF');
+        setTimeout(() => location.reload(), 500);
+      }
+    });
+  }
+
   function toggleHA() {
     const btn = document.getElementById('btn-ha-toggle');
     const isOn = btn.classList.contains('btn-ha-on');

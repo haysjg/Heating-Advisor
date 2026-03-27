@@ -78,6 +78,25 @@ HOME_ASSISTANT = {
     "shelly_humidity_entity_id": "sensor.sonde_temperature_humidity",
 }
 
+# ── Thermostat automatique ───────────────────────────────────
+THERMOSTAT = {
+    "enabled": False,
+    "temp_on": 20.0,                      # allumage si temp intérieure < cette valeur (°C)
+    "temp_off": 22.9,                     # extinction si temp intérieure >= cette valeur (°C)
+    "min_on_minutes": 90,                 # durée minimale ON avant extinction sur temp
+    "end_of_schedule_grace_minutes": 45,  # durée minimale ON avant extinction fin de plage
+    "check_interval_minutes": 10,         # fréquence de vérification
+    "schedule": {
+        "mon": {"start": "05:45", "end": "22:00"},
+        "tue": {"start": "05:45", "end": "22:00"},
+        "wed": {"start": "06:00", "end": "22:00"},
+        "thu": {"start": "05:45", "end": "22:00"},
+        "fri": {"start": "05:45", "end": "22:00"},
+        "sat": {"start": "07:00", "end": "22:00"},
+        "sun": {"start": "07:00", "end": "22:00"},
+    },
+}
+
 # ── Notifications email ───────────────────────────────────────
 EMAIL = {
     "enabled": True,
