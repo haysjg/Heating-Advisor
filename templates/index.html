@@ -129,6 +129,12 @@
           {% if thermostat_state.last_turned_off %}
             <p class="value-sub">Dernière extinction : <strong>{{ thermostat_state.last_turned_off[:16] | replace("T", " ") }}</strong></p>
           {% endif %}
+          {% if thermostat_state.suspended_until %}
+            <p class="value-sub" style="color:#fb923c">
+              ⏸ Suspendu jusqu'à <strong>{{ thermostat_state.suspended_until[:16] | replace("T", " ") }}</strong>
+              <button onclick="resumeThermostat()" style="margin-left:0.5rem;background:none;border:1px solid #fb923c;color:#fb923c;border-radius:6px;padding:0.1rem 0.5rem;cursor:pointer;font-size:0.8rem">Reprendre</button>
+            </p>
+          {% endif %}
           {% if not config.THERMOSTAT.enabled %}
             <p class="value-sub" style="color:#64748b">Thermostat désactivé — activez-le avec le bouton en haut.</p>
           {% endif %}
@@ -381,6 +387,12 @@
 
   <script src="/static/script.js"></script>
   <script>
+  function resumeThermostat() {
+    fetch('/api/thermostat/resume', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => { if (d.status === 'ok') location.reload(); });
+  }
+
   function toggleThermostat() {
     const btn = document.getElementById('btn-thermostat-toggle');
     const isOn = btn.classList.contains('thermostat-on');

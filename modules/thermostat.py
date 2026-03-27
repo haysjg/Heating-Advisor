@@ -31,6 +31,7 @@ def _load_state() -> dict:
         "last_turned_off": None,
         "sensor_failures": 0,
         "last_alert_sent": None,
+        "suspended_until": None,
     }
 
 
@@ -230,11 +231,17 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
         _save_state(state)
         current = "on"
     elif not real_on and current == "on":
-        logger.info("Thermostat : poêle éteint manuellement, synchronisation état → off")
+        suspend_hours = thermostat_cfg.get("manual_off_suspend_hours", 4)
+        suspended_until = (datetime.now() + timedelta(hours=suspend_hours)).isoformat()
+        logger.info(
+            "Thermostat : poêle éteint manuellement, suspension %dh jusqu'à %s",
+            suspend_hours, suspended_until[:16].replace("T", " "),
+        )
         state = {
             **state,
             "state": "off",
-            "last_turned_off": state.get("last_turned_off") or datetime.now().isoformat(),
+            "last_turned_off": datetime.now().isoformat(),
+            "suspended_until": suspended_until,
         }
         _save_state(state)
         current = "off"
@@ -242,6 +249,19 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     last_on_str = state.get("last_turned_on")
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
     on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
+
+    # ── Vérification suspension ───────────────────────────────
+    suspended_until_str = state.get("suspended_until")
+    if suspended_until_str:
+        suspended_until = datetime.fromisoformat(suspended_until_str)
+        if datetime.now() < suspended_until:
+            remaining = int((suspended_until - datetime.now()).total_seconds() / 60)
+            logger.debug("Thermostat : suspendu encore %d min", remaining)
+            return
+        else:
+            logger.info("Thermostat : fin de suspension, reprise normale")
+            state = {**state, "suspended_until": None}
+            _save_state(state)
 
     if current == "off":
         if in_schedule and effective_temp < temp_on and recommendation == "poele":

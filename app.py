@@ -267,6 +267,7 @@ def api_thermostat_diagnose():
             indoor["temperature"], indoor.get("humidity"), config.THERMOSTAT
         ) if indoor and indoor.get("temperature") is not None else None,
         "next_check": next_run,
+        "suspended_until": state.get("suspended_until"),
     })
 
 
@@ -280,6 +281,17 @@ def api_thermostat_state():
         "temp_on": config.THERMOSTAT.get("temp_on"),
         "temp_off": config.THERMOSTAT.get("temp_off"),
     })
+
+
+@app.route("/api/thermostat/resume", methods=["POST"])
+def api_thermostat_resume():
+    """Annule la suspension du thermostat."""
+    state = thermostat_module.get_state()
+    state["suspended_until"] = None
+    from modules.thermostat import _save_state
+    _save_state(state)
+    logger.info("Thermostat : suspension annulée manuellement")
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/thermostat/toggle", methods=["POST"])
@@ -395,6 +407,7 @@ def api_config_save():
                 "temp_off": float(data.get("thermostat_temp_off", config.THERMOSTAT.get("temp_off", 22.9))),
                 "min_on_minutes": int(data.get("thermostat_min_on", config.THERMOSTAT.get("min_on_minutes", 90))),
                 "end_of_schedule_grace_minutes": int(data.get("thermostat_grace", config.THERMOSTAT.get("end_of_schedule_grace_minutes", 45))),
+                "manual_off_suspend_hours": float(data.get("thermostat_suspend_hours", config.THERMOSTAT.get("manual_off_suspend_hours", 4))),
                 "use_felt_temperature": bool(data.get("thermostat_use_felt", config.THERMOSTAT.get("use_felt_temperature", True))),
                 "humidity_reference": float(data.get("thermostat_humidity_ref", config.THERMOSTAT.get("humidity_reference", 50.0))),
                 "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),
