@@ -235,6 +235,25 @@ def api_ha_state():
     return jsonify(state)
 
 
+@app.route("/api/thermostat/diagnose")
+def api_thermostat_diagnose():
+    from modules.thermostat import get_state, is_in_schedule
+    state = get_state()
+    indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
+    ha_state = ha_client.get_state(config.HOME_ASSISTANT)
+    return jsonify({
+        "thermostat_enabled": config.THERMOSTAT.get("enabled", False),
+        "in_schedule": is_in_schedule(config.THERMOSTAT),
+        "indoor": indoor,
+        "poele_real_state": ha_state.get("state") if ha_state else None,
+        "thermostat_state": state,
+        "temp_on": config.THERMOSTAT.get("temp_on"),
+        "temp_off": config.THERMOSTAT.get("temp_off"),
+        "min_on_minutes": config.THERMOSTAT.get("min_on_minutes"),
+        "grace_minutes": config.THERMOSTAT.get("end_of_schedule_grace_minutes"),
+    })
+
+
 @app.route("/api/thermostat/state")
 def api_thermostat_state():
     state = thermostat_module.get_state()
