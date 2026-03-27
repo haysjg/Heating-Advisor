@@ -351,7 +351,7 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
     }
     poele_result = compute_poele_cost(config["POELE"])
 
-    recommendation = make_recommendation(temp, clim_result, poele_result, effective_color, "HP")
+    recommendation = make_recommendation(temp, clim_result, poele_result, color, "HP")
 
     daily_estimate = None
     if clim_result.get("available") and temp is not None:
