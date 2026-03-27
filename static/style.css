@@ -136,8 +136,14 @@ main {
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+}
 @media (max-width: 600px) {
   .grid-2 { grid-template-columns: 1fr; }
+  .grid-3 { grid-template-columns: 1fr; }
   .header-inner { flex-wrap: wrap; }
   .btn-refresh { margin-left: 0; }
 }
