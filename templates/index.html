@@ -107,6 +107,13 @@
         {% if data.weather.temperature is not none %}
           <p class="value-big">{{ "%.1f"|format(data.weather.temperature) }} °C</p>
           <p class="value-sub">Cible intérieure : {{ config.TARGET_TEMP }}°C</p>
+          {% if data.indoor %}
+            <p class="value-sub">
+              🏠 Intérieur :
+              <strong>{% if data.indoor.temperature is not none %}{{ "%.1f"|format(data.indoor.temperature) }} °C{% else %}—{% endif %}</strong>
+              {% if data.indoor.humidity is not none %} — Humidité : <strong>{{ data.indoor.humidity|int }} %</strong>{% endif %}
+            </p>
+          {% endif %}
           {% if data.weather.source == "météociel.fr" %}
             <span class="source-badge source-real">📡 {{ data.weather.source }} — mesure réelle</span>
           {% else %}

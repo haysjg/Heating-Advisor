@@ -105,6 +105,10 @@ def get_analysis(force_refresh: bool = False) -> dict:
     result["tomorrow"] = analyze_tomorrow(tomorrow_weather, tempo, cfg)
     result["hourly_forecast"] = get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48)
 
+    indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
+    if indoor:
+        result["indoor"] = indoor
+
     _cache["data"] = result
     _cache["expires_at"] = now + ttl
     return result

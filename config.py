@@ -74,6 +74,8 @@ HOME_ASSISTANT = {
     "token": "",                          # token d'accès longue durée
     "poele_entity_id": "climate.edilkamin_climate",
     "auto_control": False,                # pilotage automatique ON/OFF selon recommandation
+    "shelly_temp_entity_id": "sensor.sonde_temperature_temperature",
+    "shelly_humidity_entity_id": "sensor.sonde_temperature_humidity",
 }
 
 # ── Notifications email ───────────────────────────────────────

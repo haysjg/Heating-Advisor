@@ -91,6 +91,36 @@ def get_state(cfg: dict) -> dict | None:
         return None
 
 
+def get_indoor_climate(cfg: dict) -> dict | None:
+    """Retourne la température et/ou l'humidité intérieure depuis le Shelly via HA."""
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return None
+    temp_entity = cfg.get("shelly_temp_entity_id")
+    humidity_entity = cfg.get("shelly_humidity_entity_id")
+    if not temp_entity and not humidity_entity:
+        return None
+    result = {}
+    try:
+        if temp_entity:
+            state = _request(
+                f"{cfg['url'].rstrip('/')}/api/states/{temp_entity}",
+                cfg["token"],
+            )
+            raw = state.get("state")
+            result["temperature"] = float(raw) if raw not in (None, "unavailable", "unknown") else None
+        if humidity_entity:
+            state = _request(
+                f"{cfg['url'].rstrip('/')}/api/states/{humidity_entity}",
+                cfg["token"],
+            )
+            raw = state.get("state")
+            result["humidity"] = float(raw) if raw not in (None, "unavailable", "unknown") else None
+    except Exception as e:
+        logger.error("HA get_indoor_climate échoué : %s", e)
+        return None
+    return result or None
+
+
 def apply_recommendation(cfg: dict, system: str) -> bool:
     """
     Applique la recommandation du Heating Advisor au poêle.
