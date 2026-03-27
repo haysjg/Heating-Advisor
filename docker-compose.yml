@@ -12,3 +12,5 @@ services:
     volumes:
       - ./data:/app/data              # Persistance de config_override.json
     # - ./config.py:/app/config.py   # Décommentez pour éditer la config sans rebuild
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Accès au NAS depuis le container (IP stable)
