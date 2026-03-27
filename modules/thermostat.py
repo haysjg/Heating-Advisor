@@ -86,9 +86,12 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str) -> 
     current = state.get("state", "off")
     if real_on and current == "off":
         logger.info("Thermostat : poêle allumé manuellement, synchronisation état → on")
+        # On considère la durée min déjà satisfaite pour permettre une extinction immédiate si besoin
+        from datetime import timedelta
+        pseudo_on = (datetime.now() - timedelta(minutes=min_on)).isoformat()
         state = {
             "state": "on",
-            "last_turned_on": state.get("last_turned_on") or datetime.now().isoformat(),
+            "last_turned_on": state.get("last_turned_on") or pseudo_on,
             "last_turned_off": state.get("last_turned_off"),
         }
         _save_state(state)
