@@ -76,6 +76,7 @@
       </div>
       <div class="rec-content">
         <h2>{{ trec.title }}</h2>
+        <span class="badge badge-gray">{{ data.tempo.tomorrow.emoji }} Tempo {{ data.tempo.tomorrow.label }}</span>
         <p>{{ trec.explanation }}</p>
         {% if trec.savings_per_hour > 0 %}
           <span class="badge">Économie : {{ "%.3f"|format(trec.savings_per_hour) }} €/h</span>
