@@ -153,6 +153,9 @@
         {% if data.indoor.humidity is not none %}
           <p class="value-sub">Humidité : <strong>{{ data.indoor.humidity|int }} %</strong></p>
         {% endif %}
+        {% if data.indoor.felt_temperature is defined and data.indoor.felt_temperature is not none %}
+          <p class="value-sub">Ressenti : <strong>{{ "%.1f"|format(data.indoor.felt_temperature) }} °C</strong></p>
+        {% endif %}
         <p class="value-sub">Cible : {{ config.TARGET_TEMP }}°C</p>
         <span class="source-badge source-real">📡 Shelly H&amp;T Gen3</span>
       </div>

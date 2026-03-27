@@ -86,6 +86,9 @@ THERMOSTAT = {
     "min_on_minutes": 90,                 # durée minimale ON avant extinction sur temp
     "end_of_schedule_grace_minutes": 45,  # durée minimale ON avant extinction fin de plage
     "check_interval_minutes": 10,         # fréquence de vérification
+    "use_felt_temperature": True,         # utiliser la température ressentie (temp + correction humidité)
+    "humidity_reference": 50.0,           # humidité de référence (%)
+    "humidity_correction_factor": 0.05,   # correction °C par % d'écart à la référence
     "schedule": {
         "mon": {"start": "05:45", "end": "22:00"},
         "tue": {"start": "05:45", "end": "22:00"},

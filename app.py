@@ -142,6 +142,12 @@ def get_analysis(force_refresh: bool = False) -> dict:
 
     indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
     if indoor:
+        if (config.THERMOSTAT.get("use_felt_temperature")
+                and indoor.get("temperature") is not None
+                and indoor.get("humidity") is not None):
+            indoor["felt_temperature"] = thermostat_module.felt_temperature(
+                indoor["temperature"], indoor["humidity"], config.THERMOSTAT
+            )
         result["indoor"] = indoor
 
     _cache["data"] = result
@@ -256,6 +262,10 @@ def api_thermostat_diagnose():
         "temp_off": config.THERMOSTAT.get("temp_off"),
         "min_on_minutes": config.THERMOSTAT.get("min_on_minutes"),
         "grace_minutes": config.THERMOSTAT.get("end_of_schedule_grace_minutes"),
+        "use_felt_temperature": config.THERMOSTAT.get("use_felt_temperature"),
+        "felt_temperature": thermostat_module.felt_temperature(
+            indoor["temperature"], indoor.get("humidity"), config.THERMOSTAT
+        ) if indoor and indoor.get("temperature") is not None else None,
         "next_check": next_run,
     })
 
@@ -385,6 +395,9 @@ def api_config_save():
                 "temp_off": float(data.get("thermostat_temp_off", config.THERMOSTAT.get("temp_off", 22.9))),
                 "min_on_minutes": int(data.get("thermostat_min_on", config.THERMOSTAT.get("min_on_minutes", 90))),
                 "end_of_schedule_grace_minutes": int(data.get("thermostat_grace", config.THERMOSTAT.get("end_of_schedule_grace_minutes", 45))),
+                "use_felt_temperature": bool(data.get("thermostat_use_felt", config.THERMOSTAT.get("use_felt_temperature", True))),
+                "humidity_reference": float(data.get("thermostat_humidity_ref", config.THERMOSTAT.get("humidity_reference", 50.0))),
+                "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),
                 "schedule": data.get("thermostat_schedule", config.THERMOSTAT.get("schedule", {})),
             },
         }

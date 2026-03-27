@@ -516,6 +516,31 @@
 
       </div>
 
+      <hr class="section-divider" style="margin:1rem 0">
+
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+        <input type="checkbox" id="thermostat_use_felt" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.THERMOSTAT.use_felt_temperature %}checked{% endif %}>
+        <label for="thermostat_use_felt" style="font-size:0.9rem;cursor:pointer">
+          Utiliser la température ressentie (correction humidité)
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Humidité de référence (%)</label>
+          <input type="number" id="thermostat_humidity_ref" min="20" max="80" step="1"
+                 value="{{ config.THERMOSTAT.humidity_reference }}">
+          <span class="hint">Humidité "neutre" (aucune correction)</span>
+        </div>
+        <div class="form-group">
+          <label>Facteur de correction (°C / %)</label>
+          <input type="number" id="thermostat_humidity_factor" min="0" max="0.2" step="0.01"
+                 value="{{ config.THERMOSTAT.humidity_correction_factor }}">
+          <span class="hint">Ex: 0.05 → 1°C de correction pour 20% d'écart</span>
+        </div>
+      </div>
+
       <p style="font-size:0.82rem;color:var(--text-sub);margin:1rem 0 0.5rem">Plages horaires d'allumage automatique</p>
       <div style="display:grid;grid-template-columns:6rem 1fr 1fr;gap:0.5rem 1rem;align-items:center">
         <span style="font-size:0.75rem;color:var(--text-sub)">Jour</span>
@@ -622,6 +647,9 @@
       thermostat_temp_off:  parseFloat(getVal('thermostat_temp_off')),
       thermostat_min_on:    parseInt(getVal('thermostat_min_on')),
       thermostat_grace:     parseInt(getVal('thermostat_grace')),
+      thermostat_use_felt:  document.getElementById('thermostat_use_felt').checked,
+      thermostat_humidity_ref: parseFloat(getVal('thermostat_humidity_ref')),
+      thermostat_humidity_factor: parseFloat(getVal('thermostat_humidity_factor')),
       thermostat_schedule: {
         mon: { start: getVal('sched_mon_start'), end: getVal('sched_mon_end') },
         tue: { start: getVal('sched_tue_start'), end: getVal('sched_tue_end') },

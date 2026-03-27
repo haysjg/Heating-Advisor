@@ -149,6 +149,15 @@ def _handle_sensor_recovery(state: dict, email_cfg: dict) -> dict:
     return state
 
 
+def felt_temperature(temp: float, humidity: float, cfg: dict) -> float:
+    """Calcule la température ressentie en tenant compte de l'humidité."""
+    if not cfg.get("use_felt_temperature") or humidity is None:
+        return temp
+    ref = cfg.get("humidity_reference", 50.0)
+    factor = cfg.get("humidity_correction_factor", 0.05)
+    return round(temp + (humidity - ref) * factor, 1)
+
+
 def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, email_cfg: dict = None) -> None:
     """
     Vérifie la température intérieure et pilote le poêle.
@@ -194,10 +203,15 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     state = _handle_sensor_recovery(state, email_cfg)
 
     temp = indoor["temperature"]
+    humidity = indoor.get("humidity")
+    effective_temp = felt_temperature(temp, humidity, thermostat_cfg)
     temp_on = thermostat_cfg.get("temp_on", 20.0)
     temp_off = thermostat_cfg.get("temp_off", 22.9)
     min_on = thermostat_cfg.get("min_on_minutes", 90)
     grace = thermostat_cfg.get("end_of_schedule_grace_minutes", 45)
+
+    if thermostat_cfg.get("use_felt_temperature") and humidity is not None:
+        logger.debug("Thermostat : temp réelle=%.1f°C, humidité=%.0f%%, ressentie=%.1f°C", temp, humidity, effective_temp)
 
     in_schedule = is_in_schedule(thermostat_cfg)
 
@@ -230,10 +244,10 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
 
     if current == "off":
-        if in_schedule and temp < temp_on and recommendation == "poele":
+        if in_schedule and effective_temp < temp_on and recommendation == "poele":
             logger.info(
-                "Thermostat : allumage poêle (%.1f°C < %.1f°C, recommandation=%s)",
-                temp, temp_on, recommendation,
+                "Thermostat : allumage poêle (ressenti %.1f°C < %.1f°C, réel %.1f°C, recommandation=%s)",
+                effective_temp, temp_on, temp, recommendation,
             )
             ha_client.turn_on(ha_cfg)
             _save_state({
@@ -243,10 +257,10 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             })
     else:  # current == "on"
         if in_schedule:
-            if temp >= temp_off and on_minutes >= min_on:
+            if effective_temp >= temp_off and on_minutes >= min_on:
                 logger.info(
-                    "Thermostat : extinction poêle (%.1f°C >= %.1f°C, allumé depuis %.0f min)",
-                    temp, temp_off, on_minutes,
+                    "Thermostat : extinction poêle (ressenti %.1f°C >= %.1f°C, réel %.1f°C, allumé depuis %.0f min)",
+                    effective_temp, temp_off, temp, on_minutes,
                 )
                 ha_client.turn_off(ha_cfg)
                 _save_state({
