@@ -73,7 +73,7 @@ def _run_thermostat():
     try:
         data = get_analysis()
         recommendation = data.get("recommendation", {}).get("system", "none")
-        thermostat_module.check_and_apply(config.HOME_ASSISTANT, config.THERMOSTAT, recommendation)
+        thermostat_module.check_and_apply(config.HOME_ASSISTANT, config.THERMOSTAT, recommendation, config.EMAIL)
     except Exception as e:
         logger.error("Thermostat check échoué : %s", e)
 
