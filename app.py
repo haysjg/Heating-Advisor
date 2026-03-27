@@ -238,15 +238,14 @@ def api_ha_state():
 @app.route("/api/thermostat/diagnose")
 def api_thermostat_diagnose():
     from modules.thermostat import get_state, is_in_schedule
-    import pytz
+    from zoneinfo import ZoneInfo
     state = get_state()
     indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
     ha_state = ha_client.get_state(config.HOME_ASSISTANT)
     job = _scheduler.get_job("thermostat_job")
     next_run = None
     if job and job.next_run_time:
-        tz_paris = pytz.timezone("Europe/Paris")
-        next_run = job.next_run_time.astimezone(tz_paris).strftime("%H:%M:%S")
+        next_run = job.next_run_time.astimezone(ZoneInfo("Europe/Paris")).strftime("%H:%M:%S")
     return jsonify({
         "thermostat_enabled": config.THERMOSTAT.get("enabled", False),
         "in_schedule": is_in_schedule(config.THERMOSTAT),
