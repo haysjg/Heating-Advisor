@@ -282,7 +282,7 @@ def api_config_save():
             },
             "HOME_ASSISTANT": {
                 "enabled": bool(data.get("ha_enabled", False)),
-                "url": str(data.get("ha_url", config.HOME_ASSISTANT.get("url", "http://192.168.1.2:8123"))).rstrip("/"),
+                "url": str(data.get("ha_url", config.HOME_ASSISTANT.get("url", "http://192.168.1.2:8123"))).strip().rstrip("/"),
                 "token": final_ha_token,
                 "poele_entity_id": str(data.get("ha_entity_id", config.HOME_ASSISTANT.get("poele_entity_id", ""))),
                 "auto_control": config.HOME_ASSISTANT.get("auto_control", False),
