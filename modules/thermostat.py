@@ -221,12 +221,19 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     real_on = ha_state is not None and ha_state.get("state") not in ("off", "unavailable", "unknown", None)
     current = state.get("state", "off")
     if real_on and current == "off":
-        logger.info("Thermostat : poêle allumé manuellement, synchronisation état → on")
-        pseudo_on = (datetime.now() - timedelta(minutes=min_on)).isoformat()
+        was_suspended = bool(state.get("suspended_until"))
+        if was_suspended:
+            logger.info(
+                "Thermostat : poêle rallumé manuellement pendant la suspension → "
+                "suspension annulée, min_on_minutes repart de zéro"
+            )
+        else:
+            logger.info("Thermostat : poêle allumé manuellement, synchronisation état → on")
         state = {
             **state,
             "state": "on",
-            "last_turned_on": state.get("last_turned_on") or pseudo_on,
+            "last_turned_on": datetime.now().isoformat(),
+            "suspended_until": None,
         }
         _save_state(state)
         current = "on"
