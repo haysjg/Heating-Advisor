@@ -24,7 +24,7 @@ def _request(url: str, token: str, method: str = "GET", body: dict = None) -> di
         },
         method=method,
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())
 
 
