@@ -79,7 +79,29 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str) -> 
 
     in_schedule = is_in_schedule(thermostat_cfg)
     state = _load_state()
+
+    # ── Synchronisation avec l'état réel HA ──────────────────
+    ha_state = ha_client.get_state(ha_cfg)
+    real_on = ha_state is not None and ha_state.get("state") not in ("off", "unavailable", "unknown", None)
     current = state.get("state", "off")
+    if real_on and current == "off":
+        logger.info("Thermostat : poêle allumé manuellement, synchronisation état → on")
+        state = {
+            "state": "on",
+            "last_turned_on": state.get("last_turned_on") or datetime.now().isoformat(),
+            "last_turned_off": state.get("last_turned_off"),
+        }
+        _save_state(state)
+        current = "on"
+    elif not real_on and current == "on":
+        logger.info("Thermostat : poêle éteint manuellement, synchronisation état → off")
+        state = {
+            "state": "off",
+            "last_turned_on": state.get("last_turned_on"),
+            "last_turned_off": state.get("last_turned_off") or datetime.now().isoformat(),
+        }
+        _save_state(state)
+        current = "off"
     last_on_str = state.get("last_turned_on")
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
     on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
