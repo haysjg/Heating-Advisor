@@ -107,7 +107,7 @@ main {
 }
 .badge-gray { color: var(--text-sub); }
 
-/* ── Tomorrow card ────────────────────────────────────────── */
+/* ── Today / Tomorrow labels ──────────────────────────────── */
 .card-tomorrow {
   display: flex;
   align-items: flex-start;
@@ -115,18 +115,20 @@ main {
   position: relative;
   opacity: 0.92;
 }
-.tomorrow-label {
+.card-labeled { position: relative; }
+.today-label, .tomorrow-label {
   position: absolute;
   top: -1px;
   right: 1rem;
-  background: var(--blue);
-  color: #fff;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   padding: 0.15rem 0.5rem;
   border-radius: 0 0 6px 6px;
+  color: #fff;
 }
+.today-label    { background: var(--text-sub); }
+.tomorrow-label { background: var(--blue); }
 
 /* ── Grid ─────────────────────────────────────────────────── */
 .grid-2 {

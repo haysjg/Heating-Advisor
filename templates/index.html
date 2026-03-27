@@ -43,7 +43,8 @@
 
     {# ── Recommandation principale ── #}
     {% set rec = data.recommendation %}
-    <section class="card card-{{ rec.level }}{% if rec.system == 'none' %} card-night{% endif %}" id="recommendation">
+    <section class="card card-{{ rec.level }}{% if rec.system == 'none' %} card-night{% endif %} card-labeled" id="recommendation">
+      <div class="today-label">AUJOURD'HUI</div>
       <div class="rec-icon">
         {% if rec.system == "clim" %}❄️{% elif rec.system == "poele" %}🔥{% elif rec.system == "none" %}🌙{% else %}⚠️{% endif %}
       </div>
@@ -211,7 +212,8 @@
     {% endif %}
 
     {# ── Comparatif des coûts ── #}
-    <section class="card">
+    <section class="card card-labeled">
+      <div class="today-label">AUJOURD'HUI</div>
       <h3>📊 Comparatif coût horaire</h3>
       <div class="grid-2">
 
