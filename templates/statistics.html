@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Statistiques – {{ config.LOCATION.city }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    .range-bar {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .range-btn {
+      padding: 0.4rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg2);
+      color: var(--text-sub);
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .range-btn:hover {
+      border-color: var(--blue);
+      color: var(--text);
+    }
+    .range-btn.active {
+      background: rgba(59,130,246,0.15);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+    .chart-wrapper {
+      position: relative;
+      height: 420px;
+    }
+    .legend-row {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+      color: var(--text-sub);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .stat-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+    }
+    .stat-label {
+      font-size: 0.78rem;
+      color: var(--text-sub);
+      margin: 0 0 0.2rem;
+    }
+    .stat-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .stat-unit {
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      font-weight: 400;
+    }
+    .no-data {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-sub);
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <span class="header-icon">📊</span>
+      <div>
+        <h1>Statistiques</h1>
+        <p class="header-sub">{{ config.LOCATION.city }} — Historique températures &amp; poêle</p>
+      </div>
+      <a href="/" class="btn-refresh" style="text-decoration:none">← Tableau de bord</a>
+      <a href="/config" class="btn-refresh" style="text-decoration:none">⚙️ Config</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem;">
+        <div>
+          <h2 style="margin:0 0 0.25rem; font-size:1rem;">Températures &amp; état du poêle</h2>
+          <p style="margin:0; font-size:0.83rem; color:var(--text-sub);">Enregistrement toutes les ~10 min</p>
+        </div>
+        <div class="range-bar">
+          <button class="range-btn" onclick="loadData(6)"   data-h="6">6h</button>
+          <button class="range-btn active" onclick="loadData(24)" data-h="24">24h</button>
+          <button class="range-btn" onclick="loadData(48)"  data-h="48">48h</button>
+          <button class="range-btn" onclick="loadData(168)" data-h="168">7 jours</button>
+        </div>
+      </div>
+
+      <div class="legend-row" style="margin-bottom:1rem;">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#60a5fa;"></div>
+          <span>Température extérieure</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#fb923c;"></div>
+          <span>Température intérieure</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:rgba(34,197,94,0.35); border:1px solid #22c55e;"></div>
+          <span>Poêle allumé</span>
+        </div>
+      </div>
+
+      <div class="chart-wrapper">
+        <canvas id="statsChart"></canvas>
+      </div>
+
+      <div id="no-data" class="no-data" style="display:none;">
+        Aucune donnée disponible pour cette période.<br>
+        <span style="font-size:0.82rem;">L'historique commence à s'accumuler dès le premier enregistrement (toutes les 10 min).</span>
+      </div>
+
+      <div id="stats-summary" class="stat-grid" style="display:none;"></div>
+    </div>
+  </main>
+
+  <script>
+    let chart = null;
+
+    function setActiveBtn(hours) {
+      document.querySelectorAll('.range-btn').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.h) === hours);
+      });
+    }
+
+    function formatDate(ts, hours) {
+      const d = new Date(ts);
+      if (hours <= 24) {
+        return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      }
+      return d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' })
+           + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function buildSummary(records) {
+      const outdoorTemps = records.map(r => r.outdoor_temp).filter(v => v !== null && v !== undefined);
+      const indoorTemps  = records.map(r => r.indoor_temp).filter(v => v !== null && v !== undefined);
+      const onCount      = records.filter(r => r.poele_state === 'on').length;
+      const totalMin     = records.length * 10;
+      const onMin        = onCount * 10;
+
+      const stats = [];
+      if (outdoorTemps.length) {
+        stats.push({ label: 'Ext. min', value: Math.min(...outdoorTemps).toFixed(1), unit: '°C' });
+        stats.push({ label: 'Ext. max', value: Math.max(...outdoorTemps).toFixed(1), unit: '°C' });
+        const avg = outdoorTemps.reduce((a, b) => a + b, 0) / outdoorTemps.length;
+        stats.push({ label: 'Ext. moy', value: avg.toFixed(1), unit: '°C' });
+      }
+      if (indoorTemps.length) {
+        stats.push({ label: 'Int. min', value: Math.min(...indoorTemps).toFixed(1), unit: '°C' });
+        stats.push({ label: 'Int. max', value: Math.max(...indoorTemps).toFixed(1), unit: '°C' });
+        const avg = indoorTemps.reduce((a, b) => a + b, 0) / indoorTemps.length;
+        stats.push({ label: 'Int. moy', value: avg.toFixed(1), unit: '°C' });
+      }
+      if (records.length) {
+        const pct = totalMin > 0 ? Math.round(onMin / totalMin * 100) : 0;
+        stats.push({ label: 'Poêle allumé', value: pct, unit: '%' });
+        const h = Math.floor(onMin / 60), m = onMin % 60;
+        stats.push({ label: 'Durée poêle', value: h > 0 ? `${h}h${m > 0 ? m : ''}` : `${m}min`, unit: '' });
+      }
+      return stats;
+    }
+
+    function renderSummary(stats) {
+      const el = document.getElementById('stats-summary');
+      if (!stats.length) { el.style.display = 'none'; return; }
+      el.style.display = 'grid';
+      el.innerHTML = stats.map(s => `
+        <div class="stat-card">
+          <p class="stat-label">${s.label}</p>
+          <p class="stat-value">${s.value}<span class="stat-unit">${s.unit ? ' ' + s.unit : ''}</span></p>
+        </div>
+      `).join('');
+    }
+
+    async function loadData(hours) {
+      setActiveBtn(hours);
+      document.getElementById('no-data').style.display = 'none';
+      document.getElementById('stats-summary').style.display = 'none';
+
+      let records = [];
+      try {
+        const res = await fetch(`/api/statistics?hours=${hours}`);
+        records = await res.json();
+      } catch (e) {
+        console.error('Erreur chargement statistiques', e);
+      }
+
+      if (!Array.isArray(records) || records.length === 0) {
+        document.getElementById('no-data').style.display = 'block';
+        if (chart) { chart.destroy(); chart = null; }
+        return;
+      }
+
+      const labels       = records.map(r => new Date(r.ts));
+      const outdoorData  = records.map(r => r.outdoor_temp);
+      const indoorData   = records.map(r => r.indoor_temp);
+      const poeleData    = records.map(r => r.poele_state === 'on' ? 1 : 0);
+
+      const hasIndoor = indoorData.some(v => v !== null && v !== undefined);
+
+      const datasets = [
+        {
+          label: 'Poêle allumé',
+          data: poeleData,
+          yAxisID: 'yPoele',
+          type: 'line',
+          stepped: true,
+          fill: true,
+          borderColor: 'rgba(34,197,94,0.6)',
+          backgroundColor: 'rgba(34,197,94,0.12)',
+          borderWidth: 1,
+          pointRadius: 0,
+          order: 3,
+          tension: 0,
+        },
+        {
+          label: 'Temp. extérieure',
+          data: outdoorData,
+          yAxisID: 'yTemp',
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96,165,250,0.08)',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: false,
+          tension: 0.3,
+          order: 1,
+        },
+      ];
+
+      if (hasIndoor) {
+        datasets.push({
+          label: 'Temp. intérieure',
+          data: indoorData,
+          yAxisID: 'yTemp',
+          borderColor: '#fb923c',
+          backgroundColor: 'rgba(251,146,60,0.08)',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: false,
+          tension: 0.3,
+          order: 2,
+        });
+      }
+
+      if (chart) { chart.destroy(); chart = null; }
+
+      const ctx = document.getElementById('statsChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1a1d27',
+              borderColor: '#2a2d3e',
+              borderWidth: 1,
+              titleColor: '#e2e8f0',
+              bodyColor: '#8892a4',
+              padding: 10,
+              callbacks: {
+                title: function(items) {
+                  const d = new Date(items[0].parsed.x);
+                  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                       + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                },
+                label: function(item) {
+                  if (item.dataset.yAxisID === 'yPoele') {
+                    return item.parsed.y === 1 ? '🔥 Poêle : allumé' : '  Poêle : éteint';
+                  }
+                  const val = item.parsed.y;
+                  if (val === null || val === undefined) return null;
+                  return `${item.dataset.label} : ${val.toFixed(1)} °C`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                tooltipFormat: 'dd/MM HH:mm',
+                displayFormats: {
+                  minute: 'HH:mm',
+                  hour: hours <= 48 ? 'HH:mm' : 'EEE dd/MM',
+                  day: 'EEE dd/MM',
+                },
+              },
+              ticks: {
+                color: '#8892a4',
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: hours <= 6 ? 7 : hours <= 24 ? 9 : hours <= 48 ? 9 : 8,
+              },
+              grid: { color: 'rgba(42,45,62,0.8)' },
+            },
+            yTemp: {
+              type: 'linear',
+              position: 'left',
+              ticks: {
+                color: '#8892a4',
+                callback: v => v.toFixed(0) + ' °C',
+              },
+              grid: { color: 'rgba(42,45,62,0.8)' },
+              title: {
+                display: true,
+                text: 'Température (°C)',
+                color: '#8892a4',
+                font: { size: 11 },
+              },
+            },
+            yPoele: {
+              type: 'linear',
+              position: 'right',
+              min: 0,
+              max: 1,
+              display: false,
+              grid: { drawOnChartArea: false },
+            },
+          },
+        },
+      });
+
+      renderSummary(buildSummary(records));
+    }
+
+    loadData(24);
+  </script>
+</body>
+</html>

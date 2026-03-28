@@ -19,6 +19,7 @@ from modules.overrides import apply as apply_overrides, load as load_overrides, 
 from modules.crypto import encrypt_password, is_configured
 import modules.homeassistant as ha_client
 import modules.thermostat as thermostat_module
+import modules.history as history_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -68,6 +69,18 @@ def _reschedule_notify():
         logger.info("Notifications email désactivées — aucun job planifié")
 
 
+def _record_history():
+    """Enregistre un point d'historique (températures + état poêle)."""
+    try:
+        data = get_analysis()
+        outdoor_temp = data.get("temperature")
+        indoor_temp = data.get("indoor", {}).get("temperature") if data.get("indoor") else None
+        poele_state = thermostat_module.get_state().get("state", "off")
+        history_module.record(outdoor_temp, indoor_temp, poele_state)
+    except Exception as e:
+        logger.error("History record échoué : %s", e)
+
+
 def _run_thermostat():
     """Vérifie la température intérieure et pilote le poêle via le thermostat."""
     try:
@@ -100,6 +113,23 @@ def _reschedule_thermostat():
 
 _reschedule_notify()
 _reschedule_thermostat()
+
+# ── Historique des températures ───────────────────────────
+_scheduler.add_job(
+    _record_history,
+    "interval",
+    minutes=10,
+    id="history_job",
+    misfire_grace_time=60,
+)
+# Purge hebdomadaire des données > 30 jours
+_scheduler.add_job(
+    lambda: history_module.purge_old(30),
+    CronTrigger(day_of_week="mon", hour=3, minute=0, timezone="Europe/Paris"),
+    id="history_purge_job",
+    misfire_grace_time=300,
+)
+logger.info("Historique : enregistrement toutes les 10 min")
 
 # Cache simple en mémoire pour éviter de surcharger les APIs
 _cache: dict = {"data": None, "expires_at": None}
@@ -320,6 +350,22 @@ def api_thermostat_toggle():
     _reschedule_thermostat()
     logger.info("Thermostat → %s", "activé" if enabled else "désactivé")
     return jsonify({"status": "ok", "enabled": enabled})
+
+
+@app.route("/statistics")
+def statistics_page():
+    return render_template("statistics.html", config=config)
+
+
+@app.route("/api/statistics")
+def api_statistics():
+    try:
+        hours = int(request.args.get("hours", 24))
+        hours = min(max(hours, 1), 168)  # entre 1h et 7 jours
+        data = history_module.get_history(hours)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/config")
