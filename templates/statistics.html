@@ -146,6 +146,7 @@
         <p class="header-sub">{{ config.LOCATION.city }} — Historique températures &amp; poêle</p>
       </div>
       <a href="/" class="btn-refresh" style="text-decoration:none">← Tableau de bord</a>
+      <button class="btn-refresh" onclick="refreshAll()">↻ Actualiser</button>
       <a href="/config" class="btn-refresh" style="text-decoration:none">⚙️ Config</a>
     </div>
   </header>
@@ -489,6 +490,13 @@
       }).join('');
 
       document.getElementById('daily-table').style.display = 'table';
+    }
+
+    function refreshAll() {
+      const activeBtn = document.querySelector('.range-btn.active');
+      const hours = activeBtn ? parseInt(activeBtn.dataset.h) : 24;
+      loadData(hours);
+      loadDailyTable();
     }
 
     loadData(24);
