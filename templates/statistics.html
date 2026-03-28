@@ -89,6 +89,52 @@
       color: var(--text-sub);
       font-size: 0.95rem;
     }
+    .daily-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .daily-table th {
+      text-align: left;
+      color: var(--text-sub);
+      font-weight: 500;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .daily-table td {
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid rgba(42,45,62,0.6);
+      color: var(--text);
+    }
+    .daily-table tr:last-child td { border-bottom: none; }
+    .tempo-badge {
+      display: inline-block;
+      padding: 0.15rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .tempo-BLUE    { background: rgba(59,130,246,0.15);  border: 1px solid rgba(59,130,246,0.4);  color: #60a5fa; }
+    .tempo-WHITE   { background: rgba(226,232,240,0.10); border: 1px solid rgba(226,232,240,0.3); color: #e2e8f0; }
+    .tempo-RED     { background: rgba(239,68,68,0.15);   border: 1px solid rgba(239,68,68,0.4);   color: #f87171; }
+    .tempo-UNKNOWN { background: rgba(100,116,139,0.10); border: 1px solid rgba(100,116,139,0.3); color: #94a3b8; }
+    .bar-on {
+      display: inline-block;
+      height: 8px;
+      background: #22c55e;
+      border-radius: 4px;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+    .bar-off {
+      display: inline-block;
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
   </style>
 </head>
 <body>
@@ -144,6 +190,27 @@
       </div>
 
       <div id="stats-summary" class="stat-grid" style="display:none;"></div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <h2 style="margin:0 0 1rem; font-size:1rem;">Résumé journalier</h2>
+      <div id="daily-no-data" class="no-data" style="display:none;">
+        Aucune donnée journalière disponible.
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="daily-table" id="daily-table" style="display:none;">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Jour Tempo</th>
+              <th>Poêle allumé</th>
+              <th>Poêle éteint</th>
+              <th>Répartition</th>
+            </tr>
+          </thead>
+          <tbody id="daily-tbody"></tbody>
+        </table>
+      </div>
     </div>
   </main>
 
@@ -366,7 +433,61 @@
       renderSummary(buildSummary(records));
     }
 
+    function fmtDuration(minutes) {
+      if (!minutes) return '—';
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      if (h === 0) return `${m} min`;
+      if (m === 0) return `${h} h`;
+      return `${h} h ${m} min`;
+    }
+
+    function fmtDate(iso) {
+      const d = new Date(iso + 'T12:00:00');
+      return d.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long' });
+    }
+
+    const TEMPO_LABELS = { BLUE: 'Bleu', WHITE: 'Blanc', RED: 'Rouge', UNKNOWN: '?' };
+
+    async function loadDailyTable() {
+      let rows = [];
+      try {
+        const res = await fetch('/api/statistics/daily?days=30');
+        rows = await res.json();
+      } catch (e) {
+        console.error('Erreur chargement résumé journalier', e);
+      }
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        document.getElementById('daily-no-data').style.display = 'block';
+        return;
+      }
+
+      const tbody = document.getElementById('daily-tbody');
+      tbody.innerHTML = rows.map(r => {
+        const total = (r.on_minutes || 0) + (r.off_minutes || 0);
+        const pctOn = total > 0 ? Math.round((r.on_minutes || 0) / total * 100) : 0;
+        const color = r.tempo_color || 'UNKNOWN';
+        const barOnWidth = Math.max(pctOn, pctOn > 0 ? 2 : 0);
+        const barOffWidth = Math.max(100 - pctOn, pctOn < 100 ? 2 : 0);
+        return `<tr>
+          <td>${fmtDate(r.date)}</td>
+          <td><span class="tempo-badge tempo-${color}">${TEMPO_LABELS[color] || color}</span></td>
+          <td style="color:#22c55e; font-weight:600;">${fmtDuration(r.on_minutes)}</td>
+          <td style="color:var(--text-sub);">${fmtDuration(r.off_minutes)}</td>
+          <td style="min-width:120px;">
+            <span class="bar-on" style="width:${barOnWidth}px;" title="Allumé ${pctOn}%"></span>
+            <span class="bar-off" style="width:${barOffWidth}px;" title="Éteint ${100 - pctOn}%"></span>
+            <span style="font-size:0.78rem; color:var(--text-sub); margin-left:0.3rem;">${pctOn}%</span>
+          </td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('daily-table').style.display = 'table';
+    }
+
     loadData(24);
+    loadDailyTable();
   </script>
 </body>
 </html>

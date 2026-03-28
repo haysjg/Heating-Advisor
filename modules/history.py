@@ -19,27 +19,33 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_FILE)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS readings (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts          TEXT    NOT NULL,
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts           TEXT    NOT NULL,
             outdoor_temp REAL,
             indoor_temp  REAL,
-            poele_state  TEXT
+            poele_state  TEXT,
+            tempo_color  TEXT
         )
     """)
+    # Migration : ajoute la colonne si elle n'existe pas encore
+    try:
+        conn.execute("ALTER TABLE readings ADD COLUMN tempo_color TEXT")
+    except sqlite3.OperationalError:
+        pass  # colonne déjà présente
     conn.commit()
     return conn
 
 
-def record(outdoor_temp, indoor_temp, poele_state: str) -> None:
+def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None) -> None:
     """Insère une lecture. Appelé par le scheduler toutes les ~10 min."""
     try:
         with _connect() as conn:
             conn.execute(
-                "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state) VALUES (?, ?, ?, ?)",
-                (datetime.now().isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state),
+                "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state, tempo_color) VALUES (?, ?, ?, ?, ?)",
+                (datetime.now().isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color),
             )
-        logger.debug("History : enregistrement outdoor=%.1f indoor=%s poele=%s",
-                     outdoor_temp or 0, indoor_temp, poele_state)
+        logger.debug("History : enregistrement outdoor=%.1f indoor=%s poele=%s tempo=%s",
+                     outdoor_temp or 0, indoor_temp, poele_state, tempo_color)
     except Exception as e:
         logger.error("History : erreur enregistrement : %s", e)
 
@@ -50,15 +56,53 @@ def get_history(hours: int = 24) -> list[dict]:
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT ts, outdoor_temp, indoor_temp, poele_state FROM readings WHERE ts >= ? ORDER BY ts",
+                "SELECT ts, outdoor_temp, indoor_temp, poele_state, tempo_color FROM readings WHERE ts >= ? ORDER BY ts",
                 (since,),
             ).fetchall()
         return [
-            {"ts": r[0], "outdoor_temp": r[1], "indoor_temp": r[2], "poele_state": r[3]}
+            {"ts": r[0], "outdoor_temp": r[1], "indoor_temp": r[2], "poele_state": r[3], "tempo_color": r[4]}
             for r in rows
         ]
     except Exception as e:
         logger.error("History : erreur lecture : %s", e)
+        return []
+
+
+def get_daily_summary(days: int = 30) -> list[dict]:
+    """
+    Retourne un résumé par jour sur les N derniers jours :
+    date, on_minutes, off_minutes, tempo_color (couleur majoritaire de la journée).
+    """
+    since = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    substr(ts, 1, 10)   AS day,
+                    SUM(CASE WHEN poele_state = 'on'  THEN 1 ELSE 0 END) * 10 AS on_minutes,
+                    SUM(CASE WHEN poele_state = 'off' THEN 1 ELSE 0 END) * 10 AS off_minutes,
+                    tempo_color
+                FROM readings
+                WHERE ts >= ?
+                GROUP BY day, tempo_color
+                ORDER BY day DESC, COUNT(*) DESC
+                """,
+                (since,),
+            ).fetchall()
+
+        # Agrège : une ligne par jour (garde la couleur Tempo majoritaire)
+        days_dict: dict = {}
+        for day, on_min, off_min, color in rows:
+            if day not in days_dict:
+                days_dict[day] = {"date": day, "on_minutes": on_min, "off_minutes": off_min, "tempo_color": color}
+            else:
+                days_dict[day]["on_minutes"] += on_min
+                days_dict[day]["off_minutes"] += off_min
+
+        return sorted(days_dict.values(), key=lambda d: d["date"], reverse=True)
+    except Exception as e:
+        logger.error("History : erreur résumé journalier : %s", e)
         return []
 
 

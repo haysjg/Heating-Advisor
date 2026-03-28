@@ -70,13 +70,14 @@ def _reschedule_notify():
 
 
 def _record_history():
-    """Enregistre un point d'historique (températures + état poêle)."""
+    """Enregistre un point d'historique (températures + état poêle + couleur Tempo)."""
     try:
         data = get_analysis()
         outdoor_temp = data.get("temperature")
         indoor_temp = data.get("indoor", {}).get("temperature") if data.get("indoor") else None
         poele_state = thermostat_module.get_state().get("state", "off")
-        history_module.record(outdoor_temp, indoor_temp, poele_state)
+        tempo_color = data.get("tempo", {}).get("color")
+        history_module.record(outdoor_temp, indoor_temp, poele_state, tempo_color)
     except Exception as e:
         logger.error("History record échoué : %s", e)
 
@@ -363,6 +364,17 @@ def api_statistics():
         hours = int(request.args.get("hours", 24))
         hours = min(max(hours, 1), 168)  # entre 1h et 7 jours
         data = history_module.get_history(hours)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/statistics/daily")
+def api_statistics_daily():
+    try:
+        days = int(request.args.get("days", 30))
+        days = min(max(days, 1), 30)
+        data = history_module.get_daily_summary(days)
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
