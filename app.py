@@ -165,10 +165,11 @@ def index():
             thermostat_state["everyone_away"] = present is False
         else:
             thermostat_state["everyone_away"] = False
-        return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state)
+        next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
+        return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state, next_schedule_start=next_start)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
-        return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={})
+        return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={}, next_schedule_start=None)
 
 
 @app.route("/api/data")

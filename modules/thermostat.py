@@ -159,6 +159,25 @@ def felt_temperature(temp: float, humidity: float, cfg: dict) -> float:
     return round(temp + (humidity - ref) * factor, 1)
 
 
+def next_schedule_start(cfg: dict) -> str | None:
+    """Retourne l'ISO datetime du prochain début de plage horaire (dans les 7 prochains jours)."""
+    now = datetime.now()
+    for delta in range(8):
+        check = now + timedelta(days=delta)
+        day_key = DAY_KEYS[check.weekday()]
+        schedule = cfg.get("schedule", {}).get(day_key)
+        if not schedule:
+            continue
+        try:
+            start_h, start_m = map(int, schedule["start"].split(":"))
+            start = check.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+            if start > now:
+                return start.isoformat()
+        except Exception:
+            continue
+    return None
+
+
 def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, email_cfg: dict = None) -> None:
     """
     Vérifie la température intérieure et pilote le poêle.

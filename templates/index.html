@@ -14,6 +14,20 @@
     .thermostat-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; }
     .thermostat-badge-on  { background: rgba(251,146,60,0.15); border: 1px solid #fb923c; color: #fb923c; border-radius: 6px; padding: 0.15rem 0.5rem; font-size: 0.8rem; font-weight: 600; }
     .thermostat-badge-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; border-radius: 6px; padding: 0.15rem 0.5rem; font-size: 0.8rem; }
+    .countdown-banner {
+      margin: 1rem 1rem 0;
+      padding: 0.7rem 1.25rem;
+      border-radius: 12px;
+      display: none;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.92rem;
+      font-weight: 500;
+    }
+    .countdown-banner-suspend  { background: rgba(251,146,60,0.12);  border: 1px solid rgba(251,146,60,0.4);  color: #fb923c; }
+    .countdown-banner-schedule { background: rgba(59,130,246,0.08);  border: 1px solid rgba(59,130,246,0.3);  color: #60a5fa; }
+    .countdown-banner-away     { background: rgba(100,116,139,0.10); border: 1px solid rgba(100,116,139,0.3); color: #94a3b8; }
+    .countdown-timer { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.02em; }
   </style>
 </head>
 <body>
@@ -39,6 +53,66 @@
   </header>
 
   <main>
+
+  {# ── Bannière countdown ── #}
+  {% if config.THERMOSTAT.enabled %}
+  <div id="countdown-banner" class="countdown-banner"></div>
+  <script>
+  (function() {
+    const suspendedUntil  = {{ (thermostat_state.suspended_until or 'null') | tojson }};
+    const nextScheduleISO = {{ (next_schedule_start or 'null') | tojson }};
+    const everyoneAway    = {{ 'true' if thermostat_state.get('everyone_away') else 'false' }};
+    const stoveOn         = {{ 'true' if thermostat_state.get('state') == 'on' else 'false' }};
+
+    const banner = document.getElementById('countdown-banner');
+
+    function fmtDuration(ms) {
+      if (ms <= 0) return null;
+      const totalMin = Math.floor(ms / 60000);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      if (h > 0) return h + 'h ' + String(m).padStart(2, '0') + 'min';
+      return m + 'min';
+    }
+
+    function update() {
+      const now = Date.now();
+      banner.style.display = 'none';
+
+      if (everyoneAway) {
+        banner.className = 'countdown-banner countdown-banner-away';
+        banner.innerHTML = '🚗 Mode absent — thermostat en pause jusqu\'au retour';
+        banner.style.display = 'flex';
+        return;
+      }
+
+      if (suspendedUntil) {
+        const ms = new Date(suspendedUntil).getTime() - now;
+        if (ms > 0) {
+          banner.className = 'countdown-banner countdown-banner-suspend';
+          banner.innerHTML = '⏸ Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
+          banner.style.display = 'flex';
+          return;
+        }
+      }
+
+      if (!stoveOn && nextScheduleISO) {
+        const ms = new Date(nextScheduleISO).getTime() - now;
+        if (ms > 0) {
+          banner.className = 'countdown-banner countdown-banner-schedule';
+          banner.innerHTML = '⏰ Prochain créneau d\'allumage dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
+          banner.style.display = 'flex';
+          return;
+        }
+      }
+    }
+
+    update();
+    setInterval(update, 30000);
+  })();
+  </script>
+  {% endif %}
+
     {% if not data %}
       <div class="card card-error">
         <h2>Erreur de chargement</h2>
