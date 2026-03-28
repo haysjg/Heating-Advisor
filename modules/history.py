@@ -82,7 +82,9 @@ def get_daily_summary(days: int = 30) -> list[dict]:
                     substr(ts, 1, 10)   AS day,
                     SUM(CASE WHEN poele_state = 'on'  THEN 1 ELSE 0 END) * 10 AS on_minutes,
                     SUM(CASE WHEN poele_state = 'off' THEN 1 ELSE 0 END) * 10 AS off_minutes,
-                    tempo_color
+                    tempo_color,
+                    AVG(outdoor_temp)   AS avg_outdoor,
+                    AVG(indoor_temp)    AS avg_indoor
                 FROM readings
                 WHERE ts >= ?
                 GROUP BY day, tempo_color
@@ -93,9 +95,16 @@ def get_daily_summary(days: int = 30) -> list[dict]:
 
         # Agrège : une ligne par jour (garde la couleur Tempo majoritaire)
         days_dict: dict = {}
-        for day, on_min, off_min, color in rows:
+        for day, on_min, off_min, color, avg_out, avg_in in rows:
             if day not in days_dict:
-                days_dict[day] = {"date": day, "on_minutes": on_min, "off_minutes": off_min, "tempo_color": color}
+                days_dict[day] = {
+                    "date": day,
+                    "on_minutes": on_min,
+                    "off_minutes": off_min,
+                    "tempo_color": color,
+                    "avg_outdoor_temp": round(avg_out, 1) if avg_out is not None else None,
+                    "avg_indoor_temp": round(avg_in, 1) if avg_in is not None else None,
+                }
             else:
                 days_dict[day]["on_minutes"] += on_min
                 days_dict[day]["off_minutes"] += off_min

@@ -206,6 +206,8 @@
               <th>Poêle allumé</th>
               <th>Poêle éteint</th>
               <th>Répartition</th>
+              <th>Moy. ext.</th>
+              <th>Moy. int.</th>
             </tr>
           </thead>
           <tbody id="daily-tbody"></tbody>
@@ -480,6 +482,8 @@
             <span class="bar-off" style="width:${barOffWidth}px;" title="Éteint ${100 - pctOn}%"></span>
             <span style="font-size:0.78rem; color:var(--text-sub); margin-left:0.3rem;">${pctOn}%</span>
           </td>
+          <td style="color:#60a5fa;">${r.avg_outdoor_temp !== null && r.avg_outdoor_temp !== undefined ? r.avg_outdoor_temp.toFixed(1) + ' °C' : '—'}</td>
+          <td style="color:#fb923c;">${r.avg_indoor_temp  !== null && r.avg_indoor_temp  !== undefined ? r.avg_indoor_temp.toFixed(1)  + ' °C' : '—'}</td>
         </tr>`;
       }).join('');
 
