@@ -257,6 +257,22 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
     on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
 
+    # ── Mode absent ───────────────────────────────────────────
+    if thermostat_cfg.get("presence_enabled"):
+        person_entities = thermostat_cfg.get("person_entities", [])
+        present = ha_client.get_presence(ha_cfg, person_entities)
+        if present is False:
+            logger.debug("Thermostat : tout le monde absent, thermostat en pause")
+            if current == "on":
+                logger.info("Thermostat : extinction poêle — tout le monde absent")
+                ha_client.turn_off(ha_cfg)
+                _save_state({
+                    **state,
+                    "state": "off",
+                    "last_turned_off": datetime.now().isoformat(),
+                })
+            return
+
     # ── Vérification suspension ───────────────────────────────
     suspended_until_str = state.get("suspended_until")
     if suspended_until_str:

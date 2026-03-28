@@ -548,6 +548,33 @@
         </div>
       </div>
 
+      <hr class="section-divider" style="margin:1rem 0">
+
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+        <input type="checkbox" id="thermostat_presence_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.THERMOSTAT.presence_enabled %}checked{% endif %}>
+        <label for="thermostat_presence_enabled" style="font-size:0.9rem;cursor:pointer">
+          Activer la détection de présence (mode absent)
+        </label>
+      </div>
+      <p style="font-size:0.78rem;color:var(--text-sub);margin:0 0 0.75rem">
+        Si activé, le thermostat s'éteint quand tout le monde est absent et reprend au retour.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Entité personne 1 (HA)</label>
+          <input type="text" id="presence_person_1" placeholder="person.prenom"
+                 value="{{ config.THERMOSTAT.person_entities[0] if config.THERMOSTAT.person_entities|length > 0 else '' }}">
+          <span class="hint">Ex : person.jean_gabriel</span>
+        </div>
+        <div class="form-group">
+          <label>Entité personne 2 (HA)</label>
+          <input type="text" id="presence_person_2" placeholder="person.prenom"
+                 value="{{ config.THERMOSTAT.person_entities[1] if config.THERMOSTAT.person_entities|length > 1 else '' }}">
+          <span class="hint">Laisser vide si une seule personne</span>
+        </div>
+      </div>
+
       <p style="font-size:0.82rem;color:var(--text-sub);margin:1rem 0 0.5rem">Plages horaires d'allumage automatique</p>
       <div style="display:grid;grid-template-columns:6rem 1fr 1fr;gap:0.5rem 1rem;align-items:center">
         <span style="font-size:0.75rem;color:var(--text-sub)">Jour</span>
@@ -654,6 +681,9 @@
       thermostat_temp_off:  parseFloat(getVal('thermostat_temp_off')),
       thermostat_min_on:    parseInt(getVal('thermostat_min_on')),
       thermostat_grace:     parseInt(getVal('thermostat_grace')),
+      thermostat_suspend_hours: parseFloat(getVal('thermostat_suspend_hours')),
+      thermostat_presence_enabled: document.getElementById('thermostat_presence_enabled').checked,
+      person_entities: [getVal('presence_person_1'), getVal('presence_person_2')].filter(v => v.trim() !== ''),
       thermostat_use_felt:  document.getElementById('thermostat_use_felt').checked,
       thermostat_humidity_ref: parseFloat(getVal('thermostat_humidity_ref')),
       thermostat_humidity_factor: parseFloat(getVal('thermostat_humidity_factor')),

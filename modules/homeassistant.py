@@ -121,6 +121,29 @@ def get_indoor_climate(cfg: dict) -> dict | None:
     return result or None
 
 
+def get_presence(cfg: dict, person_entities: list) -> bool | None:
+    """
+    Retourne True si au moins une personne est à la maison,
+    False si tout le monde est absent, None en cas d'erreur ou config manquante.
+    """
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return None
+    if not person_entities:
+        return None
+    try:
+        for entity_id in person_entities:
+            state = _request(
+                f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
+                cfg["token"],
+            )
+            if state.get("state") == "home":
+                return True
+        return False
+    except Exception as e:
+        logger.error("HA get_presence échoué : %s", e)
+        return None
+
+
 def apply_recommendation(cfg: dict, system: str) -> bool:
     """
     Applique la recommandation du Heating Advisor au poêle.

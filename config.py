@@ -87,6 +87,8 @@ THERMOSTAT = {
     "end_of_schedule_grace_minutes": 45,  # durée minimale ON avant extinction fin de plage
     "check_interval_minutes": 10,         # fréquence de vérification
     "manual_off_suspend_hours": 4,        # suspension du thermostat après extinction manuelle (heures)
+    "presence_enabled": False,            # mode absent : thermostat en pause si tout le monde est parti
+    "person_entities": [],                # entités HA person à surveiller (ex. ["person.jg", "person.carine"])
     "use_felt_temperature": True,         # utiliser la température ressentie (temp + correction humidité)
     "humidity_reference": 50.0,           # humidité de référence (%)
     "humidity_correction_factor": 0.05,   # correction °C par % d'écart à la référence

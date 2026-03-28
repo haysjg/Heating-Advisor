@@ -135,6 +135,16 @@
               <button onclick="resumeThermostat()" style="margin-left:0.5rem;background:none;border:1px solid #fb923c;color:#fb923c;border-radius:6px;padding:0.1rem 0.5rem;cursor:pointer;font-size:0.8rem">Reprendre</button>
             </p>
           {% endif %}
+          {% if config.THERMOSTAT.presence_enabled %}
+            <p class="value-sub">
+              Présence :
+              {% if thermostat_state.everyone_away %}
+                <span style="color:#fb923c">🚗 Tout le monde absent — thermostat en pause</span>
+              {% else %}
+                <span style="color:#4ade80">🏠 Quelqu'un à la maison</span>
+              {% endif %}
+            </p>
+          {% endif %}
           {% if not config.THERMOSTAT.enabled %}
             <p class="value-sub" style="color:#64748b">Thermostat désactivé — activez-le avec le bouton en haut.</p>
           {% endif %}

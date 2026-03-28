@@ -160,6 +160,11 @@ def index():
     try:
         data = get_analysis()
         thermostat_state = thermostat_module.get_state()
+        if config.THERMOSTAT.get("presence_enabled"):
+            present = ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []))
+            thermostat_state["everyone_away"] = present is False
+        else:
+            thermostat_state["everyone_away"] = False
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
@@ -268,6 +273,8 @@ def api_thermostat_diagnose():
         ) if indoor and indoor.get("temperature") is not None else None,
         "next_check": next_run,
         "suspended_until": state.get("suspended_until"),
+        "presence_enabled": config.THERMOSTAT.get("presence_enabled", False),
+        "everyone_away": ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", [])) is False if config.THERMOSTAT.get("presence_enabled") else None,
     })
 
 
@@ -409,6 +416,8 @@ def api_config_save():
                 "min_on_minutes": int(data.get("thermostat_min_on", config.THERMOSTAT.get("min_on_minutes", 90))),
                 "end_of_schedule_grace_minutes": int(data.get("thermostat_grace", config.THERMOSTAT.get("end_of_schedule_grace_minutes", 45))),
                 "manual_off_suspend_hours": float(data.get("thermostat_suspend_hours", config.THERMOSTAT.get("manual_off_suspend_hours", 4))),
+                "presence_enabled": bool(data.get("thermostat_presence_enabled", config.THERMOSTAT.get("presence_enabled", False))),
+                "person_entities": [e.strip() for e in data.get("person_entities", config.THERMOSTAT.get("person_entities", [])) if e.strip()],
                 "use_felt_temperature": bool(data.get("thermostat_use_felt", config.THERMOSTAT.get("use_felt_temperature", True))),
                 "humidity_reference": float(data.get("thermostat_humidity_ref", config.THERMOSTAT.get("humidity_reference", 50.0))),
                 "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),
