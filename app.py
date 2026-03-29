@@ -76,7 +76,7 @@ def _record_history():
         outdoor_temp = data.get("weather", {}).get("temperature")
         indoor_temp = data.get("indoor", {}).get("temperature") if data.get("indoor") else None
         poele_state = thermostat_module.get_state().get("state", "off")
-        tempo_color = data.get("tempo", {}).get("color")
+        tempo_color = data.get("tempo", {}).get("today", {}).get("color")
         history_module.record(outdoor_temp, indoor_temp, poele_state, tempo_color)
     except Exception as e:
         logger.error("History record échoué : %s", e)
