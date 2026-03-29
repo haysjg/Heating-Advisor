@@ -276,20 +276,58 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
     on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
 
-    # ── Mode absent ───────────────────────────────────────────
+    # ── Mode absent / proximité ───────────────────────────────
     if thermostat_cfg.get("presence_enabled"):
         person_entities = thermostat_cfg.get("person_entities", [])
-        present = ha_client.get_presence(ha_cfg, person_entities)
-        if present is False:
-            logger.debug("Thermostat : tout le monde absent, thermostat en pause")
+        nearby_zone = thermostat_cfg.get("nearby_zone_name", "")
+        no_ignition_after = thermostat_cfg.get("nearby_no_ignition_after", 20)
+        nearby_grace = thermostat_cfg.get("nearby_grace_minutes", 20)
+
+        if nearby_zone:
+            presence = ha_client.get_presence_extended(ha_cfg, person_entities, nearby_zone)
+        else:
+            raw = ha_client.get_presence(ha_cfg, person_entities)
+            presence = "home" if raw else "away" if raw is False else None
+
+        if presence == "home":
+            if state.get("nearby_restricted_since"):
+                state = {**state, "nearby_restricted_since": None}
+                _save_state(state)
+
+        elif presence == "nearby":
+            if datetime.now().hour >= no_ignition_after:
+                if not state.get("nearby_restricted_since"):
+                    state = {**state, "nearby_restricted_since": datetime.now().isoformat()}
+                    _save_state(state)
+                    logger.info("Thermostat : zone proximité après %dh — grâce %d min", no_ignition_after, nearby_grace)
+
+                restricted_min = (datetime.now() - datetime.fromisoformat(state["nearby_restricted_since"])).total_seconds() / 60
+
+                if restricted_min >= nearby_grace:
+                    logger.debug("Thermostat : zone proximité après %dh, grâce écoulée — pause", no_ignition_after)
+                    if current == "on":
+                        logger.info("Thermostat : extinction poêle — zone proximité après %dh (grâce écoulée)", no_ignition_after)
+                        ha_client.turn_off(ha_cfg)
+                        _save_state({**state, "state": "off", "last_turned_off": datetime.now().isoformat()})
+                    return
+                else:
+                    logger.debug("Thermostat : zone proximité après %dh, grâce encore %d min", no_ignition_after, int(nearby_grace - restricted_min))
+                    if current == "off":
+                        return  # pas de nouvel allumage pendant la grâce
+            else:
+                if state.get("nearby_restricted_since"):
+                    state = {**state, "nearby_restricted_since": None}
+                    _save_state(state)
+
+        elif presence == "away":
+            if state.get("nearby_restricted_since"):
+                state = {**state, "nearby_restricted_since": None}
+                _save_state(state)
+            logger.debug("Thermostat : tout le monde absent (hors zone), thermostat en pause")
             if current == "on":
                 logger.info("Thermostat : extinction poêle — tout le monde absent")
                 ha_client.turn_off(ha_cfg)
-                _save_state({
-                    **state,
-                    "state": "off",
-                    "last_turned_off": datetime.now().isoformat(),
-                })
+                _save_state({**state, "state": "off", "last_turned_off": datetime.now().isoformat()})
             return
 
     # ── Vérification suspension ───────────────────────────────

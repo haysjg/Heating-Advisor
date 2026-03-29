@@ -575,6 +575,27 @@
         </div>
       </div>
 
+      <div class="form-grid" style="margin-top:0.75rem">
+        <div class="form-group">
+          <label>Zone de proximité HA</label>
+          <input type="text" id="nearby_zone_name" placeholder="nearby"
+                 value="{{ config.THERMOSTAT.get('nearby_zone_name', 'nearby') }}">
+          <span class="hint">Slug de la zone HA (ex : nearby). Laisser vide pour désactiver.</span>
+        </div>
+        <div class="form-group">
+          <label>Pas d'allumage après (heure)</label>
+          <input type="number" id="nearby_no_ignition_after" min="0" max="23"
+                 value="{{ config.THERMOSTAT.get('nearby_no_ignition_after', 20) }}">
+          <span class="hint">Si tout le monde est en zone proximité après cette heure, pas d'allumage.</span>
+        </div>
+        <div class="form-group">
+          <label>Grâce proximité (minutes)</label>
+          <input type="number" id="nearby_grace_minutes" min="0" max="120"
+                 value="{{ config.THERMOSTAT.get('nearby_grace_minutes', 20) }}">
+          <span class="hint">Délai avant extinction si zone proximité + restriction horaire active.</span>
+        </div>
+      </div>
+
       <p style="font-size:0.82rem;color:var(--text-sub);margin:1rem 0 0.5rem">Plages horaires d'allumage automatique</p>
       <div style="display:grid;grid-template-columns:6rem 1fr 1fr;gap:0.5rem 1rem;align-items:center">
         <span style="font-size:0.75rem;color:var(--text-sub)">Jour</span>
@@ -684,6 +705,9 @@
       thermostat_suspend_hours: parseFloat(getVal('thermostat_suspend_hours')),
       thermostat_presence_enabled: document.getElementById('thermostat_presence_enabled').checked,
       person_entities: [getVal('presence_person_1'), getVal('presence_person_2')].filter(v => v.trim() !== ''),
+      nearby_zone_name: getVal('nearby_zone_name'),
+      nearby_no_ignition_after: parseInt(getVal('nearby_no_ignition_after')),
+      nearby_grace_minutes: parseInt(getVal('nearby_grace_minutes')),
       thermostat_use_felt:  document.getElementById('thermostat_use_felt').checked,
       thermostat_humidity_ref: parseFloat(getVal('thermostat_humidity_ref')),
       thermostat_humidity_factor: parseFloat(getVal('thermostat_humidity_factor')),

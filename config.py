@@ -89,6 +89,9 @@ THERMOSTAT = {
     "manual_off_suspend_hours": 4,        # suspension du thermostat après extinction manuelle (heures)
     "presence_enabled": False,            # mode absent : thermostat en pause si tout le monde est parti
     "person_entities": [],                # entités HA person à surveiller (ex. ["person.jg", "person.carine"])
+    "nearby_zone_name": "nearby",         # nom de la zone HA de proximité (slug, ex. "nearby")
+    "nearby_no_ignition_after": 20,       # heure à partir de laquelle la zone proximité = restriction (0-23)
+    "nearby_grace_minutes": 20,           # grâce avant extinction si tout le monde en zone proximité après l'heure
     "use_felt_temperature": True,         # utiliser la température ressentie (temp + correction humidité)
     "humidity_reference": 50.0,           # humidité de référence (%)
     "humidity_correction_factor": 0.05,   # correction °C par % d'écart à la référence

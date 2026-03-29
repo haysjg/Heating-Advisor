@@ -121,6 +121,36 @@ def get_indoor_climate(cfg: dict) -> dict | None:
     return result or None
 
 
+def get_presence_extended(cfg: dict, person_entities: list, nearby_zone_name: str) -> str | None:
+    """
+    Retourne le statut de présence étendu :
+    - "home"   : au moins une personne est à la maison (zone home)
+    - "nearby" : personne à la maison, mais au moins une dans la zone de proximité
+    - "away"   : tout le monde hors des deux zones
+    - None     : erreur ou config manquante
+    """
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return None
+    if not person_entities:
+        return None
+    try:
+        states = []
+        for entity_id in person_entities:
+            state = _request(
+                f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
+                cfg["token"],
+            )
+            states.append(state.get("state", "not_home"))
+        if any(s == "home" for s in states):
+            return "home"
+        if any(s == nearby_zone_name for s in states):
+            return "nearby"
+        return "away"
+    except Exception as e:
+        logger.error("HA get_presence_extended échoué : %s", e)
+        return None
+
+
 def get_presence(cfg: dict, person_entities: list) -> bool | None:
     """
     Retourne True si au moins une personne est à la maison,

@@ -192,10 +192,17 @@ def index():
         data = get_analysis()
         thermostat_state = thermostat_module.get_state()
         if config.THERMOSTAT.get("presence_enabled"):
-            present = ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []))
-            thermostat_state["everyone_away"] = present is False
+            nearby_zone = config.THERMOSTAT.get("nearby_zone_name", "")
+            if nearby_zone:
+                presence = ha_client.get_presence_extended(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), nearby_zone)
+            else:
+                raw = ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []))
+                presence = "home" if raw else "away" if raw is False else None
+            thermostat_state["everyone_away"] = presence == "away"
+            thermostat_state["presence_status"] = presence
         else:
             thermostat_state["everyone_away"] = False
+            thermostat_state["presence_status"] = None
         next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state, next_schedule_start=next_start)
     except Exception as e:
@@ -306,7 +313,23 @@ def api_thermostat_diagnose():
         "next_check": next_run,
         "suspended_until": state.get("suspended_until"),
         "presence_enabled": config.THERMOSTAT.get("presence_enabled", False),
-        "everyone_away": ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", [])) is False if config.THERMOSTAT.get("presence_enabled") else None,
+        "nearby_zone_name": config.THERMOSTAT.get("nearby_zone_name", ""),
+        "nearby_no_ignition_after": config.THERMOSTAT.get("nearby_no_ignition_after", 20),
+        "nearby_grace_minutes": config.THERMOSTAT.get("nearby_grace_minutes", 20),
+        "presence_status": (
+            ha_client.get_presence_extended(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), config.THERMOSTAT.get("nearby_zone_name", ""))
+            if config.THERMOSTAT.get("presence_enabled") and config.THERMOSTAT.get("nearby_zone_name")
+            else ("away" if ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", [])) is False else "home")
+            if config.THERMOSTAT.get("presence_enabled")
+            else None
+        ),
+        "everyone_away": (
+            ha_client.get_presence_extended(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), config.THERMOSTAT.get("nearby_zone_name", "")) == "away"
+            if config.THERMOSTAT.get("presence_enabled") and config.THERMOSTAT.get("nearby_zone_name")
+            else ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", [])) is False
+            if config.THERMOSTAT.get("presence_enabled")
+            else None
+        ),
     })
 
 
@@ -477,6 +500,9 @@ def api_config_save():
                 "manual_off_suspend_hours": float(data.get("thermostat_suspend_hours", config.THERMOSTAT.get("manual_off_suspend_hours", 4))),
                 "presence_enabled": bool(data.get("thermostat_presence_enabled", config.THERMOSTAT.get("presence_enabled", False))),
                 "person_entities": [e.strip() for e in data.get("person_entities", config.THERMOSTAT.get("person_entities", [])) if e.strip()],
+                "nearby_zone_name": str(data.get("nearby_zone_name", config.THERMOSTAT.get("nearby_zone_name", "nearby"))).strip(),
+                "nearby_no_ignition_after": int(data.get("nearby_no_ignition_after", config.THERMOSTAT.get("nearby_no_ignition_after", 20))),
+                "nearby_grace_minutes": int(data.get("nearby_grace_minutes", config.THERMOSTAT.get("nearby_grace_minutes", 20))),
                 "use_felt_temperature": bool(data.get("thermostat_use_felt", config.THERMOSTAT.get("use_felt_temperature", True))),
                 "humidity_reference": float(data.get("thermostat_humidity_ref", config.THERMOSTAT.get("humidity_reference", 50.0))),
                 "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),
