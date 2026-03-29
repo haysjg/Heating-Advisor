@@ -73,7 +73,7 @@ def _record_history():
     """Enregistre un point d'historique (températures + état poêle + couleur Tempo)."""
     try:
         data = get_analysis()
-        outdoor_temp = data.get("temperature")
+        outdoor_temp = data.get("weather", {}).get("temperature")
         indoor_temp = data.get("indoor", {}).get("temperature") if data.get("indoor") else None
         poele_state = thermostat_module.get_state().get("state", "off")
         tempo_color = data.get("tempo", {}).get("color")
