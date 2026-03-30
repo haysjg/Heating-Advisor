@@ -594,6 +594,12 @@
                  value="{{ config.THERMOSTAT.get('nearby_grace_minutes', 20) }}">
           <span class="hint">Délai avant extinction si zone proximité + restriction horaire active.</span>
         </div>
+        <div class="form-group">
+          <label>Grâce absence (minutes)</label>
+          <input type="number" id="away_grace_minutes" min="0" max="30"
+                 value="{{ config.THERMOSTAT.get('away_grace_minutes', 5) }}">
+          <span class="hint">Délai avant extinction si tout le monde hors zone. Évite les faux positifs GPS.</span>
+        </div>
       </div>
 
       <p style="font-size:0.82rem;color:var(--text-sub);margin:1rem 0 0.5rem">Plages horaires d'allumage automatique</p>
@@ -708,6 +714,7 @@
       nearby_zone_name: getVal('nearby_zone_name'),
       nearby_no_ignition_after: parseInt(getVal('nearby_no_ignition_after')),
       nearby_grace_minutes: parseInt(getVal('nearby_grace_minutes')),
+      away_grace_minutes: parseInt(getVal('away_grace_minutes')),
       thermostat_use_felt:  document.getElementById('thermostat_use_felt').checked,
       thermostat_humidity_ref: parseFloat(getVal('thermostat_humidity_ref')),
       thermostat_humidity_factor: parseFloat(getVal('thermostat_humidity_factor')),

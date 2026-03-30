@@ -503,6 +503,7 @@ def api_config_save():
                 "nearby_zone_name": str(data.get("nearby_zone_name", config.THERMOSTAT.get("nearby_zone_name", "nearby"))).strip(),
                 "nearby_no_ignition_after": int(data.get("nearby_no_ignition_after", config.THERMOSTAT.get("nearby_no_ignition_after", 20))),
                 "nearby_grace_minutes": int(data.get("nearby_grace_minutes", config.THERMOSTAT.get("nearby_grace_minutes", 20))),
+                "away_grace_minutes": int(data.get("away_grace_minutes", config.THERMOSTAT.get("away_grace_minutes", 5))),
                 "use_felt_temperature": bool(data.get("thermostat_use_felt", config.THERMOSTAT.get("use_felt_temperature", True))),
                 "humidity_reference": float(data.get("thermostat_humidity_ref", config.THERMOSTAT.get("humidity_reference", 50.0))),
                 "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),

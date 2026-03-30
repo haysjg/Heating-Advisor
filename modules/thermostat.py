@@ -289,12 +289,17 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             raw = ha_client.get_presence(ha_cfg, person_entities)
             presence = "home" if raw else "away" if raw is False else None
 
+        away_grace = thermostat_cfg.get("away_grace_minutes", 5)
+
         if presence == "home":
-            if state.get("nearby_restricted_since"):
-                state = {**state, "nearby_restricted_since": None}
+            if state.get("nearby_restricted_since") or state.get("away_since"):
+                state = {**state, "nearby_restricted_since": None, "away_since": None}
                 _save_state(state)
 
         elif presence == "nearby":
+            if state.get("away_since"):
+                state = {**state, "away_since": None}
+                _save_state(state)
             if datetime.now().hour >= no_ignition_after:
                 if not state.get("nearby_restricted_since"):
                     state = {**state, "nearby_restricted_since": datetime.now().isoformat()}
@@ -323,12 +328,23 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             if state.get("nearby_restricted_since"):
                 state = {**state, "nearby_restricted_since": None}
                 _save_state(state)
-            logger.debug("Thermostat : tout le monde absent (hors zone), thermostat en pause")
-            if current == "on":
-                logger.info("Thermostat : extinction poêle — tout le monde absent")
-                ha_client.turn_off(ha_cfg)
-                _save_state({**state, "state": "off", "last_turned_off": datetime.now().isoformat()})
-            return
+            if not state.get("away_since"):
+                state = {**state, "away_since": datetime.now().isoformat()}
+                _save_state(state)
+                logger.info("Thermostat : tout le monde absent — grâce %d min", away_grace)
+
+            away_min = (datetime.now() - datetime.fromisoformat(state["away_since"])).total_seconds() / 60
+            if away_min >= away_grace:
+                logger.debug("Thermostat : absence confirmée (%.0f min >= %d min), thermostat en pause", away_min, away_grace)
+                if current == "on":
+                    logger.info("Thermostat : extinction poêle — absence confirmée")
+                    ha_client.turn_off(ha_cfg)
+                    _save_state({**state, "state": "off", "last_turned_off": datetime.now().isoformat()})
+                return
+            else:
+                logger.debug("Thermostat : absence détectée, grâce encore %d min", int(away_grace - away_min))
+                if current == "off":
+                    return
 
     # ── Vérification suspension ───────────────────────────────
     suspended_until_str = state.get("suspended_until")

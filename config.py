@@ -92,6 +92,7 @@ THERMOSTAT = {
     "nearby_zone_name": "nearby",         # nom de la zone HA de proximité (slug, ex. "nearby")
     "nearby_no_ignition_after": 20,       # heure à partir de laquelle la zone proximité = restriction (0-23)
     "nearby_grace_minutes": 20,           # grâce avant extinction si tout le monde en zone proximité après l'heure
+    "away_grace_minutes": 5,              # grâce avant extinction si tout le monde hors zone (évite faux positifs GPS)
     "use_felt_temperature": True,         # utiliser la température ressentie (temp + correction humidité)
     "humidity_reference": 50.0,           # humidité de référence (%)
     "humidity_correction_factor": 0.05,   # correction °C par % d'écart à la référence
