@@ -27,7 +27,22 @@ def _connect() -> sqlite3.Connection:
             tempo_color  TEXT
         )
     """)
-    # Migration : ajoute la colonne si elle n'existe pas encore
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS diagnose_log (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts               TEXT    NOT NULL,
+            presence_status  TEXT,
+            poele_real_state TEXT,
+            thermostat_state TEXT,
+            felt_temperature REAL,
+            indoor_temp      REAL,
+            in_schedule      INTEGER,
+            everyone_away    INTEGER,
+            suspended_until  TEXT,
+            recommendation   TEXT
+        )
+    """)
+    # Migration : ajoute la colonne tempo_color si elle n'existe pas encore
     try:
         conn.execute("ALTER TABLE readings ADD COLUMN tempo_color TEXT")
     except sqlite3.OperationalError:
@@ -122,6 +137,80 @@ def get_daily_summary(days: int = 30) -> list[dict]:
     except Exception as e:
         logger.error("History : erreur résumé journalier : %s", e)
         return []
+
+
+def record_diagnose(
+    presence_status: str,
+    poele_real_state: str,
+    thermostat_state: str,
+    felt_temperature: float,
+    indoor_temp: float,
+    in_schedule: bool,
+    everyone_away: bool,
+    suspended_until: str,
+    recommendation: str,
+) -> None:
+    """Insère un snapshot de diagnostic. Appelé toutes les ~10 min."""
+    try:
+        with _connect() as conn:
+            conn.execute(
+                """INSERT INTO diagnose_log
+                   (ts, presence_status, poele_real_state, thermostat_state,
+                    felt_temperature, indoor_temp, in_schedule, everyone_away,
+                    suspended_until, recommendation)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    datetime.now().isoformat(timespec="seconds"),
+                    presence_status,
+                    poele_real_state,
+                    thermostat_state,
+                    felt_temperature,
+                    indoor_temp,
+                    1 if in_schedule else 0,
+                    1 if everyone_away else 0,
+                    suspended_until,
+                    recommendation,
+                ),
+            )
+    except Exception as e:
+        logger.error("History : erreur enregistrement diagnose : %s", e)
+
+
+def get_diagnose_history(hours: int = 168) -> list[dict]:
+    """Retourne les snapshots de diagnostic des N dernières heures."""
+    since = (datetime.now() - timedelta(hours=hours)).isoformat(timespec="seconds")
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """SELECT ts, presence_status, poele_real_state, thermostat_state,
+                          felt_temperature, indoor_temp, in_schedule, everyone_away,
+                          suspended_until, recommendation
+                   FROM diagnose_log WHERE ts >= ? ORDER BY ts DESC""",
+                (since,),
+            ).fetchall()
+        return [
+            {
+                "ts": r[0], "presence_status": r[1], "poele_real_state": r[2],
+                "thermostat_state": r[3], "felt_temperature": r[4], "indoor_temp": r[5],
+                "in_schedule": bool(r[6]), "everyone_away": bool(r[7]),
+                "suspended_until": r[8], "recommendation": r[9],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error("History : erreur lecture diagnose : %s", e)
+        return []
+
+
+def purge_diagnose_old(days: int = 7) -> None:
+    """Supprime les snapshots de diagnostic de plus de N jours."""
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+    try:
+        with _connect() as conn:
+            conn.execute("DELETE FROM diagnose_log WHERE ts < ?", (cutoff,))
+        logger.info("History : purge diagnose > %d jours", days)
+    except Exception as e:
+        logger.error("History : erreur purge diagnose : %s", e)
 
 
 def purge_old(days: int = 30) -> None:

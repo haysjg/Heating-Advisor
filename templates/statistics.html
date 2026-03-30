@@ -194,6 +194,37 @@
     </div>
 
     <div class="card" style="margin-top:1rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem;">
+        <h2 style="margin:0;font-size:1rem;">Journal de diagnostic</h2>
+        <div class="range-bar">
+          <button class="range-btn active" onclick="loadDiagnose(6)"  data-dh="6">6h</button>
+          <button class="range-btn" onclick="loadDiagnose(24)" data-dh="24">24h</button>
+          <button class="range-btn" onclick="loadDiagnose(48)" data-dh="48">48h</button>
+          <button class="range-btn" onclick="loadDiagnose(168)" data-dh="168">7 jours</button>
+        </div>
+      </div>
+      <div id="diagnose-no-data" class="no-data" style="display:none;">Aucune donnée disponible.</div>
+      <div style="overflow-x:auto;">
+        <table class="daily-table" id="diagnose-table" style="display:none;">
+          <thead>
+            <tr>
+              <th>Heure</th>
+              <th>Présence</th>
+              <th>Poêle (HA)</th>
+              <th>Thermostat</th>
+              <th>Ressenti</th>
+              <th>Int.</th>
+              <th>Plage</th>
+              <th>Suspension</th>
+              <th>Recommandation</th>
+            </tr>
+          </thead>
+          <tbody id="diagnose-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
       <h2 style="margin:0 0 1rem; font-size:1rem;">Résumé journalier</h2>
       <div id="daily-no-data" class="no-data" style="display:none;">
         Aucune donnée journalière disponible.
@@ -492,15 +523,70 @@
       document.getElementById('daily-table').style.display = 'table';
     }
 
+    const PRESENCE_LABELS = { home: '🏠 Maison', nearby: '📍 Proximité', away: '🚗 Absent', null: '—' };
+    const PRESENCE_COLORS = { home: '#22c55e', nearby: '#f59e0b', away: '#f87171' };
+
+    function setActiveDiagnoseBtn(hours) {
+      document.querySelectorAll('[data-dh]').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.dh) === hours);
+      });
+    }
+
+    async function loadDiagnose(hours) {
+      setActiveDiagnoseBtn(hours);
+      let rows = [];
+      try {
+        const res = await fetch(`/api/thermostat/diagnose/history?hours=${hours}`);
+        rows = await res.json();
+      } catch(e) { console.error(e); }
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        document.getElementById('diagnose-no-data').style.display = 'block';
+        document.getElementById('diagnose-table').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('diagnose-no-data').style.display = 'none';
+      document.getElementById('diagnose-table').style.display = 'table';
+
+      const tbody = document.getElementById('diagnose-tbody');
+      tbody.innerHTML = rows.map(r => {
+        const d = new Date(r.ts);
+        const ts = d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' })
+                 + ' ' + d.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+        const presence = r.presence_status || 'null';
+        const presenceColor = PRESENCE_COLORS[presence] || '#8892a4';
+        const presenceLabel = PRESENCE_LABELS[presence] || presence;
+        const poeleColor = r.poele_real_state === 'off' ? '#8892a4' : '#f97316';
+        const thColor = r.thermostat_state === 'off' ? '#8892a4' : '#22c55e';
+        const susp = r.suspended_until ? new Date(r.suspended_until).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }) : '—';
+        const rec = r.recommendation === 'poele' ? '🔥 Poêle' : r.recommendation === 'clim' ? '❄️ Clim' : r.recommendation === 'none' ? '—' : r.recommendation || '—';
+        return `<tr>
+          <td style="white-space:nowrap;color:var(--text-sub);font-size:0.82rem">${ts}</td>
+          <td style="color:${presenceColor};font-weight:600">${presenceLabel}</td>
+          <td style="color:${poeleColor};font-weight:600">${r.poele_real_state || '—'}</td>
+          <td style="color:${thColor};font-weight:600">${r.thermostat_state || '—'}</td>
+          <td style="color:var(--text)">${r.felt_temperature !== null && r.felt_temperature !== undefined ? r.felt_temperature.toFixed(1) + ' °C' : '—'}</td>
+          <td style="color:#fb923c">${r.indoor_temp !== null && r.indoor_temp !== undefined ? r.indoor_temp.toFixed(1) + ' °C' : '—'}</td>
+          <td>${r.in_schedule ? '<span style="color:#22c55e">✓</span>' : '<span style="color:#8892a4">✗</span>'}</td>
+          <td style="color:var(--text-sub);font-size:0.82rem">${susp}</td>
+          <td style="color:var(--text-sub)">${rec}</td>
+        </tr>`;
+      }).join('');
+    }
+
     function refreshAll() {
       const activeBtn = document.querySelector('.range-btn.active');
       const hours = activeBtn ? parseInt(activeBtn.dataset.h) : 24;
       loadData(hours);
       loadDailyTable();
+      const activeDBtn = document.querySelector('[data-dh].active');
+      loadDiagnose(activeDBtn ? parseInt(activeDBtn.dataset.dh) : 6);
     }
 
     loadData(24);
     loadDailyTable();
+    loadDiagnose(6);
   </script>
 </body>
 </html>

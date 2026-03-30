@@ -82,6 +82,46 @@ def _record_history():
         logger.error("History record échoué : %s", e)
 
 
+def _record_diagnose():
+    """Enregistre un snapshot de diagnostic toutes les 10 min."""
+    try:
+        nearby_zone = config.THERMOSTAT.get("nearby_zone_name", "")
+        if config.THERMOSTAT.get("presence_enabled"):
+            if nearby_zone:
+                presence = ha_client.get_presence_extended(
+                    config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), nearby_zone
+                )
+            else:
+                raw = ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []))
+                presence = "home" if raw else "away" if raw is False else None
+        else:
+            presence = None
+
+        th_state = thermostat_module.get_state()
+        indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
+        ha_state = ha_client.get_state(config.HOME_ASSISTANT)
+        indoor_temp = indoor.get("temperature") if indoor else None
+        humidity = indoor.get("humidity") if indoor else None
+        felt = thermostat_module.felt_temperature(indoor_temp, humidity, config.THERMOSTAT) if indoor_temp is not None else None
+        poele_real = ha_state.get("state") if ha_state else None
+        data = get_analysis()
+        recommendation = data.get("recommendation", {}).get("system")
+
+        history_module.record_diagnose(
+            presence_status=presence,
+            poele_real_state=poele_real,
+            thermostat_state=th_state.get("state", "off"),
+            felt_temperature=felt,
+            indoor_temp=indoor_temp,
+            in_schedule=thermostat_module.is_in_schedule(config.THERMOSTAT),
+            everyone_away=(presence == "away"),
+            suspended_until=th_state.get("suspended_until"),
+            recommendation=recommendation,
+        )
+    except Exception as e:
+        logger.error("Diagnose record échoué : %s", e)
+
+
 def _run_thermostat():
     """Vérifie la température intérieure et pilote le poêle via le thermostat."""
     try:
@@ -123,11 +163,25 @@ _scheduler.add_job(
     id="history_job",
     misfire_grace_time=60,
 )
+_scheduler.add_job(
+    _record_diagnose,
+    "interval",
+    minutes=10,
+    id="diagnose_job",
+    misfire_grace_time=60,
+)
 # Purge hebdomadaire des données > 30 jours
 _scheduler.add_job(
     lambda: history_module.purge_old(30),
     CronTrigger(day_of_week="mon", hour=3, minute=0, timezone="Europe/Paris"),
     id="history_purge_job",
+    misfire_grace_time=300,
+)
+# Purge hebdomadaire des diagnostics > 7 jours
+_scheduler.add_job(
+    lambda: history_module.purge_diagnose_old(7),
+    CronTrigger(day_of_week="mon", hour=3, minute=10, timezone="Europe/Paris"),
+    id="diagnose_purge_job",
     misfire_grace_time=300,
 )
 logger.info("Historique : enregistrement toutes les 10 min")
@@ -398,6 +452,17 @@ def api_statistics_daily():
         days = int(request.args.get("days", 30))
         days = min(max(days, 1), 30)
         data = history_module.get_daily_summary(days)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/thermostat/diagnose/history")
+def api_diagnose_history():
+    try:
+        hours = int(request.args.get("hours", 24))
+        hours = min(max(hours, 1), 168)
+        data = history_module.get_diagnose_history(hours)
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
