@@ -655,7 +655,10 @@
     </div>
 
     {# ── Actions ── #}
-    <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem">
+    <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importConfig(this)">
+    <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem; flex-wrap:wrap">
+      <button class="btn-back" onclick="exportConfig()">📤 Exporter</button>
+      <button class="btn-back" onclick="document.getElementById('import-file-input').click()">📥 Importer</button>
       <a href="/" class="btn-back">Annuler</a>
       <button class="btn-save" onclick="saveConfig()">💾 Enregistrer</button>
     </div>
@@ -830,6 +833,166 @@
       }
     })
     .catch(() => showToast('Erreur réseau', false));
+  }
+
+  function exportConfig() {
+    const notifyTimeParts = getVal('notify_time').split(':');
+    const payload = {
+      _exported_at: new Date().toISOString(),
+      nb_sacs:              parseFloat(getVal('nb_sacs')),
+      prix_livraison:       parseFloat(getVal('prix_livraison')),
+      poids_sac:            parseFloat(getVal('poids_sac')),
+      hours_per_bag:        parseFloat(getVal('hours_per_bag')),
+      efficiency:           parseFloat(getVal('efficiency')) / 100,
+      poele_thermal_output_kw: parseFloat(getVal('poele_thermal_output_kw')),
+      nominal_cop:          parseFloat(getVal('nominal_cop')),
+      comfort_min_temp:     parseFloat(getVal('comfort_min_temp')),
+      clim_capacity_kw:     parseFloat(getVal('clim_capacity_kw')),
+      target_temp:          parseFloat(getVal('target_temp')),
+      surface_m2:           parseInt(getVal('surface_m2')),
+      refresh_interval:     parseInt(getVal('refresh_interval')),
+      hp_start:             parseInt(getVal('hp_start')),
+      hp_end:               parseInt(getVal('hp_end')),
+      city:                 getVal('city'),
+      postal_code:          getVal('postal_code'),
+      latitude:             parseFloat(getVal('latitude')),
+      longitude:            parseFloat(getVal('longitude')),
+      meteociel_url:        getVal('meteociel_url'),
+      nas_ip:               getVal('nas_ip'),
+      nas_port:             parseInt(getVal('nas_port')),
+      public_url:           getVal('public_url'),
+      blue_hp:              parseFloat(getVal('blue_hp')),
+      blue_hc:              parseFloat(getVal('blue_hc')),
+      white_hp:             parseFloat(getVal('white_hp')),
+      white_hc:             parseFloat(getVal('white_hc')),
+      red_hp:               parseFloat(getVal('red_hp')),
+      red_hc:               parseFloat(getVal('red_hc')),
+      ha_enabled:           document.getElementById('ha_enabled').checked,
+      ha_url:               getVal('ha_url'),
+      ha_entity_id:         getVal('ha_entity_id'),
+      email_enabled:        document.getElementById('email_enabled').checked,
+      email_sender:         getVal('email_sender'),
+      smtp_login:           getVal('smtp_login'),
+      recipients:           getVal('recipients').split(',').map(r => r.trim()).filter(r => r),
+      smtp_host:            getVal('smtp_host'),
+      smtp_port:            parseInt(getVal('smtp_port')),
+      notify_hour:          parseInt(notifyTimeParts[0]) || 20,
+      notify_minute:        parseInt(notifyTimeParts[1]) || 0,
+      thermostat_temp_on:   parseFloat(getVal('thermostat_temp_on')),
+      thermostat_temp_off:  parseFloat(getVal('thermostat_temp_off')),
+      thermostat_min_on:    parseInt(getVal('thermostat_min_on')),
+      thermostat_grace:     parseInt(getVal('thermostat_grace')),
+      thermostat_suspend_hours: parseFloat(getVal('thermostat_suspend_hours')),
+      thermostat_presence_enabled: document.getElementById('thermostat_presence_enabled').checked,
+      person_entities: [getVal('presence_person_1'), getVal('presence_person_2')].filter(v => v.trim() !== ''),
+      nearby_zone_name: getVal('nearby_zone_name'),
+      nearby_no_ignition_after: parseInt(getVal('nearby_no_ignition_after')),
+      nearby_grace_minutes: parseInt(getVal('nearby_grace_minutes')),
+      away_grace_minutes: parseInt(getVal('away_grace_minutes')),
+      thermostat_use_felt:  document.getElementById('thermostat_use_felt').checked,
+      thermostat_humidity_ref: parseFloat(getVal('thermostat_humidity_ref')),
+      thermostat_humidity_factor: parseFloat(getVal('thermostat_humidity_factor')),
+      thermostat_schedule: {
+        mon: { start: getVal('sched_mon_start'), end: getVal('sched_mon_end') },
+        tue: { start: getVal('sched_tue_start'), end: getVal('sched_tue_end') },
+        wed: { start: getVal('sched_wed_start'), end: getVal('sched_wed_end') },
+        thu: { start: getVal('sched_thu_start'), end: getVal('sched_thu_end') },
+        fri: { start: getVal('sched_fri_start'), end: getVal('sched_fri_end') },
+        sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end') },
+        sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end') },
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'heating-advisor-config.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function importConfig(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = '';
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const d = JSON.parse(e.target.result);
+        const setVal = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined && val !== null) el.value = val; };
+        const setChk = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.checked = !!val; };
+
+        setVal('nb_sacs',            d.nb_sacs);
+        setVal('prix_livraison',     d.prix_livraison);
+        setVal('poids_sac',          d.poids_sac);
+        setVal('hours_per_bag',      d.hours_per_bag);
+        if (d.efficiency !== undefined) setVal('efficiency', Math.round(d.efficiency * 100));
+        setVal('poele_thermal_output_kw', d.poele_thermal_output_kw);
+        setVal('nominal_cop',        d.nominal_cop);
+        setVal('comfort_min_temp',   d.comfort_min_temp);
+        setVal('clim_capacity_kw',   d.clim_capacity_kw);
+        setVal('target_temp',        d.target_temp);
+        setVal('surface_m2',         d.surface_m2);
+        setVal('refresh_interval',   d.refresh_interval);
+        setVal('hp_start',           d.hp_start);
+        setVal('hp_end',             d.hp_end);
+        setVal('city',               d.city);
+        setVal('postal_code',        d.postal_code);
+        setVal('latitude',           d.latitude);
+        setVal('longitude',          d.longitude);
+        setVal('meteociel_url',      d.meteociel_url);
+        setVal('nas_ip',             d.nas_ip);
+        setVal('nas_port',           d.nas_port);
+        setVal('public_url',         d.public_url);
+        setVal('blue_hp',            d.blue_hp);
+        setVal('blue_hc',            d.blue_hc);
+        setVal('white_hp',           d.white_hp);
+        setVal('white_hc',           d.white_hc);
+        setVal('red_hp',             d.red_hp);
+        setVal('red_hc',             d.red_hc);
+        setChk('ha_enabled',         d.ha_enabled);
+        setVal('ha_url',             d.ha_url);
+        setVal('ha_entity_id',       d.ha_entity_id);
+        setChk('email_enabled',      d.email_enabled);
+        setVal('email_sender',       d.email_sender);
+        setVal('smtp_login',         d.smtp_login);
+        if (Array.isArray(d.recipients)) setVal('recipients', d.recipients.join(', '));
+        setVal('smtp_host',          d.smtp_host);
+        setVal('smtp_port',          d.smtp_port);
+        if (d.notify_hour !== undefined && d.notify_minute !== undefined) {
+          setVal('notify_time', String(d.notify_hour).padStart(2,'0') + ':' + String(d.notify_minute).padStart(2,'0'));
+        }
+        setVal('thermostat_temp_on',  d.thermostat_temp_on);
+        setVal('thermostat_temp_off', d.thermostat_temp_off);
+        setVal('thermostat_min_on',   d.thermostat_min_on);
+        setVal('thermostat_grace',    d.thermostat_grace);
+        setVal('thermostat_suspend_hours', d.thermostat_suspend_hours);
+        setChk('thermostat_presence_enabled', d.thermostat_presence_enabled);
+        if (Array.isArray(d.person_entities)) {
+          setVal('presence_person_1', d.person_entities[0] || '');
+          setVal('presence_person_2', d.person_entities[1] || '');
+        }
+        setVal('nearby_zone_name',         d.nearby_zone_name);
+        setVal('nearby_no_ignition_after', d.nearby_no_ignition_after);
+        setVal('nearby_grace_minutes',     d.nearby_grace_minutes);
+        setVal('away_grace_minutes',       d.away_grace_minutes);
+        setChk('thermostat_use_felt',      d.thermostat_use_felt);
+        setVal('thermostat_humidity_ref',  d.thermostat_humidity_ref);
+        setVal('thermostat_humidity_factor', d.thermostat_humidity_factor);
+        if (d.thermostat_schedule) {
+          ['mon','tue','wed','thu','fri','sat','sun'].forEach(day => {
+            if (d.thermostat_schedule[day]) {
+              setVal('sched_' + day + '_start', d.thermostat_schedule[day].start);
+              setVal('sched_' + day + '_end',   d.thermostat_schedule[day].end);
+            }
+          });
+        }
+        calcPoele();
+        showToast('✓ Configuration importée — cliquez sur Enregistrer pour appliquer', true);
+      } catch(err) {
+        showToast('Fichier JSON invalide : ' + err.message, false);
+      }
+    };
+    reader.readAsText(file);
   }
 
   // Init
