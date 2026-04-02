@@ -200,6 +200,21 @@ def _build_config_dict() -> dict:
     }
 
 
+def _fetch_indoor() -> None:
+    """Rafraîchit uniquement la température intérieure dans le cache (HA local, pas d'API externe)."""
+    if not _cache["data"]:
+        return
+    indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
+    if indoor:
+        if (config.THERMOSTAT.get("use_felt_temperature")
+                and indoor.get("temperature") is not None
+                and indoor.get("humidity") is not None):
+            indoor["felt_temperature"] = thermostat_module.felt_temperature(
+                indoor["temperature"], indoor["humidity"], config.THERMOSTAT
+            )
+        _cache["data"]["indoor"] = indoor
+
+
 def get_analysis(force_refresh: bool = False) -> dict:
     """Retourne l'analyse en cache ou en recharge une fraîche."""
     import time
@@ -208,7 +223,8 @@ def get_analysis(force_refresh: bool = False) -> dict:
     ttl = config.REFRESH_INTERVAL_MINUTES * 60
 
     if not force_refresh and _cache["data"] and _cache["expires_at"] and now < _cache["expires_at"]:
-        logger.info("Retour depuis le cache")
+        logger.info("Retour depuis le cache — rafraîchissement température intérieure")
+        _fetch_indoor()
         return _cache["data"]
 
     logger.info("Rafraîchissement des données…")
