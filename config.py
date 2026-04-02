@@ -107,6 +107,12 @@ THERMOSTAT = {
     },
 }
 
+# ── Authentification ─────────────────────────────────────────
+AUTH = {
+    "default_password": "heating",  # mot de passe par défaut — à changer via /config
+    "password_hash": "",            # hash stocké dans config_override.json après changement
+}
+
 # ── Notifications email ───────────────────────────────────────
 EMAIL = {
     "enabled": True,

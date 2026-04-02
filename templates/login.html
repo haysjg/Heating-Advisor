@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion – Conseiller Chauffage</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 360px;
+    }
+    .login-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0 0 0.25rem;
+      color: var(--text);
+    }
+    .login-sub {
+      font-size: 0.85rem;
+      color: var(--text-sub);
+      margin: 0 0 2rem;
+    }
+    .login-label {
+      display: block;
+      font-size: 0.82rem;
+      color: var(--text-sub);
+      margin-bottom: 0.35rem;
+    }
+    .login-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.6rem 0.85rem;
+      font-size: 1rem;
+      box-sizing: border-box;
+      transition: border-color 0.15s;
+    }
+    .login-input:focus { outline: none; border-color: var(--blue); }
+    .login-btn {
+      width: 100%;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.7rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 1.25rem;
+      transition: opacity 0.2s;
+    }
+    .login-btn:hover { opacity: 0.85; }
+    .login-error {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.4);
+      border-radius: 8px;
+      color: #f87171;
+      font-size: 0.875rem;
+      padding: 0.6rem 0.85rem;
+      margin-bottom: 1.25rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <p class="login-title">🔥 Heating Advisor</p>
+    <p class="login-sub">Connexion requise</p>
+
+    {% if error %}
+    <div class="login-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('login', next=request.args.get('next', '/')) }}">
+      <label class="login-label" for="password">Mot de passe</label>
+      <input class="login-input" type="password" id="password" name="password"
+             autofocus autocomplete="current-password">
+      <button class="login-btn" type="submit">Se connecter</button>
+    </form>
+  </div>
+</body>
+</html>

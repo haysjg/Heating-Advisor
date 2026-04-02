@@ -6,8 +6,12 @@ Déployable via Docker sur NAS Synology
 import logging
 import json
 import os
-from datetime import datetime
-from flask import Flask, render_template, jsonify, request
+import secrets as _secrets
+from datetime import datetime, timedelta
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -26,7 +30,97 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# ── Clé secrète persistante (sessions) ───────────────────────
+def _get_secret_key() -> str:
+    key_file = os.path.join(os.path.dirname(__file__), "data", "secret.key")
+    os.makedirs(os.path.dirname(key_file), exist_ok=True)
+    if os.path.exists(key_file):
+        key = open(key_file).read().strip()
+        if key:
+            return key
+    key = _secrets.token_hex(32)
+    with open(key_file, "w") as f:
+        f.write(key)
+    return key
+
+app.secret_key = _get_secret_key()
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=24)
+
+# ── Rate limiter (protection brute-force login) ───────────────
+limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
+
 load_overrides(config)
+
+# ── Authentification ─────────────────────────────────────────
+
+def _check_password(password: str) -> bool:
+    stored = config.AUTH.get("password_hash", "")
+    if not stored:
+        return password == config.AUTH.get("default_password", "heating")
+    return check_password_hash(stored, password)
+
+
+@app.before_request
+def require_login():
+    if request.path.startswith("/static"):
+        return
+    if request.endpoint in ("login", "logout"):
+        return
+    if not session.get("authenticated"):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Non authentifié"}), 401
+        return redirect(url_for("login", next=request.path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if _check_password(password):
+            session.permanent = True
+            session["authenticated"] = True
+            next_url = request.args.get("next") or "/"
+            if not next_url.startswith("/"):
+                next_url = "/"
+            return redirect(next_url)
+        error = "Mot de passe incorrect"
+        logger.warning("Tentative de connexion échouée depuis %s", request.remote_addr)
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+def api_change_password():
+    data = request.get_json(force=True)
+    current = data.get("current_password", "")
+    new_pwd = data.get("new_password", "")
+    if not _check_password(current):
+        return jsonify({"error": "Mot de passe actuel incorrect"}), 403
+    if len(new_pwd) < 8:
+        return jsonify({"error": "Le nouveau mot de passe doit faire au moins 8 caractères"}), 400
+    new_hash = generate_password_hash(new_pwd)
+    try:
+        override = {}
+        if os.path.exists(OVERRIDE_FILE):
+            with open(OVERRIDE_FILE) as f:
+                override = json.load(f)
+        override.setdefault("AUTH", {})["password_hash"] = new_hash
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(override, f, indent=2, ensure_ascii=False)
+        config.AUTH["password_hash"] = new_hash
+        logger.info("Mot de passe modifié")
+    except Exception as e:
+        logger.error("Erreur sauvegarde mot de passe : %s", e)
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"status": "ok"})
+
 
 # ── Scheduler de notification ─────────────────────────────────
 
