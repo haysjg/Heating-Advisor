@@ -57,7 +57,7 @@
     }
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-template-columns: repeat(3, minmax(100px, 1fr));
       gap: 0.75rem;
       margin-top: 1rem;
     }
@@ -191,6 +191,24 @@
       </div>
 
       <div id="stats-summary" class="stat-grid" style="display:none;"></div>
+
+      <div id="ignitions-section" style="display:none; margin-top:1.25rem;">
+        <p style="margin:0 0 0.5rem; font-size:0.78rem; color:var(--text-sub); font-weight:500;">Allumages du poêle</p>
+        <div style="display:grid; grid-template-columns:repeat(3, minmax(100px, 1fr)); gap:0.75rem;">
+          <div class="stat-card">
+            <p class="stat-label">24 h</p>
+            <p class="stat-value" id="ign-24">—<span class="stat-unit"></span></p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">48 h</p>
+            <p class="stat-value" id="ign-48">—<span class="stat-unit"></span></p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-label">7 jours</p>
+            <p class="stat-value" id="ign-168">—<span class="stat-unit"></span></p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="card" style="margin-top:1rem;">
@@ -274,18 +292,15 @@
       const onMin        = onCount * 10;
 
       const stats = [];
-      if (outdoorTemps.length) {
-        stats.push({ label: 'Ext. min', value: Math.min(...outdoorTemps).toFixed(1), unit: '°C' });
-        stats.push({ label: 'Ext. max', value: Math.max(...outdoorTemps).toFixed(1), unit: '°C' });
-        const avg = outdoorTemps.reduce((a, b) => a + b, 0) / outdoorTemps.length;
-        stats.push({ label: 'Ext. moy', value: avg.toFixed(1), unit: '°C' });
-      }
-      if (indoorTemps.length) {
-        stats.push({ label: 'Int. min', value: Math.min(...indoorTemps).toFixed(1), unit: '°C' });
-        stats.push({ label: 'Int. max', value: Math.max(...indoorTemps).toFixed(1), unit: '°C' });
-        const avg = indoorTemps.reduce((a, b) => a + b, 0) / indoorTemps.length;
-        stats.push({ label: 'Int. moy', value: avg.toFixed(1), unit: '°C' });
-      }
+      const extMin = outdoorTemps.length ? { label: 'Ext. min', value: Math.min(...outdoorTemps).toFixed(1), unit: '°C' } : null;
+      const extMax = outdoorTemps.length ? { label: 'Ext. max', value: Math.max(...outdoorTemps).toFixed(1), unit: '°C' } : null;
+      const extMoy = outdoorTemps.length ? { label: 'Ext. moy', value: (outdoorTemps.reduce((a, b) => a + b, 0) / outdoorTemps.length).toFixed(1), unit: '°C' } : null;
+      const intMin = indoorTemps.length  ? { label: 'Int. min', value: Math.min(...indoorTemps).toFixed(1),  unit: '°C' } : null;
+      const intMax = indoorTemps.length  ? { label: 'Int. max', value: Math.max(...indoorTemps).toFixed(1),  unit: '°C' } : null;
+      const intMoy = indoorTemps.length  ? { label: 'Int. moy', value: (indoorTemps.reduce((a, b) => a + b, 0) / indoorTemps.length).toFixed(1), unit: '°C' } : null;
+      // Ordre : Ext.min | Ext.max | Ext.moy
+      //         Int.min | Int.max | Int.moy  (alignement vertical garanti par la grille 3 colonnes)
+      [extMin, extMax, extMoy, intMin, intMax, intMoy].forEach(s => s && stats.push(s));
       if (records.length) {
         const pct = totalMin > 0 ? Math.round(onMin / totalMin * 100) : 0;
         stats.push({ label: 'Poêle allumé', value: pct, unit: '%' });
@@ -575,17 +590,46 @@
       }).join('');
     }
 
+    function countIgnitions(records, hoursBack) {
+      // records trié du plus ancien au plus récent
+      const since = Date.now() - hoursBack * 3600000;
+      let count = 0, prevState = null;
+      for (const r of records) {
+        const state = r.poele_state;
+        if (new Date(r.ts).getTime() >= since) {
+          if (state === 'on' && prevState !== 'on') count++;
+        }
+        prevState = state;
+      }
+      return count;
+    }
+
+    async function loadIgnitions() {
+      let records = [];
+      try {
+        const res = await fetch('/api/statistics?hours=168');
+        records = await res.json();
+      } catch(e) { return; }
+      if (!Array.isArray(records) || records.length === 0) return;
+      document.getElementById('ign-24').textContent  = countIgnitions(records, 24);
+      document.getElementById('ign-48').textContent  = countIgnitions(records, 48);
+      document.getElementById('ign-168').textContent = countIgnitions(records, 168);
+      document.getElementById('ignitions-section').style.display = 'block';
+    }
+
     function refreshAll() {
       const activeBtn = document.querySelector('.range-btn.active');
       const hours = activeBtn ? parseInt(activeBtn.dataset.h) : 24;
       loadData(hours);
       loadDailyTable();
+      loadIgnitions();
       const activeDBtn = document.querySelector('[data-dh].active');
       loadDiagnose(activeDBtn ? parseInt(activeDBtn.dataset.dh) : 6);
     }
 
     loadData(24);
     loadDailyTable();
+    loadIgnitions();
     loadDiagnose(6);
   </script>
 </body>
