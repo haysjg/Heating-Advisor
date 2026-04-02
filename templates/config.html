@@ -294,6 +294,13 @@
                  value="{{ config.LOCATION.nas_port }}">
         </div>
 
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>URL publique (optionnel)</label>
+          <input type="text" id="public_url" placeholder="https://nas-jg.mywire.org:8443"
+                 value="{{ config.LOCATION.get('public_url', '') }}">
+          <span class="hint">Inclure le port si nécessaire. Utilisée dans les emails à la place de l'IP locale.</span>
+        </div>
+
       </div>
 
       <details class="advanced">
@@ -711,6 +718,7 @@
       meteociel_url:        getVal('meteociel_url'),
       nas_ip:               getVal('nas_ip'),
       nas_port:             parseInt(getVal('nas_port')),
+      public_url:           getVal('public_url'),
       blue_hp:              parseFloat(getVal('blue_hp')),
       blue_hc:              parseFloat(getVal('blue_hc')),
       white_hp:             parseFloat(getVal('white_hp')),

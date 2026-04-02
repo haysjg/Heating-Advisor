@@ -641,6 +641,7 @@ def api_config_save():
                 "meteociel_url": str(data["meteociel_url"]),
                 "nas_ip": str(data["nas_ip"]),
                 "nas_port": int(data["nas_port"]),
+                "public_url": str(data.get("public_url", "")).strip(),
             },
             "TEMPO_PRICES": {
                 "BLUE":    {"HP": float(data["blue_hp"]),  "HC": float(data["blue_hc"])},

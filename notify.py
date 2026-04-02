@@ -85,6 +85,10 @@ def build_email(data: dict, tempo: dict) -> tuple[str, str]:
     else:
         estimate_bloc = ""
 
+    public_url = config.LOCATION.get("public_url", "").strip()
+    dashboard_url = public_url if public_url else f"http://{config.LOCATION.get('nas_ip','localhost')}:{config.LOCATION.get('nas_port',8888)}"
+    domain_line = f'<p style="margin:2px 0 0;font-size:0.8em;color:#3b82f6">{public_url}</p>' if public_url else ""
+
     html = f"""<!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="UTF-8"></head>
@@ -96,6 +100,7 @@ def build_email(data: dict, tempo: dict) -> tuple[str, str]:
       <p style="margin:0;font-size:0.85em;color:#8892a4">🏠 Conseiller Chauffage — {config.LOCATION['city']}</p>
       <h1 style="margin:4px 0 0;font-size:1.2em">Recommandation pour demain</h1>
       <p style="margin:2px 0 0;font-size:0.85em;color:#8892a4">{tomorrow_date}</p>
+      {domain_line}
     </div>
 
     <!-- Recommandation -->
@@ -118,7 +123,7 @@ def build_email(data: dict, tempo: dict) -> tuple[str, str]:
     <div style="padding:14px 24px;border-top:1px solid #2a2d3e">
       <p style="margin:0;font-size:0.75em;color:#8892a4;text-align:center">
         Envoyé automatiquement le {datetime.now().strftime('%d/%m/%Y à %Hh%M')} —
-        <a href="http://{config.LOCATION.get('nas_ip','localhost')}:{config.LOCATION.get('nas_port',8888)}" style="color:#3b82f6;text-decoration:none">Voir le dashboard</a>
+        <a href="{dashboard_url}" style="color:#3b82f6;text-decoration:none">Voir le dashboard</a>
       </p>
     </div>
 
