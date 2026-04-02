@@ -43,7 +43,15 @@ def _save_state(state: dict) -> None:
 
 def get_state() -> dict:
     """Retourne l'état courant du thermostat."""
-    return _load_state()
+    state = _load_state()
+    if state.get("suspended_until"):
+        try:
+            if datetime.now() >= datetime.fromisoformat(state["suspended_until"]):
+                state = {**state, "suspended_until": None}
+                _save_state(state)
+        except Exception:
+            pass
+    return state
 
 
 def is_in_schedule(cfg: dict) -> bool:
@@ -373,6 +381,18 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             })
     else:  # current == "on"
         if in_schedule:
+            if recommendation != "poele" and on_minutes >= min_on:
+                logger.info(
+                    "Thermostat : extinction poêle — recommandation changée vers %s (allumé depuis %.0f min)",
+                    recommendation, on_minutes,
+                )
+                ha_client.turn_off(ha_cfg)
+                _save_state({
+                    **state,
+                    "state": "off",
+                    "last_turned_off": datetime.now().isoformat(),
+                })
+                return
             if effective_temp >= temp_off and on_minutes >= min_on:
                 logger.info(
                     "Thermostat : extinction poêle (ressenti %.1f°C >= %.1f°C, réel %.1f°C, allumé depuis %.0f min)",
