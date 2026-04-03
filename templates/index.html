@@ -228,6 +228,46 @@
     </section>
     {% endif %}
 
+    {# ── Mode Absence ── #}
+    {% if config.HOME_ASSISTANT.enabled %}
+    <section class="card card-labeled">
+      <div class="today-label">PROGRAMMATION</div>
+      <h3>🏖️ Mode Absence</h3>
+      {% if on_vacation %}
+        <p class="value-sub" style="color:#60a5fa">
+          ✈️ Absence en cours : du <strong>{{ vacation.start }}</strong> au <strong>{{ vacation.end }}</strong>
+          — thermostat suspendu
+        </p>
+        <button onclick="clearVacation()" style="margin-top:0.5rem;background:rgba(239,68,68,0.15);border:1px solid #ef4444;color:#ef4444;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
+          ✕ Annuler l'absence
+        </button>
+      {% elif vacation.start and vacation.end %}
+        <p class="value-sub" style="color:#fb923c">
+          📅 Absence programmée : du <strong>{{ vacation.start }}</strong> au <strong>{{ vacation.end }}</strong>
+        </p>
+        <button onclick="clearVacation()" style="margin-top:0.5rem;background:rgba(239,68,68,0.15);border:1px solid #ef4444;color:#ef4444;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
+          ✕ Annuler l'absence programmée
+        </button>
+      {% else %}
+        <p class="value-sub" style="color:#64748b">Aucune absence programmée — le thermostat fonctionne normalement.</p>
+        <div style="display:flex;gap:0.75rem;align-items:flex-end;margin-top:0.75rem;flex-wrap:wrap">
+          <div>
+            <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.2rem">Départ</label>
+            <input type="date" id="vacation-start" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
+          </div>
+          <div>
+            <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.2rem">Retour</label>
+            <input type="date" id="vacation-end" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
+          </div>
+          <button onclick="setVacation()" style="background:rgba(96,165,250,0.15);border:1px solid #60a5fa;color:#60a5fa;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
+            ✈️ Programmer l'absence
+          </button>
+        </div>
+        <p id="vacation-error" style="color:#ef4444;font-size:0.8rem;margin-top:0.4rem;display:none"></p>
+      {% endif %}
+    </section>
+    {% endif %}
+
     {# ── Conditions actuelles ── #}
     <section class="{% if data.indoor %}grid-3{% else %}grid-2{% endif %}">
 
@@ -495,6 +535,34 @@
         setTimeout(() => location.reload(), 500);
       }
     });
+  }
+
+  function setVacation() {
+    const start = document.getElementById('vacation-start').value;
+    const end = document.getElementById('vacation-end').value;
+    const errEl = document.getElementById('vacation-error');
+    errEl.style.display = 'none';
+    if (!start || !end) {
+      errEl.textContent = 'Veuillez saisir les deux dates.';
+      errEl.style.display = 'block';
+      return;
+    }
+    fetch('/api/thermostat/vacation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start, end })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') { location.reload(); }
+      else { errEl.textContent = d.error || 'Erreur inconnue'; errEl.style.display = 'block'; }
+    });
+  }
+
+  function clearVacation() {
+    fetch('/api/thermostat/vacation', { method: 'DELETE' })
+      .then(r => r.json())
+      .then(d => { if (d.status === 'ok') location.reload(); });
   }
 
   function toggleHA() {
