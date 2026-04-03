@@ -368,10 +368,14 @@ def index():
             thermostat_state["everyone_away"] = False
             thermostat_state["presence_status"] = None
         next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
-        return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state, next_schedule_start=next_start)
+        vacation = thermostat_module.get_vacation()
+        on_vacation = thermostat_module.is_on_vacation()
+        return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
+                               next_schedule_start=next_start, vacation=vacation, on_vacation=on_vacation)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
-        return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={}, next_schedule_start=None)
+        return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={},
+                               next_schedule_start=None, vacation={}, on_vacation=False)
 
 
 @app.route("/api/data")
@@ -507,6 +511,37 @@ def api_thermostat_state():
         "temp_on": config.THERMOSTAT.get("temp_on"),
         "temp_off": config.THERMOSTAT.get("temp_off"),
     })
+
+
+@app.route("/api/thermostat/vacation", methods=["GET"])
+def api_thermostat_vacation_get():
+    vac = thermostat_module.get_vacation()
+    return jsonify({**vac, "active": thermostat_module.is_on_vacation()})
+
+
+@app.route("/api/thermostat/vacation", methods=["POST"])
+def api_thermostat_vacation_set():
+    data = request.get_json(force=True)
+    start = str(data.get("start", "")).strip()
+    end = str(data.get("end", "")).strip()
+    try:
+        from datetime import date as _date
+        s = datetime.fromisoformat(start).date()
+        e = datetime.fromisoformat(end).date()
+        if s > e:
+            return jsonify({"error": "La date de début doit être avant la date de fin"}), 400
+    except Exception:
+        return jsonify({"error": "Dates invalides (format YYYY-MM-DD attendu)"}), 400
+    thermostat_module.set_vacation(start, end)
+    logger.info("Mode vacances activé : %s → %s", start, end)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/thermostat/vacation", methods=["DELETE"])
+def api_thermostat_vacation_clear():
+    thermostat_module.clear_vacation()
+    logger.info("Mode vacances annulé")
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/thermostat/resume", methods=["POST"])

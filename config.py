@@ -10,9 +10,11 @@ LOCATION = {
     "longitude": 2.2655,
     # Station météociel la plus proche : Orsay (~5 km)
     "meteociel_url": "https://www.meteociel.fr/temps-reel/obs_villes.php?code2=7149",
-    # IP du NAS pour le lien dans les emails
+    # IP du NAS pour le lien dans les emails (accès local)
     "nas_ip": "192.168.1.2",
     "nas_port": 8888,
+    # URL publique (si exposé sur Internet) — utilisée dans les emails si renseignée
+    "public_url": "",
 }
 
 # ── Tarifs EDF Tempo (€/kWh) – saison 2024-2025 ─────────────

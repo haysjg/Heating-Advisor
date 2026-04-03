@@ -54,6 +54,38 @@ def get_state() -> dict:
     return state
 
 
+def get_vacation() -> dict:
+    """Retourne les dates de vacances stockées (start/end en YYYY-MM-DD, ou None)."""
+    state = _load_state()
+    return {"start": state.get("vacation_start"), "end": state.get("vacation_end")}
+
+
+def set_vacation(start: str, end: str) -> None:
+    """Active le mode vacances du date start au date end (YYYY-MM-DD inclus)."""
+    state = _load_state()
+    _save_state({**state, "vacation_start": start, "vacation_end": end})
+
+
+def clear_vacation() -> None:
+    """Annule le mode vacances."""
+    state = _load_state()
+    _save_state({**state, "vacation_start": None, "vacation_end": None})
+
+
+def is_on_vacation() -> bool:
+    """Retourne True si la date d'aujourd'hui est dans la période de vacances."""
+    state = _load_state()
+    start = state.get("vacation_start")
+    end = state.get("vacation_end")
+    if not start or not end:
+        return False
+    try:
+        today = datetime.now().date()
+        return datetime.fromisoformat(start).date() <= today <= datetime.fromisoformat(end).date()
+    except Exception:
+        return False
+
+
 def is_in_schedule(cfg: dict) -> bool:
     """Retourne True si l'heure actuelle est dans la plage du jour courant."""
     now = datetime.now()
@@ -192,6 +224,14 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     recommendation : 'poele', 'clim', 'none', None
     """
     if not thermostat_cfg.get("enabled"):
+        return
+    if is_on_vacation():
+        state = _load_state()
+        if state.get("state") == "on":
+            import modules.homeassistant as ha_client
+            logger.info("Thermostat : extinction poêle — mode vacances actif")
+            ha_client.turn_off(ha_cfg)
+            _save_state({**state, "state": "off", "last_turned_off": datetime.now().isoformat()})
         return
     if not ha_cfg.get("enabled") or not ha_cfg.get("url") or not ha_cfg.get("token"):
         logger.warning("Thermostat : Home Assistant non configuré, skip")
