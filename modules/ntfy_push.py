@@ -2,6 +2,7 @@
 
 import logging
 import urllib.request
+from modules.crypto import decrypt_password
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ def send(title: str, message: str, ntfy_cfg: dict) -> None:
         return
     url = ntfy_cfg.get("url", "").rstrip("/")
     topic = ntfy_cfg.get("topic", "heating-advisor")
-    token = ntfy_cfg.get("token", "")
+    token = decrypt_password(ntfy_cfg.get("token", ""))
     if not url or not topic:
         return
     try:

@@ -630,6 +630,40 @@
 
     <hr class="section-divider">
 
+    {# ── Notifications Ntfy ── #}
+    <div class="card form-section">
+      <h3>🔔 Notifications push <small style="font-weight:400;font-size:0.8em">(Ntfy — optionnel)</small></h3>
+
+      <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
+        <input type="checkbox" id="ntfy_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.NTFY.enabled %}checked{% endif %}>
+        <label for="ntfy_enabled" style="font-size:0.9rem;cursor:pointer">
+          Activer les notifications push (allumage / extinction poêle)
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>URL du serveur Ntfy</label>
+          <input type="text" id="ntfy_url" value="{{ config.NTFY.url }}">
+          <span class="hint">Ex : https://ntfy-jg.mywire.org:8088</span>
+        </div>
+        <div class="form-group">
+          <label>Topic</label>
+          <input type="text" id="ntfy_topic" value="{{ config.NTFY.topic }}">
+          <span class="hint">Ex : heating-advisor</span>
+        </div>
+        <div class="form-group">
+          <label>Token d'accès</label>
+          <input type="password" id="ntfy_token"
+                 placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.NTFY.token else 'Coller le token ici' }}">
+          <span class="hint">Généré avec : ntfy token add &lt;utilisateur&gt;</span>
+        </div>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
     {# ── Mot de passe ── #}
     <div class="card form-section">
       <h3>🔒 Mot de passe de connexion</h3>
@@ -728,6 +762,10 @@
       white_hc:             parseFloat(getVal('white_hc')),
       red_hp:               parseFloat(getVal('red_hp')),
       red_hc:               parseFloat(getVal('red_hc')),
+      ntfy_enabled:         document.getElementById('ntfy_enabled').checked,
+      ntfy_url:             getVal('ntfy_url'),
+      ntfy_topic:           getVal('ntfy_topic'),
+      ntfy_token:           getVal('ntfy_token'),
       ha_enabled:           document.getElementById('ha_enabled').checked,
       ha_url:               getVal('ha_url'),
       ha_token:             getVal('ha_token'),

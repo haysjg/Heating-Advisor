@@ -652,6 +652,13 @@ def api_config_save():
         else:
             final_ha_token = config.HOME_ASSISTANT.get("token", "")
 
+        # Token Ntfy : ne mettre à jour que si un nouveau est fourni, puis chiffrer
+        new_ntfy_token = str(data.get("ntfy_token", "")).strip()
+        if new_ntfy_token:
+            final_ntfy_token = encrypt_password(new_ntfy_token)
+        else:
+            final_ntfy_token = config.NTFY.get("token", "")
+
         override = {
             "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids, "hours_per_bag": hours_per_bag},
             "TARGET_TEMP": float(data["target_temp"]),
@@ -696,6 +703,12 @@ def api_config_save():
                 "smtp_port": int(data.get("smtp_port", config.EMAIL.get("smtp_port", 587))),
                 "notify_hour": int(data.get("notify_hour", config.EMAIL.get("notify_hour", 20))),
                 "notify_minute": int(data.get("notify_minute", config.EMAIL.get("notify_minute", 0))),
+            },
+            "NTFY": {
+                "enabled": bool(data.get("ntfy_enabled", False)),
+                "url": str(data.get("ntfy_url", config.NTFY.get("url", ""))).strip().rstrip("/"),
+                "topic": str(data.get("ntfy_topic", config.NTFY.get("topic", "heating-advisor"))).strip(),
+                "token": final_ntfy_token,
             },
             "HOME_ASSISTANT": {
                 "enabled": bool(data.get("ha_enabled", False)),
