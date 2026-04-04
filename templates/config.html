@@ -670,6 +670,29 @@
 
     <hr class="section-divider">
 
+    {# ── Radiateurs Tempo Rouge ── #}
+    <div class="card form-section">
+      <h3>🔴 Radiateurs — Jours Tempo Rouge</h3>
+
+      <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
+        <input type="checkbox" id="radiateurs_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.RADIATEURS_TEMPO_ROUGE.enabled %}checked{% endif %}>
+        <label for="radiateurs_enabled" style="font-size:0.9rem;cursor:pointer">
+          Éteindre automatiquement les radiateurs pendant les HP des jours rouges
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label>Entités HA à piloter <span style="font-weight:400;font-size:0.8em">(une par ligne)</span></label>
+        <textarea id="radiateurs_entities" rows="4"
+                  placeholder="climate.radiateur_salon&#10;climate.radiateur_chambre"
+                  style="font-family:monospace;font-size:0.85rem">{{ config.RADIATEURS_TEMPO_ROUGE.entities | join('\n') }}</textarea>
+        <span class="hint">Entités de type climate dans Home Assistant</span>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
     {# ── Mot de passe ── #}
     <div class="card form-section">
       <h3>🔒 Mot de passe de connexion</h3>
@@ -808,6 +831,8 @@
         sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end') },
         sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end') },
       },
+      radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
+      radiateurs_entities: getVal('radiateurs_entities'),
     };
 
     fetch('/api/config', {
@@ -964,6 +989,8 @@
         sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end') },
         sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end') },
       },
+      radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
+      radiateurs_entities: getVal('radiateurs_entities'),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');

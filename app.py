@@ -28,6 +28,27 @@ import modules.history as history_module
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+RADIATEURS_MANAGED_OFF_FILE = os.path.join(os.path.dirname(__file__), "data", "radiateurs_managed_off.json")
+
+
+def _load_managed_off() -> list:
+    try:
+        if os.path.exists(RADIATEURS_MANAGED_OFF_FILE):
+            with open(RADIATEURS_MANAGED_OFF_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def _save_managed_off(entities: list) -> None:
+    try:
+        os.makedirs(os.path.dirname(RADIATEURS_MANAGED_OFF_FILE), exist_ok=True)
+        with open(RADIATEURS_MANAGED_OFF_FILE, "w") as f:
+            json.dump(entities, f)
+    except Exception as e:
+        logger.error("Sauvegarde managed_off échouée : %s", e)
+
 app = Flask(__name__)
 
 # ── Clé secrète persistante (sessions) ───────────────────────
@@ -248,8 +269,80 @@ def _reschedule_thermostat():
         logger.info("Thermostat désactivé — aucun job planifié")
 
 
+def _run_radiateurs_tempo_rouge():
+    """Vérifie et pilote les radiateurs lors des jours Tempo Rouge (HP uniquement)."""
+    cfg = config.RADIATEURS_TEMPO_ROUGE
+    if not cfg.get("enabled"):
+        return
+    entities = cfg.get("entities", [])
+    if not entities or not config.HOME_ASSISTANT.get("enabled"):
+        return
+
+    now = datetime.now()
+    if not (config.HP_START <= now.hour < config.HP_END):
+        return
+
+    try:
+        tempo = get_tempo_info(config.HP_START, config.HP_END)
+        today_color = tempo.get("today", {}).get("color", "BLUE")
+    except Exception as e:
+        logger.error("Radiateurs tempo rouge : erreur récupération tempo : %s", e)
+        return
+
+    from modules.ntfy_push import send as ntfy_send
+
+    if today_color == "RED":
+        turned_off = []
+        managed = _load_managed_off()
+        for entity_id in entities:
+            state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
+            if state and state.get("state") not in ("off", "unavailable", "unknown"):
+                if ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id):
+                    turned_off.append(entity_id)
+                    if entity_id not in managed:
+                        managed.append(entity_id)
+        if turned_off:
+            _save_managed_off(managed)
+            names = ", ".join(e.split(".")[-1].replace("_", " ") for e in turned_off)
+            ntfy_send("🔴 Jour Rouge — Radiateurs éteints", f"Extinction automatique : {names}", config.NTFY)
+            logger.info("Radiateurs éteints (jour rouge) : %s", turned_off)
+    else:
+        managed = _load_managed_off()
+        turned_on = []
+        for entity_id in list(managed):
+            if entity_id in entities:
+                if ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id):
+                    turned_on.append(entity_id)
+                    managed.remove(entity_id)
+        if turned_on:
+            _save_managed_off(managed)
+            names = ", ".join(e.split(".")[-1].replace("_", " ") for e in turned_on)
+            ntfy_send("🟢 Radiateurs rallumés", f"Jour non-rouge : {names}", config.NTFY)
+            logger.info("Radiateurs rallumés (jour non-rouge) : %s", turned_on)
+
+
+def _reschedule_radiateurs():
+    """(Re)planifie le job radiateurs Tempo Rouge selon la config courante."""
+    try:
+        _scheduler.remove_job("radiateurs_job")
+    except Exception:
+        pass
+    if config.RADIATEURS_TEMPO_ROUGE.get("enabled"):
+        _scheduler.add_job(
+            _run_radiateurs_tempo_rouge,
+            "interval",
+            minutes=50,
+            id="radiateurs_job",
+            misfire_grace_time=120,
+        )
+        logger.info("Radiateurs Tempo Rouge planifiés toutes les 50 min")
+    else:
+        logger.info("Radiateurs Tempo Rouge désactivés — aucun job planifié")
+
+
 _reschedule_notify()
 _reschedule_thermostat()
+_reschedule_radiateurs()
 
 # ── Historique des températures ───────────────────────────
 _scheduler.add_job(
@@ -408,6 +501,26 @@ def api_notify_test():
     except Exception as e:
         logger.exception("Erreur test notification : %s", e)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/radiateurs/status")
+def api_radiateurs_status():
+    cfg = config.RADIATEURS_TEMPO_ROUGE
+    managed_off = _load_managed_off()
+    entities_state = []
+    if cfg.get("enabled") and config.HOME_ASSISTANT.get("enabled"):
+        for entity_id in cfg.get("entities", []):
+            state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
+            entities_state.append({
+                "entity_id": entity_id,
+                "state": state.get("state") if state else "unavailable",
+                "managed_off": entity_id in managed_off,
+            })
+    return jsonify({
+        "enabled": cfg.get("enabled", False),
+        "entities": entities_state,
+        "managed_off": managed_off,
+    })
 
 
 @app.route("/api/ntfy-test", methods=["POST"])
@@ -749,6 +862,10 @@ def api_config_save():
                 "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),
                 "schedule": data.get("thermostat_schedule", config.THERMOSTAT.get("schedule", {})),
             },
+            "RADIATEURS_TEMPO_ROUGE": {
+                "enabled": bool(data.get("radiateurs_enabled", False)),
+                "entities": [e.strip() for e in str(data.get("radiateurs_entities", "")).splitlines() if e.strip()],
+            },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
         with open(OVERRIDE_FILE, "w") as f:
@@ -757,6 +874,7 @@ def api_config_save():
         _cache["data"] = None
         _cache["expires_at"] = None
         _reschedule_notify()
+        _reschedule_radiateurs()
         return jsonify({"status": "ok"})
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400

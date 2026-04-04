@@ -174,6 +174,58 @@ def get_presence(cfg: dict, person_entities: list) -> bool | None:
         return None
 
 
+def get_entity_state(cfg: dict, entity_id: str) -> dict | None:
+    """Retourne l'état d'une entité HA quelconque."""
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return None
+    try:
+        return _request(
+            f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
+            cfg["token"],
+        )
+    except Exception as e:
+        logger.error("HA get_entity_state(%s) échoué : %s", entity_id, e)
+        return None
+
+
+def turn_off_entity(cfg: dict, entity_id: str) -> bool:
+    """Éteint une entité HA (climate, switch, etc.)."""
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return False
+    domain = entity_id.split(".")[0]
+    try:
+        _request(
+            f"{cfg['url'].rstrip('/')}/api/services/{domain}/turn_off",
+            cfg["token"],
+            method="POST",
+            body={"entity_id": entity_id},
+        )
+        logger.info("HA : %s éteint", entity_id)
+        return True
+    except Exception as e:
+        logger.error("HA turn_off_entity(%s) échoué : %s", entity_id, e)
+        return False
+
+
+def turn_on_entity(cfg: dict, entity_id: str) -> bool:
+    """Allume une entité HA (climate, switch, etc.)."""
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return False
+    domain = entity_id.split(".")[0]
+    try:
+        _request(
+            f"{cfg['url'].rstrip('/')}/api/services/{domain}/turn_on",
+            cfg["token"],
+            method="POST",
+            body={"entity_id": entity_id},
+        )
+        logger.info("HA : %s allumé", entity_id)
+        return True
+    except Exception as e:
+        logger.error("HA turn_on_entity(%s) échoué : %s", entity_id, e)
+        return False
+
+
 def apply_recommendation(cfg: dict, system: str) -> bool:
     """
     Applique la recommandation du Heating Advisor au poêle.

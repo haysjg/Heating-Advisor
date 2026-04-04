@@ -123,6 +123,12 @@ NTFY = {
     "token": "",                                 # token d'accès (ntfy token add ...)
 }
 
+# ── Radiateurs Tempo Rouge ───────────────────────────────────
+RADIATEURS_TEMPO_ROUGE = {
+    "enabled": False,
+    "entities": [],  # entity_id HA des radiateurs à piloter (ex. ["climate.radiateur_salon"])
+}
+
 # ── Notifications email ───────────────────────────────────────
 EMAIL = {
     "enabled": True,
