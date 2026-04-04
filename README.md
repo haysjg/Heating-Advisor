@@ -11,9 +11,11 @@ Application Flask de recommandation de chauffage. Compare en temps réel le coû
 3. [Modules](#modules)
 4. [Thermostat automatique](#thermostat-automatique)
 5. [Détection de présence](#détection-de-présence)
-6. [API REST](#api-rest)
-7. [Configuration](#configuration)
-8. [Déploiement](#déploiement)
+6. [Mode Absence](#mode-absence)
+7. [Notifications push](#notifications-push)
+8. [API REST](#api-rest)
+9. [Configuration](#configuration)
+10. [Déploiement](#déploiement)
 
 ---
 
@@ -36,6 +38,7 @@ modules/
   history.py             # Historisation SQLite
   overrides.py           # Chargement/application de config_override.json
   crypto.py              # Chiffrement AES des mots de passe en config
+  ntfy_push.py           # Notifications push via Ntfy
 ```
 
 **Flux de données principal :**
@@ -50,6 +53,8 @@ Météo (météociel.fr / Open-Meteo)
   Recommandation (clim / poêle / aucun)
         ↓
     thermostat.py → homeassistant.py → poêle Edilkamin (climate entity)
+        ↓
+    ntfy_push.py → notification push (allumage / extinction)
 ```
 
 ---
@@ -145,7 +150,13 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 | Fonction | Description |
 |---|---|
 | `load(cfg)` | Charge `data/config_override.json` et l'applique sur le module `config` au démarrage. |
-| `apply(cfg, data)` | Applique un dict de surcharges sur le module `config`. Supporte tous les blocs (`THERMOSTAT`, `HOME_ASSISTANT`, `EMAIL`, `LOCATION`, etc.). |
+| `apply(cfg, data)` | Applique un dict de surcharges sur le module `config`. Supporte tous les blocs (`THERMOSTAT`, `HOME_ASSISTANT`, `EMAIL`, `NTFY`, `LOCATION`, etc.). |
+
+### `ntfy_push.py` — Notifications push
+
+| Fonction | Description |
+|---|---|
+| `send(title, message, ntfy_cfg)` | Envoie une notification push via Ntfy. Silencieux en cas d'erreur réseau. Le token est déchiffré automatiquement avant envoi. |
 
 ---
 
@@ -157,14 +168,15 @@ Le thermostat automatique pilote le poêle selon la température intérieure mes
 
 ```
 1. HA configuré ?                          → sinon, skip
-2. Sonde accessible ?                      → sinon, alerte email + extinction sécurité hors plage
-3. Synchronisation avec l'état réel HA     → détecte allumage/extinction manuels
-4. Mode absent / proximité                 → voir section suivante
-5. Suspension active ?                     → si oui, skip jusqu'à expiration
-6. Dans la plage horaire ?
-   - OUI + poêle OFF + ressenti < temp_on + recommandation "poele" → allumage
-   - OUI + poêle ON  + ressenti ≥ temp_off + allumé ≥ min_on_minutes → extinction
-   - NON + poêle ON  + allumé ≥ grace_minutes → extinction fin de plage
+2. Mode vacances actif ?                   → extinction + notification push + skip
+3. Sonde accessible ?                      → sinon, alerte email + extinction sécurité hors plage
+4. Synchronisation avec l'état réel HA     → détecte allumage/extinction manuels
+5. Mode absent / proximité                 → voir section suivante
+6. Suspension active ?                     → si oui, skip jusqu'à expiration
+7. Dans la plage horaire ?
+   - OUI + poêle OFF + ressenti < temp_on + recommandation "poele" → allumage + notification push
+   - OUI + poêle ON  + ressenti ≥ temp_off + allumé ≥ min_on_minutes → extinction + notification push
+   - NON + poêle ON  + allumé ≥ grace_minutes → extinction fin de plage + notification push
 ```
 
 ### Paramètres clés
@@ -213,6 +225,100 @@ Nécessite deux zones configurées dans Home Assistant :
 
 ---
 
+## Mode Absence
+
+Permet de suspendre le thermostat pour une absence de plusieurs jours (vacances, déplacement), indépendamment de la géolocalisation.
+
+### Fonctionnement
+
+- Les dates de départ et de retour sont saisies depuis le dashboard (section **🏖️ Mode Absence**) ou via l'API.
+- Tant que la date du jour est dans la plage configurée, le thermostat est **entièrement suspendu** : pas d'allumage, extinction immédiate si le poêle tourne.
+- Une notification push est envoyée à l'extinction.
+- L'absence peut être annulée à tout moment depuis le dashboard.
+
+### États affichés
+
+| État | Affichage |
+|---|---|
+| Aucune absence | Formulaire de saisie départ / retour |
+| Absence programmée (future) | Badge orange + bouton annuler |
+| Absence en cours | Badge bleu + bouton annuler |
+
+### API
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/thermostat/vacation` | Retourne les dates programmées et l'état actif |
+| `POST /api/thermostat/vacation` | Programme une absence `{ "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }` |
+| `DELETE /api/thermostat/vacation` | Annule l'absence programmée |
+
+---
+
+## Notifications push
+
+Les notifications push sont envoyées via **[Ntfy](https://ntfy.sh)**, auto-hébergeable sur NAS Synology.
+
+### Événements notifiés
+
+| Titre | Déclencheur |
+|---|---|
+| 🔥 Poêle allumé | Allumage automatique par le thermostat |
+| ✅ Poêle éteint | Température cible atteinte |
+| ⏹ Poêle éteint | Recommandation changée (clim ou aucun chauffage) |
+| 🌙 Poêle éteint | Fin de plage horaire |
+| 🚗 Poêle éteint | Absence confirmée (géolocalisation) |
+| ✈️ Poêle éteint | Mode vacances actif |
+| ⚠️ Poêle éteint | Extinction sécurité (sonde hors service) |
+
+### Installation Ntfy sur NAS Synology
+
+```bash
+mkdir -p /volume1/docker/ntfy/data /volume1/docker/ntfy/cache
+cat > /volume1/docker/ntfy/docker-compose.yml << 'EOF'
+services:
+  ntfy:
+    image: binwiederhier/ntfy
+    container_name: ntfy
+    command: serve
+    environment:
+      - TZ=Europe/Paris
+    volumes:
+      - /volume1/docker/ntfy/data:/etc/ntfy
+      - /volume1/docker/ntfy/cache:/var/cache/ntfy
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+EOF
+cd /volume1/docker/ntfy && sudo docker-compose up -d
+```
+
+### Sécurisation (authentification)
+
+```bash
+# Activer l'authentification
+cat > /volume1/docker/ntfy/data/server.yml << 'EOF'
+auth-file: /etc/ntfy/auth.db
+auth-default-access: deny-all
+EOF
+sudo docker-compose restart
+
+# Créer un utilisateur et un token
+sudo docker exec -it ntfy ntfy user add --role=admin <utilisateur>
+sudo docker exec -it ntfy ntfy token add <utilisateur>
+```
+
+### Configuration dans Heating Advisor
+
+Accessible via `/config` → section **🔔 Notifications push** :
+
+| Paramètre | Description |
+|---|---|
+| URL serveur | Ex. `https://ntfy-jg.mywire.org:8088` |
+| Topic | Ex. `heating-advisor` |
+| Token | Généré avec `ntfy token add` (chiffré en AES) |
+
+---
+
 ## API REST
 
 | Endpoint | Description |
@@ -227,7 +333,11 @@ Nécessite deux zones configurées dans Home Assistant :
 | `GET /api/thermostat/state` | État courant du thermostat |
 | `GET /api/thermostat/diagnose` | Diagnostic complet (temp, sonde, présence, scheduler) |
 | `POST /api/thermostat/toggle` | Active/désactive le thermostat |
-| `POST /config/save` | Sauvegarde la configuration depuis l'interface |
+| `POST /api/thermostat/resume` | Annule la suspension du thermostat |
+| `GET /api/thermostat/vacation` | Dates d'absence programmées |
+| `POST /api/thermostat/vacation` | Programme une absence |
+| `DELETE /api/thermostat/vacation` | Annule l'absence programmée |
+| `POST /api/config` | Sauvegarde la configuration depuis l'interface |
 | `POST /api/notify/test` | Déclenche manuellement l'email de recommandation |
 
 ---
@@ -245,6 +355,7 @@ Tous les paramètres sont modifiables via l'interface `/config` sans rebuild Doc
 | `latitude`, `longitude` | Coordonnées GPS |
 | `meteociel_url` | URL de la station météociel.fr la plus proche |
 | `nas_ip`, `nas_port` | Adresse du NAS pour les liens dans les emails |
+| `public_url` | URL publique si exposé sur Internet |
 
 **`CLIM`** — Climatisation réversible
 | Clé | Description |
@@ -300,8 +411,16 @@ Trois couleurs (`BLUE`, `WHITE`, `RED`), deux périodes chacune (`HP`, `HC`).
 | `enabled` | Active les notifications email |
 | `smtp_host` / `smtp_port` | Serveur SMTP |
 | `sender` / `recipients` | Expéditeur et destinataires |
-| `app_password` | Mot de passe applicatif Gmail (chiffré) |
+| `app_password` | Mot de passe applicatif (chiffré en AES) |
 | `notify_hour` / `notify_minute` | Heure d'envoi automatique de la recommandation J+1 |
+
+**`NTFY`** — Notifications push
+| Clé | Description |
+|---|---|
+| `enabled` | Active les notifications push |
+| `url` | URL du serveur Ntfy (ex. `https://ntfy-jg.mywire.org:8088`) |
+| `topic` | Topic Ntfy (ex. `heating-advisor`) |
+| `token` | Token d'accès Ntfy (chiffré en AES) |
 
 ---
 
@@ -327,6 +446,8 @@ tar xzf ha.tar.gz --strip-components=1 && rm ha.tar.gz
 mkdir -p data
 sudo docker-compose down && sudo docker-compose up -d --build
 ```
+
+> ⚠️ Toujours lancer la mise à jour depuis `/volume1/docker/heating-advisor` pour que le bind mount `./data` pointe vers le bon répertoire.
 
 ### En local (développement)
 
