@@ -660,6 +660,12 @@
           <span class="hint">Généré avec : ntfy token add &lt;utilisateur&gt;</span>
         </div>
       </div>
+
+      <div style="margin-top:1rem">
+        <button type="button" class="btn-back" onclick="testNtfy()" id="btn-test-ntfy">
+          🔔 Envoyer une notification test
+        </button>
+      </div>
     </div>
 
     <hr class="section-divider">
@@ -818,6 +824,22 @@
       }
     })
     .catch(() => showToast('Erreur réseau', false));
+  }
+
+  function testNtfy() {
+    const btn = document.getElementById('btn-test-ntfy');
+    btn.disabled = true;
+    btn.textContent = '⏳ Envoi en cours…';
+    fetch('/api/ntfy-test', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        showToast(d.status === 'ok' ? '✓ Notification envoyée !' : 'Erreur : ' + (d.error || 'inconnue'), d.status === 'ok');
+      })
+      .catch(() => showToast('Erreur réseau', false))
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = '🔔 Envoyer une notification test';
+      });
   }
 
   function testNotify() {

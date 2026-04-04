@@ -410,6 +410,20 @@ def api_notify_test():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/ntfy-test", methods=["POST"])
+def api_ntfy_test():
+    from modules.ntfy_push import send as ntfy_send
+    try:
+        ntfy_cfg = config.NTFY
+        if not ntfy_cfg.get("enabled"):
+            return jsonify({"error": "Notifications ntfy désactivées"}), 400
+        ntfy_send("🔔 Heating Advisor", "Notification de test — configuration OK !", ntfy_cfg)
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.exception("Erreur test ntfy : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/ha/turn_on", methods=["POST"])
 def api_ha_turn_on():
     if not ha_client.is_configured(config.HOME_ASSISTANT):
