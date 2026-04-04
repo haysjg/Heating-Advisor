@@ -905,6 +905,9 @@
       white_hc:             parseFloat(getVal('white_hc')),
       red_hp:               parseFloat(getVal('red_hp')),
       red_hc:               parseFloat(getVal('red_hc')),
+      ntfy_enabled:         document.getElementById('ntfy_enabled').checked,
+      ntfy_url:             getVal('ntfy_url'),
+      ntfy_topic:           getVal('ntfy_topic'),
       ha_enabled:           document.getElementById('ha_enabled').checked,
       ha_url:               getVal('ha_url'),
       ha_entity_id:         getVal('ha_entity_id'),
@@ -987,6 +990,9 @@
         setVal('white_hc',           d.white_hc);
         setVal('red_hp',             d.red_hp);
         setVal('red_hc',             d.red_hc);
+        setChk('ntfy_enabled',       d.ntfy_enabled);
+        setVal('ntfy_url',           d.ntfy_url);
+        setVal('ntfy_topic',         d.ntfy_topic);
         setChk('ha_enabled',         d.ha_enabled);
         setVal('ha_url',             d.ha_url);
         setVal('ha_entity_id',       d.ha_entity_id);
