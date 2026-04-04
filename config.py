@@ -115,6 +115,14 @@ AUTH = {
     "password_hash": "",            # hash stocké dans config_override.json après changement
 }
 
+# ── Notifications push Ntfy ──────────────────────────────────
+NTFY = {
+    "enabled": False,
+    "url": "https://ntfy-jg.mywire.org:8088",  # URL de ton instance Ntfy
+    "topic": "heating-advisor",                  # topic Ntfy
+    "token": "",                                 # token d'accès (ntfy token add ...)
+}
+
 # ── Notifications email ───────────────────────────────────────
 EMAIL = {
     "enabled": True,

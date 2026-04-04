@@ -218,11 +218,13 @@ def next_schedule_start(cfg: dict) -> str | None:
     return None
 
 
-def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, email_cfg: dict = None) -> None:
+def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, email_cfg: dict = None,
+                    ntfy_cfg: dict = None, outdoor_temp: float = None) -> None:
     """
     Vérifie la température intérieure et pilote le poêle.
     recommendation : 'poele', 'clim', 'none', None
     """
+    from modules.ntfy_push import send as ntfy_send
     if not thermostat_cfg.get("enabled"):
         return
     if is_on_vacation():
@@ -232,6 +234,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             logger.info("Thermostat : extinction poêle — mode vacances actif")
             ha_client.turn_off(ha_cfg)
             _save_state({**state, "state": "off", "last_turned_off": datetime.now().isoformat()})
+            ntfy_send("✈️ Poêle éteint", "Mode vacances actif — thermostat suspendu.", ntfy_cfg)
         return
     if not ha_cfg.get("enabled") or not ha_cfg.get("url") or not ha_cfg.get("token"):
         logger.warning("Thermostat : Home Assistant non configuré, skip")
@@ -265,6 +268,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         "state": "off",
                         "last_turned_off": datetime.now().isoformat(),
                     })
+                    ntfy_send("⚠️ Poêle éteint", "Extinction sécurité — sonde hors service, fin de plage horaire.", ntfy_cfg)
         return
 
     # Sonde OK — réinitialise le compteur d'échecs si nécessaire
@@ -388,6 +392,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     logger.info("Thermostat : extinction poêle — absence confirmée")
                     ha_client.turn_off(ha_cfg)
                     _save_state({**state, "state": "off", "last_turned_off": datetime.now().isoformat()})
+                    ntfy_send("🚗 Poêle éteint", "Tout le monde absent — thermostat en pause.", ntfy_cfg)
                 return
             else:
                 logger.debug("Thermostat : absence détectée, grâce encore %d min", int(away_grace - away_min))
@@ -419,6 +424,12 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 "state": "on",
                 "last_turned_on": datetime.now().isoformat(),
             })
+            _ext = f", {outdoor_temp:.1f}°C dehors" if outdoor_temp is not None else ""
+            ntfy_send(
+                "🔥 Poêle allumé",
+                f"Intérieur : {temp:.1f}°C (ressenti {effective_temp:.1f}°C){_ext}.",
+                ntfy_cfg,
+            )
     else:  # current == "on"
         if in_schedule:
             if recommendation != "poele" and on_minutes >= min_on:
@@ -432,6 +443,12 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "state": "off",
                     "last_turned_off": datetime.now().isoformat(),
                 })
+                _rec_label = {"clim": "clim réversible", "none": "aucun chauffage"}.get(recommendation, recommendation)
+                ntfy_send(
+                    "⏹ Poêle éteint",
+                    f"Recommandation : {_rec_label} (allumé depuis {int(on_minutes)} min).",
+                    ntfy_cfg,
+                )
                 return
             if effective_temp >= temp_off and on_minutes >= min_on:
                 logger.info(
@@ -444,6 +461,11 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "state": "off",
                     "last_turned_off": datetime.now().isoformat(),
                 })
+                ntfy_send(
+                    "✅ Poêle éteint",
+                    f"Température atteinte : {effective_temp:.1f}°C (cible {temp_off}°C), allumé depuis {int(on_minutes)} min.",
+                    ntfy_cfg,
+                )
         else:
             if on_minutes >= grace:
                 logger.info(
@@ -456,3 +478,4 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "state": "off",
                     "last_turned_off": datetime.now().isoformat(),
                 })
+                ntfy_send("🌙 Poêle éteint", "Fin de plage horaire.", ntfy_cfg)

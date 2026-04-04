@@ -221,7 +221,9 @@ def _run_thermostat():
     try:
         data = get_analysis()
         recommendation = data.get("recommendation", {}).get("system", "none")
-        thermostat_module.check_and_apply(config.HOME_ASSISTANT, config.THERMOSTAT, recommendation, config.EMAIL)
+        outdoor_temp = data.get("weather", {}).get("temperature")
+        thermostat_module.check_and_apply(config.HOME_ASSISTANT, config.THERMOSTAT, recommendation, config.EMAIL,
+                                          ntfy_cfg=config.NTFY, outdoor_temp=outdoor_temp)
     except Exception as e:
         logger.error("Thermostat check échoué : %s", e)
 
