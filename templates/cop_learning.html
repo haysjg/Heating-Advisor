@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apprentissage COP | Heating Advisor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .tag-section {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .sensor-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .sensor-box {
+            background: #1a1a1a;
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+        }
+        .sensor-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .sensor-label {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 5px;
+        }
+        .tag-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .tag-btn {
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .tag-btn.on {
+            background: #4CAF50;
+            color: white;
+        }
+        .tag-btn.off {
+            background: #f44336;
+            color: white;
+        }
+        .tag-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #1a1a1a;
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 5px;
+        }
+        .chart-container {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            position: relative;
+            height: 400px;
+        }
+        .table-container {
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #2a2a2a;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        th {
+            background: #1a1a1a;
+            font-weight: bold;
+        }
+        .tag-on {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .tag-off {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .confidence-bar {
+            width: 100%;
+            height: 30px;
+            background: #1a1a1a;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #f44336 0%, #FF9800 50%, #4CAF50 100%);
+            transition: width 0.5s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        .btn-secondary {
+            background: #666;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .alert-warning {
+            background: #FF9800;
+            color: white;
+        }
+        .alert-success {
+            background: #4CAF50;
+            color: white;
+        }
+        .alert-error {
+            background: #f44336;
+            color: white;
+        }
+        .calibration-form {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .calibration-form input {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #1a1a1a;
+            color: white;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Apprentissage COP Réel</h1>
+            <nav>
+                <a href="/">← Retour</a>
+            </nav>
+        </header>
+
+        <div id="alert-container"></div>
+
+        <!-- Section tagging -->
+        <section class="tag-section">
+            <h2>Tagging Manuel</h2>
+
+            <div class="sensor-display">
+                <div class="sensor-box">
+                    <div class="sensor-value" id="sensor-total">--</div>
+                    <div class="sensor-label">Total (W)</div>
+                </div>
+                <div class="sensor-box">
+                    <div class="sensor-value" id="sensor-heater">--</div>
+                    <div class="sensor-label">Ballon (W)</div>
+                </div>
+                <div class="sensor-box">
+                    <div class="sensor-value" id="sensor-ac">--</div>
+                    <div class="sensor-label">Clim déduite (W)</div>
+                </div>
+                <div class="sensor-box">
+                    <div class="sensor-value" id="sensor-base">--</div>
+                    <div class="sensor-label">Base (W)</div>
+                </div>
+                <div class="sensor-box">
+                    <div class="sensor-value" id="sensor-outdoor">--</div>
+                    <div class="sensor-label">Temp. ext. (°C)</div>
+                </div>
+            </div>
+
+            <div class="tag-buttons">
+                <button class="tag-btn on" onclick="tagClim('on')">✓ Clim ON</button>
+                <button class="tag-btn off" onclick="tagClim('off')">✗ Clim OFF</button>
+            </div>
+
+            <div id="last-tag-info" style="text-align: center; color: #888; margin-top: 10px;"></div>
+        </section>
+
+        <!-- Statistiques -->
+        <section>
+            <h2>Statistiques</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-tags">0</div>
+                    <div class="stat-label">Tags totaux</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-valid-measurements">0</div>
+                    <div class="stat-label">Mesures valides</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-avg-cop">--</div>
+                    <div class="stat-label">COP moyen</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-curve-points">0</div>
+                    <div class="stat-label">Points courbe</div>
+                </div>
+            </div>
+
+            <div>
+                <strong>Confiance système :</strong>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" id="confidence-bar" style="width: 0%;">0%</div>
+                </div>
+                <div style="color: #888; font-size: 0.9em; margin-top: 5px;">
+                    <span id="date-range">Aucune donnée</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Graphique comparaison courbes -->
+        <section>
+            <h2>Courbes COP : Théorique vs Apprise</h2>
+            <div class="chart-container">
+                <canvas id="cop-curves-chart"></canvas>
+            </div>
+            <div id="avg-diff" style="text-align: center; color: #888; margin-top: 10px;"></div>
+        </section>
+
+        <!-- Profil de base -->
+        <section>
+            <h2>Profil de consommation de base (par heure)</h2>
+            <div class="chart-container">
+                <canvas id="base-profile-chart"></canvas>
+            </div>
+
+            <div class="calibration-form">
+                <h3>Calibration manuelle</h3>
+                <input type="number" id="calibrate-watts" placeholder="Watts" step="10" min="0" />
+                <input type="number" id="calibrate-hour" placeholder="Heure (vide = toutes)" min="0" max="23" />
+                <button class="btn btn-secondary" onclick="calibrateBase()">Appliquer</button>
+            </div>
+        </section>
+
+        <!-- Table tags récents -->
+        <section>
+            <h2>Tags récents (20 derniers)</h2>
+            <div class="table-container">
+                <table id="tags-table">
+                    <thead>
+                        <tr>
+                            <th>Date/Heure</th>
+                            <th>Tag</th>
+                            <th>Temp. ext.</th>
+                            <th>Total</th>
+                            <th>Ballon</th>
+                            <th>Base</th>
+                            <th>Clim</th>
+                            <th>COP</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tags-tbody">
+                        <tr><td colspan="9" style="text-align: center; color: #888;">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Actions admin -->
+        <section>
+            <h2>Actions</h2>
+            <div class="action-buttons">
+                <button class="btn btn-danger" onclick="clearData(true)">Effacer données (garder calibration)</button>
+                <button class="btn btn-danger" onclick="clearData(false)">Tout effacer</button>
+            </div>
+        </section>
+
+        <footer>
+            <p>Heating Advisor | Apprentissage COP</p>
+        </footer>
+    </div>
+
+    <script>
+        let copCurvesChart = null;
+        let baseProfileChart = null;
+
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            container.appendChild(alert);
+            setTimeout(() => alert.remove(), 5000);
+        }
+
+        async function tagClim(tag) {
+            const notes = prompt(`Tag "${tag.toUpperCase()}" — Notes optionnelles :`);
+            if (notes === null) return; // Annulé
+
+            try {
+                const response = await fetch('/api/cop/tag', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tag, notes})
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    if (result.status === 'ok') {
+                        showAlert(`Tag ${tag.toUpperCase()} enregistré avec succès !`, 'success');
+                        if (tag === 'on' && result.calculated_cop) {
+                            showAlert(`COP calculé : ${result.calculated_cop} (${result.deduced_ac_power}W)`, 'success');
+                        }
+                    } else if (result.status === 'warning') {
+                        showAlert(`Tag enregistré mais : ${result.validation_message}`, 'warning');
+                    }
+                    loadData(); // Rafraîchir
+                } else {
+                    showAlert(`Erreur : ${result.error}`, 'error');
+                }
+            } catch (e) {
+                showAlert(`Erreur réseau : ${e.message}`, 'error');
+            }
+        }
+
+        async function calibrateBase() {
+            const watts = parseFloat(document.getElementById('calibrate-watts').value);
+            const hourInput = document.getElementById('calibrate-hour').value;
+            const hour = hourInput === '' ? null : parseInt(hourInput);
+
+            if (isNaN(watts) || watts < 0) {
+                showAlert('Valeur watts invalide', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/cop/calibrate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({base_watts: watts, hour})
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Calibration appliquée avec succès', 'success');
+                    loadData();
+                } else {
+                    showAlert(`Erreur : ${result.error}`, 'error');
+                }
+            } catch (e) {
+                showAlert(`Erreur réseau : ${e.message}`, 'error');
+            }
+        }
+
+        async function clearData(keepConfig) {
+            const confirm = window.confirm(`Êtes-vous sûr de vouloir effacer ${keepConfig ? 'les données (garder calibration)' : 'TOUTES les données'} ?`);
+            if (!confirm) return;
+
+            try {
+                const response = await fetch(`/api/cop/clear?keep_config=${keepConfig}`, {method: 'DELETE'});
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Données effacées avec succès', 'success');
+                    loadData();
+                } else {
+                    showAlert(`Erreur : ${result.error}`, 'error');
+                }
+            } catch (e) {
+                showAlert(`Erreur réseau : ${e.message}`, 'error');
+            }
+        }
+
+        async function loadData() {
+            try {
+                const response = await fetch('/api/cop/data');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showAlert(`Erreur : ${data.error}`, 'error');
+                    return;
+                }
+
+                // Capteurs temps réel
+                if (data.sensors) {
+                    const now = new Date();
+                    const hour = now.getHours();
+                    const base = data.base_profile.find(p => p.hour === hour)?.base_watts || 200;
+                    const ac = data.sensors.total_power - data.sensors.heater_power - base;
+
+                    document.getElementById('sensor-total').textContent = Math.round(data.sensors.total_power);
+                    document.getElementById('sensor-heater').textContent = Math.round(data.sensors.heater_power);
+                    document.getElementById('sensor-ac').textContent = Math.round(ac);
+                    document.getElementById('sensor-base').textContent = Math.round(base);
+                } else {
+                    document.getElementById('sensor-total').textContent = '--';
+                    document.getElementById('sensor-heater').textContent = '--';
+                    document.getElementById('sensor-ac').textContent = '--';
+                    document.getElementById('sensor-base').textContent = '--';
+                }
+
+                if (data.outdoor_temp !== null) {
+                    document.getElementById('sensor-outdoor').textContent = data.outdoor_temp.toFixed(1);
+                } else {
+                    document.getElementById('sensor-outdoor').textContent = '--';
+                }
+
+                // Statistiques
+                document.getElementById('stat-total-tags').textContent = data.stats.total_tags || 0;
+                document.getElementById('stat-valid-measurements').textContent = data.stats.valid_measurements || 0;
+                document.getElementById('stat-avg-cop').textContent = data.stats.avg_cop ? data.stats.avg_cop.toFixed(2) : '--';
+                document.getElementById('stat-curve-points').textContent = data.stats.curve_points || 0;
+
+                // Confiance
+                const confidence = data.stats.confidence || 0;
+                const confPercent = Math.round(confidence * 100);
+                document.getElementById('confidence-bar').style.width = `${confPercent}%`;
+                document.getElementById('confidence-bar').textContent = `${confPercent}%`;
+
+                // Plage dates
+                if (data.stats.date_range && data.stats.date_range.min) {
+                    const minDate = new Date(data.stats.date_range.min).toLocaleDateString('fr-FR');
+                    const maxDate = new Date(data.stats.date_range.max).toLocaleDateString('fr-FR');
+                    document.getElementById('date-range').textContent = `${minDate} → ${maxDate}`;
+                } else {
+                    document.getElementById('date-range').textContent = 'Aucune donnée';
+                }
+
+                // Courbes COP
+                renderCopCurves(data.curves);
+
+                // Profil de base
+                renderBaseProfile(data.base_profile);
+
+                // Tags récents
+                renderRecentTags(data.recent_tags);
+
+            } catch (e) {
+                showAlert(`Erreur chargement données : ${e.message}`, 'error');
+            }
+        }
+
+        function renderCopCurves(curves) {
+            const ctx = document.getElementById('cop-curves-chart').getContext('2d');
+
+            if (copCurvesChart) {
+                copCurvesChart.destroy();
+            }
+
+            const theoreticalData = curves.theoretical.map(p => ({x: p[0], y: p[1]}));
+            const learnedData = curves.learned.map(p => ({x: p[0], y: p[1]}));
+
+            copCurvesChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'COP Théorique',
+                            data: theoreticalData,
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'COP Appris',
+                            data: learnedData,
+                            borderColor: '#4CAF50',
+                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {display: true, text: 'Température extérieure (°C)', color: '#fff'},
+                            grid: {color: '#444'},
+                            ticks: {color: '#fff'}
+                        },
+                        y: {
+                            title: {display: true, text: 'COP', color: '#fff'},
+                            grid: {color: '#444'},
+                            ticks: {color: '#fff'}
+                        }
+                    },
+                    plugins: {
+                        legend: {labels: {color: '#fff'}},
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Écart moyen
+            if (curves.avg_difference !== null) {
+                document.getElementById('avg-diff').textContent = `Écart moyen : ${curves.avg_difference.toFixed(2)} COP`;
+            } else {
+                document.getElementById('avg-diff').textContent = 'Pas encore de données apprises';
+            }
+        }
+
+        function renderBaseProfile(profile) {
+            const ctx = document.getElementById('base-profile-chart').getContext('2d');
+
+            if (baseProfileChart) {
+                baseProfileChart.destroy();
+            }
+
+            const labels = profile.map(p => `${p.hour}h`);
+            const values = profile.map(p => p.base_watts);
+            const colors = profile.map(p => p.sample_count > 0 ? '#4CAF50' : '#666');
+
+            baseProfileChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Consommation de base (W)',
+                        data: values,
+                        backgroundColor: colors
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: {color: '#444'},
+                            ticks: {color: '#fff'}
+                        },
+                        y: {
+                            title: {display: true, text: 'Watts', color: '#fff'},
+                            grid: {color: '#444'},
+                            ticks: {color: '#fff'}
+                        }
+                    },
+                    plugins: {
+                        legend: {labels: {color: '#fff'}},
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: (ctx) => {
+                                    const p = profile[ctx.dataIndex];
+                                    return `Échantillons : ${p.sample_count}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderRecentTags(tags) {
+            const tbody = document.getElementById('tags-tbody');
+            tbody.innerHTML = '';
+
+            if (tags.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #888;">Aucun tag</td></tr>';
+                return;
+            }
+
+            tags.forEach(tag => {
+                const row = document.createElement('tr');
+                const date = new Date(tag.ts);
+                const dateStr = date.toLocaleString('fr-FR');
+                const tagClass = tag.tag === 'on' ? 'tag-on' : 'tag-off';
+
+                row.innerHTML = `
+                    <td>${dateStr}</td>
+                    <td class="${tagClass}">${tag.tag.toUpperCase()}</td>
+                    <td>${tag.outdoor_temp !== null ? tag.outdoor_temp.toFixed(1) : '--'}</td>
+                    <td>${tag.total_power !== null ? Math.round(tag.total_power) : '--'} W</td>
+                    <td>${tag.heater_power !== null ? Math.round(tag.heater_power) : '--'} W</td>
+                    <td>${tag.base_consumption !== null ? Math.round(tag.base_consumption) : '--'} W</td>
+                    <td>${tag.deduced_ac_power !== null ? Math.round(tag.deduced_ac_power) : '--'} W</td>
+                    <td>${tag.calculated_cop !== null ? tag.calculated_cop.toFixed(2) : '--'}</td>
+                    <td>${tag.notes || ''}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Chargement initial et rafraîchissement automatique
+        loadData();
+        setInterval(loadData, 30000); // 30 secondes
+    </script>
+</body>
+</html>

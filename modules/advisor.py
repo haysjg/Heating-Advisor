@@ -4,7 +4,62 @@ et recommande le système le plus économique.
 """
 
 import math
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+def get_effective_cop_curve(config: dict) -> list:
+    """
+    Retourne la courbe COP effective selon la stratégie :
+    - Si COP_LEARNING désactivé ou confiance < 0.3 : courbe théorique pure
+    - Si confiance >= seuil et auto_switch : courbe apprise pure
+    - Sinon : blend pondéré (blend_factor = (confidence - 0.3) / 0.7)
+    """
+    cop_cfg = config.get("COP_LEARNING", {})
+    if not cop_cfg.get("enabled", False):
+        return config["CLIM"]["cop_curve"]
+
+    try:
+        from modules import cop_learning
+        confidence = cop_learning.get_confidence_score()
+        learned_curve = cop_learning.get_cop_curve_learned()
+
+        if confidence < 0.3 or not learned_curve:
+            # Confiance trop faible, utiliser courbe théorique
+            return config["CLIM"]["cop_curve"]
+
+        threshold = cop_cfg.get("confidence_threshold", 0.6)
+        auto_switch = cop_cfg.get("auto_switch_to_learned", False)
+
+        if auto_switch and confidence >= threshold:
+            # Confiance suffisante et auto-switch activé : courbe apprise pure
+            logger.info(f"Utilisation courbe COP apprise (confiance {confidence:.2f})")
+            return learned_curve
+
+        # Blend pondéré
+        blend_factor = (confidence - 0.3) / 0.7
+        theoretical = config["CLIM"]["cop_curve"]
+
+        # Créer une courbe blendée
+        blended = []
+        for temp_theo, cop_theo in theoretical:
+            # Trouver le COP appris le plus proche
+            closest = min(learned_curve, key=lambda x: abs(x[0] - temp_theo), default=None)
+            if closest and abs(closest[0] - temp_theo) <= 5:
+                cop_learned = closest[1]
+                cop_blended = cop_theo * (1 - blend_factor) + cop_learned * blend_factor
+                blended.append((temp_theo, cop_blended))
+            else:
+                blended.append((temp_theo, cop_theo))
+
+        logger.info(f"Utilisation courbe COP blendée (confiance {confidence:.2f}, facteur {blend_factor:.2f})")
+        return blended
+
+    except Exception as e:
+        logger.error(f"Erreur calcul courbe effective : {e}")
+        return config["CLIM"]["cop_curve"]
 
 
 def interpolate_cop(temp: float, cop_curve: list) -> float:
@@ -32,10 +87,11 @@ def interpolate_cop(temp: float, cop_curve: list) -> float:
     return 3.0
 
 
-def compute_clim_cost(temp: float, clim_cfg: dict, elec_price_kwh: float) -> dict:
+def compute_clim_cost(temp: float, clim_cfg: dict, elec_price_kwh: float, cop_curve_override: list = None) -> dict:
     """
     Calcule le coût horaire de la climatisation.
     Retourne le coût (€/h) et les paramètres utilisés.
+    cop_curve_override : courbe COP à utiliser (si fournie, remplace celle de clim_cfg)
     """
     if temp < clim_cfg.get("min_outdoor_temp", -15):
         return {
@@ -50,7 +106,8 @@ def compute_clim_cost(temp: float, clim_cfg: dict, elec_price_kwh: float) -> dic
     comfort_min = clim_cfg.get("comfort_min_temp")
     comfort_insufficient = comfort_min is not None and temp < comfort_min
 
-    cop = interpolate_cop(temp, clim_cfg.get("cop_curve", []))
+    cop_curve = cop_curve_override if cop_curve_override is not None else clim_cfg.get("cop_curve", [])
+    cop = interpolate_cop(temp, cop_curve)
     cop = max(cop, 1.0)  # plancher de sécurité
 
     thermal_kw = clim_cfg["nominal_capacity_kw"]
@@ -249,7 +306,9 @@ def analyze(weather: dict, tempo: dict, config: dict) -> dict:
             "daily_estimate": None,
         }
 
-    clim_result = compute_clim_cost(temp, config["CLIM"], elec_price) if temp is not None else {
+    # Utiliser la courbe COP effective (blend théorique + apprise)
+    effective_cop_curve = get_effective_cop_curve(config)
+    clim_result = compute_clim_cost(temp, config["CLIM"], elec_price, effective_cop_curve) if temp is not None else {
         "available": False, "note": "Température indisponible", "cost_per_hour": None
     }
     poele_result = compute_poele_cost(config["POELE"])
@@ -261,7 +320,7 @@ def analyze(weather: dict, tempo: dict, config: dict) -> dict:
     daily_estimate = None
     if clim_result.get("available") and temp is not None:
         hp_price = config["TEMPO_PRICES"][color]["HP"]
-        clim_hp = compute_clim_cost(temp, config["CLIM"], hp_price)
+        clim_hp = compute_clim_cost(temp, config["CLIM"], hp_price, effective_cop_curve)
         clim_daily = (clim_hp["cost_per_hour"] or 0) * hp_hours
         poele_daily = poele_result["cost_per_hour"] * hp_hours
         daily_estimate = {
@@ -309,7 +368,8 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
     if color == "RED":
         poele_result = compute_poele_cost(config["POELE"])
         hp_price = config["TEMPO_PRICES"]["RED"]["HP"]
-        clim_result = compute_clim_cost(temp, config["CLIM"], hp_price) if temp is not None else {
+        effective_cop_curve = get_effective_cop_curve(config)
+        clim_result = compute_clim_cost(temp, config["CLIM"], hp_price, effective_cop_curve) if temp is not None else {
             "available": False, "cost_per_hour": None
         }
         clim_cost = clim_result.get("cost_per_hour")
@@ -346,7 +406,8 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
 
     # Jours bleu/blanc → comparaison des coûts
     hp_price = config["TEMPO_PRICES"][color]["HP"]
-    clim_result = compute_clim_cost(temp, config["CLIM"], hp_price) if temp is not None else {
+    effective_cop_curve = get_effective_cop_curve(config)
+    clim_result = compute_clim_cost(temp, config["CLIM"], hp_price, effective_cop_curve) if temp is not None else {
         "available": False, "cost_per_hour": None
     }
     poele_result = compute_poele_cost(config["POELE"])

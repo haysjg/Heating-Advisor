@@ -141,3 +141,17 @@ EMAIL = {
     "notify_hour": 20,    # heure d'envoi automatique (0-23)
     "notify_minute": 0,   # minute d'envoi automatique (0-59)
 }
+
+# ── Apprentissage COP réel ────────────────────────────────────
+COP_LEARNING = {
+    "enabled": False,
+    "shelly_total_power_entity_id": "sensor.conso_globale_channel_1_power",
+    "shelly_heater_power_entity_id": "sensor.conso_globale_channel_2_power",
+    "nominal_thermal_kw": 4.0,
+    "min_samples_per_bin": 3,
+    "confidence_threshold": 0.6,
+    "auto_switch_to_learned": False,
+    "temp_bin_size": 5,
+    "min_ac_power": 500,
+    "max_ac_power": 3000,
+}

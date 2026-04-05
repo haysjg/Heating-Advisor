@@ -24,6 +24,7 @@ from modules.crypto import encrypt_password, is_configured
 import modules.homeassistant as ha_client
 import modules.thermostat as thermostat_module
 import modules.history as history_module
+import modules.cop_learning as cop_learning_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -384,6 +385,13 @@ _scheduler.add_job(
     lambda: history_module.purge_diagnose_old(7),
     CronTrigger(day_of_week="mon", hour=3, minute=10, timezone="Europe/Paris"),
     id="diagnose_purge_job",
+    misfire_grace_time=300,
+)
+# Purge hebdomadaire des données COP > 90 jours
+_scheduler.add_job(
+    lambda: cop_learning_module.purge_old(90),
+    CronTrigger(day_of_week="mon", hour=3, minute=20, timezone="Europe/Paris"),
+    id="cop_purge_job",
     misfire_grace_time=300,
 )
 logger.info("Historique : enregistrement toutes les 10 min")
@@ -774,6 +782,11 @@ def api_diagnose_history():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/cop-learning")
+def cop_learning_page():
+    return render_template("cop_learning.html", config=config)
+
+
 @app.route("/config")
 def config_page():
     purchase = {}
@@ -784,6 +797,134 @@ def config_page():
         except Exception:
             pass
     return render_template("config.html", config=config, purchase=purchase)
+
+
+@app.route("/api/cop/tag", methods=["POST"])
+def api_cop_tag():
+    """Enregistre un tag ON/OFF pour l'apprentissage du COP."""
+    try:
+        data = request.get_json(force=True)
+        tag = data.get("tag", "").lower()
+        notes = data.get("notes", "").strip()
+
+        if tag not in ("on", "off"):
+            return jsonify({"error": "Tag invalide (attendu: on ou off)"}), 400
+
+        # Récupérer les capteurs Shelly
+        cop_cfg = config.COP_LEARNING
+        sensors = cop_learning_module.get_current_sensors(config.HOME_ASSISTANT, cop_cfg)
+
+        if not sensors:
+            return jsonify({"error": "Capteurs Shelly indisponibles — vérifiez la configuration Home Assistant"}), 400
+
+        # Récupérer la température extérieure
+        outdoor_temp = None
+        try:
+            data_analysis = get_analysis()
+            outdoor_temp = data_analysis.get("weather", {}).get("temperature")
+        except Exception as e:
+            logger.warning(f"Impossible de récupérer la température extérieure : {e}")
+
+        # Enregistrer le tag
+        result = cop_learning_module.record_tag(
+            tag=tag,
+            outdoor_temp=outdoor_temp,
+            total_power=sensors["total_power"],
+            heater_power=sensors["heater_power"],
+            notes=notes,
+            config=config
+        )
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.exception("Erreur enregistrement tag COP : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/data")
+def api_cop_data():
+    """Retourne les données pour l'interface COP Learning."""
+    try:
+        cop_cfg = config.COP_LEARNING
+
+        # Statistiques
+        stats = cop_learning_module.get_statistics()
+
+        # Tags récents
+        recent_tags = cop_learning_module.get_recent_tags(20)
+
+        # Courbes (théorique vs apprise)
+        comparison = cop_learning_module.get_cop_curve_comparison(config.CLIM["cop_curve"])
+
+        # Profil de base
+        base_profile = cop_learning_module.get_base_profile()
+
+        # Capteurs temps réel
+        sensors = cop_learning_module.get_current_sensors(config.HOME_ASSISTANT, cop_cfg)
+
+        # Température extérieure
+        outdoor_temp = None
+        try:
+            data_analysis = get_analysis()
+            outdoor_temp = data_analysis.get("weather", {}).get("temperature")
+        except Exception:
+            pass
+
+        return jsonify({
+            "enabled": cop_cfg.get("enabled", False),
+            "stats": stats,
+            "recent_tags": recent_tags,
+            "curves": comparison,
+            "base_profile": base_profile,
+            "sensors": sensors,
+            "outdoor_temp": outdoor_temp,
+            "config": {
+                "nominal_thermal_kw": cop_cfg.get("nominal_thermal_kw", 4.0),
+                "confidence_threshold": cop_cfg.get("confidence_threshold", 0.6),
+                "auto_switch_to_learned": cop_cfg.get("auto_switch_to_learned", False),
+            }
+        })
+
+    except Exception as e:
+        logger.exception("Erreur récupération données COP : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/calibrate", methods=["POST"])
+def api_cop_calibrate():
+    """Calibration manuelle de la consommation de base."""
+    try:
+        data = request.get_json(force=True)
+        base_watts = float(data.get("base_watts", 0))
+        hour = data.get("hour")
+
+        if hour is not None:
+            hour = int(hour)
+            if not (0 <= hour <= 23):
+                return jsonify({"error": "Heure invalide (0-23)"}), 400
+
+        cop_learning_module.calibrate_base_consumption(base_watts, hour)
+
+        return jsonify({"status": "ok"})
+
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": f"Valeur invalide : {e}"}), 400
+    except Exception as e:
+        logger.exception("Erreur calibration COP : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/clear", methods=["DELETE"])
+def api_cop_clear():
+    """Efface les données d'apprentissage."""
+    try:
+        keep_config = request.args.get("keep_config", "true").lower() == "true"
+        cop_learning_module.clear_all(keep_config)
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.exception("Erreur effacement données COP : %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/config", methods=["POST"])

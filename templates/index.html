@@ -48,6 +48,9 @@
       {% endif %}
       <a href="/absence" class="btn-refresh" style="text-decoration:none">🏖️ Absence</a>
       <a href="/statistics" class="btn-refresh" style="text-decoration:none">📊 Stats</a>
+      {% if config.COP_LEARNING.enabled %}
+      <a href="/cop-learning" class="btn-refresh" style="text-decoration:none">🎓 COP Learning</a>
+      {% endif %}
       <a href="/config" class="btn-refresh" style="text-decoration:none">⚙️ Config</a>
       <a href="/api/thermostat/diagnose" class="btn-refresh" style="text-decoration:none" target="_blank">🔍 Diag</a>
       <button class="btn-refresh" onclick="refresh()">⟳ Actualiser</button>
