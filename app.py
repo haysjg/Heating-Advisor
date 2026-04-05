@@ -817,6 +817,14 @@ def api_cop_tag():
         if not sensors:
             return jsonify({"error": "Capteurs Shelly indisponibles — vérifiez la configuration Home Assistant"}), 400
 
+        # Règle de sécurité : interdire tag ON si ballon en chauffe (fausserait le calcul COP)
+        heater_power_threshold = 50  # Watts
+        if tag == "on" and sensors["heater_power"] > heater_power_threshold:
+            return jsonify({
+                "error": f"Tag ON refusé : ballon eau chaude en chauffe ({sensors['heater_power']:.0f}W > {heater_power_threshold}W). "
+                        f"Cela fausserait le calcul du COP. Attendez que le ballon ait terminé sa chauffe."
+            }), 400
+
         # Récupérer la température extérieure
         outdoor_temp = None
         try:
