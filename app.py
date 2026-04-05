@@ -476,8 +476,6 @@ def index():
             thermostat_state["everyone_away"] = False
             thermostat_state["presence_status"] = None
         next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
-        vacation = thermostat_module.get_vacation()
-        on_vacation = thermostat_module.is_on_vacation()
         # Statut radiateurs pour l'affichage index (lecture seule, pas d'appel HA)
         managed_off = _load_managed_off()
         radiateurs_info = [
@@ -490,12 +488,11 @@ def index():
             for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", [])
         ] if config.RADIATEURS_TEMPO_ROUGE.get("enabled") else []
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
-                               next_schedule_start=next_start, vacation=vacation, on_vacation=on_vacation,
-                               radiateurs_info=radiateurs_info)
+                               next_schedule_start=next_start, radiateurs_info=radiateurs_info)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
         return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={},
-                               next_schedule_start=None, vacation={}, on_vacation=False, radiateurs_info=[])
+                               next_schedule_start=None, radiateurs_info=[])
 
 
 @app.route("/api/data")
@@ -730,6 +727,13 @@ def api_thermostat_toggle():
     _reschedule_thermostat()
     logger.info("Thermostat → %s", "activé" if enabled else "désactivé")
     return jsonify({"status": "ok", "enabled": enabled})
+
+
+@app.route("/absence")
+def absence_page():
+    vacation = thermostat_module.get_vacation()
+    on_vacation = thermostat_module.is_on_vacation()
+    return render_template("absence.html", config=config, vacation=vacation, on_vacation=on_vacation)
 
 
 @app.route("/statistics")
