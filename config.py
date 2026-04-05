@@ -126,7 +126,7 @@ NTFY = {
 # ── Radiateurs Tempo Rouge ───────────────────────────────────
 RADIATEURS_TEMPO_ROUGE = {
     "enabled": False,
-    "entities": [],  # entity_id HA des radiateurs à piloter (ex. ["climate.radiateur_salon"])
+    "entities": [],  # liste de dicts {entity_id, enabled} — ex. [{"entity_id": "climate.radiateur_salon", "enabled": True}]
 }
 
 # ── Notifications email ───────────────────────────────────────

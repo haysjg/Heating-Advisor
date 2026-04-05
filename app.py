@@ -274,7 +274,14 @@ def _run_radiateurs_tempo_rouge():
     cfg = config.RADIATEURS_TEMPO_ROUGE
     if not cfg.get("enabled"):
         return
-    entities = cfg.get("entities", [])
+    raw_entities = cfg.get("entities", [])
+    # Supporte l'ancien format (liste de strings) et le nouveau (liste de dicts)
+    entities = [
+        (e["entity_id"] if isinstance(e, dict) else e)
+        for e in raw_entities
+        if (isinstance(e, dict) and e.get("enabled", True) and e.get("entity_id"))
+        or (isinstance(e, str) and e)
+    ]
     if not entities or not config.HOME_ASSISTANT.get("enabled"):
         return
 
@@ -509,10 +516,13 @@ def api_radiateurs_status():
     managed_off = _load_managed_off()
     entities_state = []
     if cfg.get("enabled") and config.HOME_ASSISTANT.get("enabled"):
-        for entity_id in cfg.get("entities", []):
+        for e in cfg.get("entities", []):
+            entity_id = e["entity_id"] if isinstance(e, dict) else e
+            enabled = e.get("enabled", True) if isinstance(e, dict) else True
             state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
             entities_state.append({
                 "entity_id": entity_id,
+                "enabled": enabled,
                 "state": state.get("state") if state else "unavailable",
                 "managed_off": entity_id in managed_off,
             })
@@ -864,7 +874,11 @@ def api_config_save():
             },
             "RADIATEURS_TEMPO_ROUGE": {
                 "enabled": bool(data.get("radiateurs_enabled", False)),
-                "entities": [e.strip() for e in str(data.get("radiateurs_entities", "")).splitlines() if e.strip()],
+                "entities": [
+                    {"entity_id": e["entity_id"].strip(), "enabled": bool(e.get("enabled", True))}
+                    for e in (data.get("radiateurs_entities") or [])
+                    if isinstance(e, dict) and e.get("entity_id", "").strip()
+                ],
             },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
