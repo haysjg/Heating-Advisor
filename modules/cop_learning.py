@@ -156,8 +156,9 @@ def update_cop_curve(config: dict) -> None:
     """Reconstruit la courbe COP apprise par bins de température."""
     conn = _connect()
     try:
-        temp_bin_size = config.get("COP_LEARNING", {}).get("temp_bin_size", 5)
-        min_samples = config.get("COP_LEARNING", {}).get("min_samples_per_bin", 3)
+        cop_cfg = getattr(config, "COP_LEARNING", {})
+        temp_bin_size = cop_cfg.get("temp_bin_size", 5)
+        min_samples = cop_cfg.get("min_samples_per_bin", 3)
 
         # Récupérer toutes les mesures
         rows = conn.execute(
@@ -283,7 +284,7 @@ def record_tag(tag: str, outdoor_temp: Optional[float], total_power: float, heat
         now = datetime.now()
         hour = now.hour
 
-        cop_cfg = config.get("COP_LEARNING", {})
+        cop_cfg = getattr(config, "COP_LEARNING", {})
         thermal_kw = cop_cfg.get("nominal_thermal_kw", 4.0)
         min_ac = cop_cfg.get("min_ac_power", 500)
         max_ac = cop_cfg.get("max_ac_power", 3000)
