@@ -599,6 +599,48 @@ def purge_old(days: int = 90) -> None:
         conn.close()
 
 
+def delete_tag(tag_id: int) -> bool:
+    """Supprime un tag spécifique et ses measurements associés, puis recalcule la courbe."""
+    conn = _connect()
+    try:
+        # Vérifier que le tag existe
+        row = conn.execute("SELECT id FROM cop_tags WHERE id = ?", (tag_id,)).fetchone()
+        if not row:
+            return False
+
+        # Supprimer les measurements associés
+        conn.execute("DELETE FROM cop_measurements WHERE tag_id = ?", (tag_id,))
+        # Supprimer le tag
+        conn.execute("DELETE FROM cop_tags WHERE id = ?", (tag_id,))
+        conn.commit()
+
+        # Recalculer la courbe
+        update_cop_curve()
+
+        logger.info(f"Tag {tag_id} supprimé avec succès")
+        return True
+    except Exception as e:
+        logger.error(f"Erreur suppression tag {tag_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def get_last_on_tag() -> Optional[dict]:
+    """Retourne le dernier tag ON enregistré."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM cop_tags WHERE tag = 'on' ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+        if row:
+            return dict(row)
+        return None
+    finally:
+        conn.close()
+
+
 def clear_all(keep_config: bool = True) -> None:
     """Efface toutes les données d'apprentissage."""
     conn = _connect()

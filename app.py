@@ -927,6 +927,34 @@ def api_cop_clear():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/cop/tag/<int:tag_id>", methods=["DELETE"])
+def api_cop_delete_tag(tag_id):
+    """Supprime un tag spécifique."""
+    try:
+        success = cop_learning_module.delete_tag(tag_id)
+        if success:
+            return jsonify({"status": "ok", "message": f"Tag {tag_id} supprimé"})
+        else:
+            return jsonify({"error": "Tag non trouvé"}), 404
+    except Exception as e:
+        logger.exception("Erreur suppression tag %s : %s", tag_id, e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/tag/last-on", methods=["GET"])
+def api_cop_last_on_tag():
+    """Retourne le dernier tag ON enregistré."""
+    try:
+        tag = cop_learning_module.get_last_on_tag()
+        if tag:
+            return jsonify({"status": "ok", "tag": tag})
+        else:
+            return jsonify({"error": "Aucun tag ON trouvé"}), 404
+    except Exception as e:
+        logger.exception("Erreur récupération dernier tag ON : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/config", methods=["POST"])
 def api_config_save():
     data = request.get_json(force=True)

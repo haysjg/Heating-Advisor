@@ -234,6 +234,12 @@
                 <button class="tag-btn off" onclick="tagClim('off')">✗ Clim OFF</button>
             </div>
 
+            <div style="text-align: center; margin-top: 15px;">
+                <button onclick="deleteLastOnTag()" style="background: #d63031; color: white; padding: 8px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9em;">
+                    🗑️ Annuler dernier ON
+                </button>
+            </div>
+
             <div id="last-tag-info" style="text-align: center; color: #888; margin-top: 10px;"></div>
         </section>
 
@@ -371,6 +377,46 @@
                     loadData(); // Rafraîchir
                 } else {
                     showAlert(`Erreur : ${result.error}`, 'error');
+                }
+            } catch (e) {
+                showAlert(`Erreur réseau : ${e.message}`, 'error');
+            }
+        }
+
+        async function deleteLastOnTag() {
+            try {
+                // Récupérer le dernier tag ON
+                const getResponse = await fetch('/api/cop/tag/last-on');
+                if (!getResponse.ok) {
+                    showAlert('Aucun tag ON à supprimer', 'warning');
+                    return;
+                }
+
+                const getData = await getResponse.json();
+                const lastTag = getData.tag;
+
+                // Confirmer avec l'utilisateur
+                const confirm = window.confirm(
+                    `Supprimer le tag ON du ${new Date(lastTag.ts).toLocaleString('fr-FR')} ?\n` +
+                    `Température : ${lastTag.outdoor_temp}°C\n` +
+                    `Puissance clim déduite : ${lastTag.deduced_ac_power ? Math.round(lastTag.deduced_ac_power) + 'W' : 'N/A'}\n` +
+                    `Notes : ${lastTag.notes || 'Aucune'}`
+                );
+
+                if (!confirm) return;
+
+                // Supprimer le tag
+                const deleteResponse = await fetch(`/api/cop/tag/${lastTag.id}`, {
+                    method: 'DELETE'
+                });
+
+                const deleteResult = await deleteResponse.json();
+
+                if (deleteResponse.ok) {
+                    showAlert('Tag ON supprimé avec succès. La courbe a été recalculée.', 'success');
+                    loadData(); // Rafraîchir
+                } else {
+                    showAlert(`Erreur : ${deleteResult.error}`, 'error');
                 }
             } catch (e) {
                 showAlert(`Erreur réseau : ${e.message}`, 'error');
