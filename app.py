@@ -276,13 +276,19 @@ def _run_radiateurs_tempo_rouge():
         return
     raw_entities = cfg.get("entities", [])
     # Supporte l'ancien format (liste de strings) et le nouveau (liste de dicts)
-    entities = [
-        (e["entity_id"] if isinstance(e, dict) else e)
-        for e in raw_entities
-        if (isinstance(e, dict) and e.get("enabled", True) and e.get("entity_id"))
-        or (isinstance(e, str) and e)
-    ]
-    if not entities or not config.HOME_ASSISTANT.get("enabled"):
+    # Construit une liste de (entity_id, display_name)
+    entities = []
+    for e in raw_entities:
+        if isinstance(e, dict) and e.get("enabled", True) and e.get("entity_id"):
+            eid = e["entity_id"]
+            label = e.get("name") or eid.split(".")[-1].replace("_", " ")
+            entities.append((eid, label))
+        elif isinstance(e, str) and e:
+            entities.append((e, e.split(".")[-1].replace("_", " ")))
+    entity_ids = [eid for eid, _ in entities]
+    label_map  = {eid: lbl for eid, lbl in entities}
+
+    if not entity_ids or not config.HOME_ASSISTANT.get("enabled"):
         return
 
     now = datetime.now()
@@ -301,7 +307,7 @@ def _run_radiateurs_tempo_rouge():
     if today_color == "RED":
         turned_off = []
         managed = _load_managed_off()
-        for entity_id in entities:
+        for entity_id in entity_ids:
             state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
             if state and state.get("state") not in ("off", "unavailable", "unknown"):
                 if ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id):
@@ -310,20 +316,20 @@ def _run_radiateurs_tempo_rouge():
                         managed.append(entity_id)
         if turned_off:
             _save_managed_off(managed)
-            names = ", ".join(e.split(".")[-1].replace("_", " ") for e in turned_off)
+            names = ", ".join(label_map.get(e, e) for e in turned_off)
             ntfy_send("🔴 Jour Rouge — Radiateurs éteints", f"Extinction automatique : {names}", config.NTFY)
             logger.info("Radiateurs éteints (jour rouge) : %s", turned_off)
     else:
         managed = _load_managed_off()
         turned_on = []
         for entity_id in list(managed):
-            if entity_id in entities:
+            if entity_id in entity_ids:
                 if ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id):
                     turned_on.append(entity_id)
                     managed.remove(entity_id)
         if turned_on:
             _save_managed_off(managed)
-            names = ", ".join(e.split(".")[-1].replace("_", " ") for e in turned_on)
+            names = ", ".join(label_map.get(e, e) for e in turned_on)
             ntfy_send("🟢 Radiateurs rallumés", f"Jour non-rouge : {names}", config.NTFY)
             logger.info("Radiateurs rallumés (jour non-rouge) : %s", turned_on)
 
@@ -472,12 +478,24 @@ def index():
         next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
         vacation = thermostat_module.get_vacation()
         on_vacation = thermostat_module.is_on_vacation()
+        # Statut radiateurs pour l'affichage index (lecture seule, pas d'appel HA)
+        managed_off = _load_managed_off()
+        radiateurs_info = [
+            {
+                "entity_id": (e["entity_id"] if isinstance(e, dict) else e),
+                "name": (e.get("name") or (e["entity_id"] if isinstance(e, dict) else e).split(".")[-1].replace("_", " ")) if isinstance(e, dict) else e.split(".")[-1].replace("_", " "),
+                "enabled": e.get("enabled", True) if isinstance(e, dict) else True,
+                "managed_off": (e["entity_id"] if isinstance(e, dict) else e) in managed_off,
+            }
+            for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", [])
+        ] if config.RADIATEURS_TEMPO_ROUGE.get("enabled") else []
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
-                               next_schedule_start=next_start, vacation=vacation, on_vacation=on_vacation)
+                               next_schedule_start=next_start, vacation=vacation, on_vacation=on_vacation,
+                               radiateurs_info=radiateurs_info)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
         return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={},
-                               next_schedule_start=None, vacation={}, on_vacation=False)
+                               next_schedule_start=None, vacation={}, on_vacation=False, radiateurs_info=[])
 
 
 @app.route("/api/data")
@@ -875,7 +893,7 @@ def api_config_save():
             "RADIATEURS_TEMPO_ROUGE": {
                 "enabled": bool(data.get("radiateurs_enabled", False)),
                 "entities": [
-                    {"entity_id": e["entity_id"].strip(), "enabled": bool(e.get("enabled", True))}
+                    {"entity_id": e["entity_id"].strip(), "name": e.get("name", "").strip(), "enabled": bool(e.get("enabled", True))}
                     for e in (data.get("radiateurs_entities") or [])
                     if isinstance(e, dict) and e.get("entity_id", "").strip()
                 ],

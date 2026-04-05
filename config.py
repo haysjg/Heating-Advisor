@@ -126,7 +126,7 @@ NTFY = {
 # ── Radiateurs Tempo Rouge ───────────────────────────────────
 RADIATEURS_TEMPO_ROUGE = {
     "enabled": False,
-    "entities": [],  # liste de dicts {entity_id, enabled} — ex. [{"entity_id": "climate.radiateur_salon", "enabled": True}]
+    "entities": [],  # liste de dicts {entity_id, name, enabled} — ex. [{"entity_id": "climate.radiateur_salon", "name": "Salon", "enabled": True}]
 }
 
 # ── Notifications email ───────────────────────────────────────

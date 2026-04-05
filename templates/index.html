@@ -225,6 +225,30 @@
           {% endif %}
         </div>
       </div>
+      {% if radiateurs_info %}
+      <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.07)">
+        <p class="value-sub" style="color:#94a3b8;margin-bottom:0.4rem;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em">Radiateurs — Jours Rouges</p>
+        <div style="display:flex;flex-direction:column;gap:0.25rem">
+          {% for r in radiateurs_info %}
+          <p class="value-sub" style="display:flex;align-items:center;gap:0.5rem">
+            {% if not r.enabled %}
+              <span style="color:#64748b">⏭</span>
+              <span style="color:#64748b">{{ r.name }}</span>
+              <span style="font-size:0.75rem;color:#475569">exclu du pilotage</span>
+            {% elif r.managed_off %}
+              <span>🔴</span>
+              <span>{{ r.name }}</span>
+              <span style="font-size:0.75rem;color:#fb923c">éteint automatiquement</span>
+            {% else %}
+              <span>🟢</span>
+              <span>{{ r.name }}</span>
+              <span style="font-size:0.75rem;color:#64748b">allumé</span>
+            {% endif %}
+          </p>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
     </section>
     {% endif %}
 

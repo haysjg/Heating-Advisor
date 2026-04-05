@@ -687,12 +687,16 @@
         <div id="radiateurs_list" style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.5rem">
           {% for r in config.RADIATEURS_TEMPO_ROUGE.entities %}
           {% set entity_id = r.entity_id if r is mapping else r %}
+          {% set rad_name = r.name if r is mapping else '' %}
           {% set rad_enabled = r.enabled if r is mapping else True %}
           <div class="radiateur-row" style="display:flex;align-items:center;gap:0.5rem">
             <input type="checkbox" class="radiateur-enabled"
                    {% if rad_enabled %}checked{% endif %}
                    style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer;flex-shrink:0"
                    title="Activer l'extinction automatique pour ce radiateur">
+            <input type="text" class="radiateur-name" value="{{ rad_name }}"
+                   placeholder="Nom (ex : Salon)"
+                   style="width:9rem;flex-shrink:0;font-size:0.85rem">
             <input type="text" class="radiateur-entity" value="{{ entity_id }}"
                    placeholder="climate.radiateur_salon"
                    style="flex:1;font-family:monospace;font-size:0.85rem">
@@ -1114,7 +1118,8 @@
   function getRadiateurs() {
     return Array.from(document.querySelectorAll('#radiateurs_list .radiateur-row')).map(row => ({
       entity_id: row.querySelector('.radiateur-entity').value.trim(),
-      enabled: row.querySelector('.radiateur-enabled').checked,
+      name:      row.querySelector('.radiateur-name').value.trim(),
+      enabled:   row.querySelector('.radiateur-enabled').checked,
     })).filter(r => r.entity_id);
   }
 
@@ -1123,16 +1128,17 @@
     container.innerHTML = '';
     (list || []).forEach(r => {
       const entity_id = typeof r === 'string' ? r : (r.entity_id || '');
+      const name      = typeof r === 'string' ? '' : (r.name || '');
       const enabled   = typeof r === 'string' ? true : (r.enabled !== false);
-      addRadiateurRow(entity_id, enabled);
+      addRadiateurRow(entity_id, name, enabled);
     });
   }
 
   function addRadiateur() {
-    addRadiateurRow('', true);
+    addRadiateurRow('', '', true);
   }
 
-  function addRadiateurRow(entity_id, enabled) {
+  function addRadiateurRow(entity_id, name, enabled) {
     const container = document.getElementById('radiateurs_list');
     const row = document.createElement('div');
     row.className = 'radiateur-row';
@@ -1141,6 +1147,9 @@
       <input type="checkbox" class="radiateur-enabled" ${enabled ? 'checked' : ''}
              style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer;flex-shrink:0"
              title="Activer l'extinction automatique pour ce radiateur">
+      <input type="text" class="radiateur-name" value="${name}"
+             placeholder="Nom (ex : Salon)"
+             style="width:9rem;flex-shrink:0;font-size:0.85rem">
       <input type="text" class="radiateur-entity" value="${entity_id}"
              placeholder="climate.radiateur_salon"
              style="flex:1;font-family:monospace;font-size:0.85rem">
@@ -1149,7 +1158,7 @@
               title="Supprimer">✕</button>
     `;
     container.appendChild(row);
-    row.querySelector('.radiateur-entity').focus();
+    row.querySelector('.radiateur-name').focus();
   }
 
   function removeRadiateur(btn) {
