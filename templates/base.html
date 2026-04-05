@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Conseiller Chauffage{% endblock %} – {{ config.LOCATION.city }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <span class="header-icon">{% block header_icon %}🏠{% endblock %}</span>
+      <div>
+        <h1>{% block header_title %}Conseiller Chauffage{% endblock %}</h1>
+        <p class="header-sub">{% block header_sub %}{{ config.LOCATION.city }} ({{ config.LOCATION.postal_code }}){% endblock %}</p>
+      </div>
+      {% if config.HOME_ASSISTANT.enabled and show_thermostat_toggle|default(false) %}
+      <button class="btn-refresh {% if config.THERMOSTAT.enabled %}thermostat-on{% else %}thermostat-off{% endif %}"
+              id="btn-thermostat-toggle"
+              onclick="toggleThermostat()"
+              title="Thermostat automatique poêle"
+              style="background: {% if config.THERMOSTAT.enabled %}rgba(251,146,60,0.15){% else %}rgba(100,116,139,0.15){% endif %}; border: 1px solid {% if config.THERMOSTAT.enabled %}#fb923c{% else %}#64748b{% endif %}; color: {% if config.THERMOSTAT.enabled %}#fb923c{% else %}#64748b{% endif %};">
+        🌡️ Thermostat {{ 'ON' if config.THERMOSTAT.enabled else 'OFF' }}
+      </button>
+      {% endif %}
+      <a href="/" class="btn-refresh" style="text-decoration:none">🏠 Accueil</a>
+      <a href="/absence" class="btn-refresh" style="text-decoration:none">🏖️ Absence</a>
+      <a href="/statistics" class="btn-refresh" style="text-decoration:none">📊 Stats</a>
+      {% if config.COP_LEARNING.enabled %}
+      <a href="/cop-learning" class="btn-refresh" style="text-decoration:none">🎓 COP Learning</a>
+      {% endif %}
+      <a href="/config" class="btn-refresh" style="text-decoration:none">⚙️ Config</a>
+      <a href="/api/thermostat/diagnose" class="btn-refresh" style="text-decoration:none" target="_blank">🔍 Diag</a>
+      {% block extra_menu %}{% endblock %}
+    </div>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

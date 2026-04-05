@@ -1,10 +1,11 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Configuration – Conseiller Chauffage</title>
-  <link rel="stylesheet" href="/static/style.css">
+{% extends "base.html" %}
+
+{% block title %}Configuration{% endblock %}
+
+{% block header_icon %}⚙️{% endblock %}
+{% block header_title %}Configuration{% endblock %}
+
+{% block extra_head %}
   <style>
     .form-section { margin-bottom: 0; }
     .form-section h3 { font-size: 1rem; color: var(--text-sub); margin-bottom: 1rem; }
@@ -111,20 +112,9 @@
       border-top: 1px solid var(--border);
     }
   </style>
-</head>
-<body>
-  <header>
-    <div class="header-inner">
-      <span class="header-icon">⚙️</span>
-      <div>
-        <h1>Configuration</h1>
-        <p class="header-sub">Conseiller Chauffage – {{ config.LOCATION.city }}</p>
-      </div>
-      <a href="/" class="btn-back">← Retour</a>
-    </div>
-  </header>
+{% endblock %}
 
-  <main>
+{% block content %}
 
     {# ── Poêle à granulés ── #}
     <div class="card form-section">
@@ -809,9 +799,9 @@
       </details>
     </div>
 
-    <hr class="section-divider">
+  <hr class="section-divider">
 
-    {# ── Mot de passe ── #}
+  {# ── Mot de passe ── #}
     <div class="card form-section">
       <h3>🔒 Mot de passe de connexion</h3>
       <div class="form-grid">
@@ -835,19 +825,19 @@
       </div>
     </div>
 
-    {# ── Actions ── #}
-    <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importConfig(this)">
-    <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem; flex-wrap:wrap">
-      <button class="btn-back" onclick="exportConfig()">📤 Exporter</button>
-      <button class="btn-back" onclick="document.getElementById('import-file-input').click()">📥 Importer</button>
-      <a href="/" class="btn-back">Annuler</a>
-      <button class="btn-save" onclick="saveConfig()">💾 Enregistrer</button>
-    </div>
-
-  </main>
+  {# ── Actions ── #}
+  <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importConfig(this)">
+  <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem; flex-wrap:wrap">
+    <button class="btn-back" onclick="exportConfig()">📤 Exporter</button>
+    <button class="btn-back" onclick="document.getElementById('import-file-input').click()">📥 Importer</button>
+    <a href="/" class="btn-back">Annuler</a>
+    <button class="btn-save" onclick="saveConfig()">💾 Enregistrer</button>
+  </div>
 
   <div class="toast" id="toast"></div>
+{% endblock %}
 
+{% block extra_scripts %}
   <script>
   function calcPoele() {
     const nb    = parseFloat(document.getElementById('nb_sacs').value) || 0;
@@ -1293,5 +1283,4 @@
   // Init
   calcPoele();
   </script>
-</body>
-</html>
+{% endblock %}

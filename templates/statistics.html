@@ -1,10 +1,12 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Statistiques – {{ config.LOCATION.city }}</title>
-  <link rel="stylesheet" href="/static/style.css">
+{% extends "base.html" %}
+
+{% block title %}Statistiques{% endblock %}
+
+{% block header_icon %}📊{% endblock %}
+{% block header_title %}Statistiques{% endblock %}
+{% block header_sub %}{{ config.LOCATION.city }} — Historique températures &amp; poêle{% endblock %}
+
+{% block extra_head %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
@@ -136,22 +138,13 @@
       margin-right: 0.4rem;
     }
   </style>
-</head>
-<body>
-  <header>
-    <div class="header-inner">
-      <span class="header-icon">📊</span>
-      <div>
-        <h1>Statistiques</h1>
-        <p class="header-sub">{{ config.LOCATION.city }} — Historique températures &amp; poêle</p>
-      </div>
-      <a href="/" class="btn-refresh" style="text-decoration:none">← Tableau de bord</a>
-      <button class="btn-refresh" onclick="refreshAll()">↻ Actualiser</button>
-      <a href="/config" class="btn-refresh" style="text-decoration:none">⚙️ Config</a>
-    </div>
-  </header>
+{% endblock %}
 
-  <main>
+{% block extra_menu %}
+  <button class="btn-refresh" onclick="refreshAll()">⟳ Actualiser</button>
+{% endblock %}
+
+{% block content %}
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem;">
         <div>
@@ -264,8 +257,9 @@
         </table>
       </div>
     </div>
-  </main>
+{% endblock %}
 
+{% block extra_scripts %}
   <script>
     let chart = null;
 
@@ -632,5 +626,4 @@
     loadIgnitions();
     loadDiagnose(6);
   </script>
-</body>
-</html>
+{% endblock %}

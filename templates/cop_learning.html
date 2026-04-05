@@ -1,10 +1,11 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apprentissage COP | Heating Advisor</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% extends "base.html" %}
+
+{% block title %}Apprentissage COP{% endblock %}
+
+{% block header_icon %}🎓{% endblock %}
+{% block header_title %}Apprentissage COP Réel{% endblock %}
+
+{% block extra_head %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         .tag-section {
@@ -190,19 +191,12 @@
             margin-right: 10px;
         }
     </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>📊 Apprentissage COP Réel</h1>
-            <nav>
-                <a href="/">← Retour</a>
-            </nav>
-        </header>
+{% endblock %}
 
-        <div id="alert-container"></div>
+{% block content %}
+    <div id="alert-container"></div>
 
-        <!-- Section tagging -->
+    <!-- Section tagging -->
         <section class="tag-section">
             <h2>Tagging Manuel</h2>
 
@@ -333,12 +327,9 @@
                 <button class="btn btn-danger" onclick="clearData(false)">Tout effacer</button>
             </div>
         </section>
+{% endblock %}
 
-        <footer>
-            <p>Heating Advisor | Apprentissage COP</p>
-        </footer>
-    </div>
-
+{% block extra_scripts %}
     <script>
         let copCurvesChart = null;
         let baseProfileChart = null;
@@ -690,5 +681,4 @@
         loadData();
         setInterval(loadData, 30000); // 30 secondes
     </script>
-</body>
-</html>
+{% endblock %}
