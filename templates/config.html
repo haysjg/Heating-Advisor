@@ -716,6 +716,101 @@
 
     <hr class="section-divider">
 
+    {# ── Apprentissage COP ── #}
+    <div class="card form-section">
+      <h3>🎓 Apprentissage COP Réel</h3>
+
+      <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
+        <input type="checkbox" id="cop_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.COP_LEARNING.enabled %}checked{% endif %}>
+        <label for="cop_enabled" style="font-size:0.9rem;cursor:pointer">
+          Activer l'apprentissage du COP réel par mesures de consommation
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Entité Shelly : Consommation totale</label>
+          <input type="text" id="cop_shelly_total"
+                 value="{{ config.COP_LEARNING.shelly_total_power_entity_id }}"
+                 placeholder="sensor.conso_globale_channel_1_power"
+                 style="font-family:monospace;font-size:0.85rem">
+          <span class="hint">Channel 1 du Shelly EM (puissance totale maison)</span>
+        </div>
+
+        <div class="form-group">
+          <label>Entité Shelly : Ballon eau chaude</label>
+          <input type="text" id="cop_shelly_heater"
+                 value="{{ config.COP_LEARNING.shelly_heater_power_entity_id }}"
+                 placeholder="sensor.conso_globale_channel_2_power"
+                 style="font-family:monospace;font-size:0.85rem">
+          <span class="hint">Channel 2 du Shelly EM (puissance ballon)</span>
+        </div>
+
+        <div class="form-group">
+          <label>Puissance thermique nominale (kW)</label>
+          <input type="number" id="cop_thermal_kw" min="1" max="20" step="0.1"
+                 value="{{ config.COP_LEARNING.nominal_thermal_kw }}">
+          <span class="hint">Puissance thermique nominale de votre clim</span>
+        </div>
+
+        <div class="form-group">
+          <label>Seuil de confiance</label>
+          <input type="number" id="cop_confidence_threshold" min="0" max="1" step="0.05"
+                 value="{{ config.COP_LEARNING.confidence_threshold }}">
+          <span class="hint">Seuil pour utiliser la courbe apprise (0.6 recommandé)</span>
+        </div>
+      </div>
+
+      <details class="advanced">
+        <summary>⚙️ Paramètres avancés</summary>
+        <div class="advanced-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Échantillons min. par bin</label>
+              <input type="number" id="cop_min_samples" min="1" max="20" step="1"
+                     value="{{ config.COP_LEARNING.min_samples_per_bin }}">
+              <span class="hint">Minimum de mesures par tranche de température</span>
+            </div>
+
+            <div class="form-group">
+              <label>Taille bin température (°C)</label>
+              <input type="number" id="cop_temp_bin" min="1" max="10" step="1"
+                     value="{{ config.COP_LEARNING.temp_bin_size }}">
+              <span class="hint">Taille des tranches de température (5°C par défaut)</span>
+            </div>
+
+            <div class="form-group">
+              <label>Puissance clim minimum (W)</label>
+              <input type="number" id="cop_min_power" min="0" max="5000" step="50"
+                     value="{{ config.COP_LEARNING.min_ac_power }}">
+              <span class="hint">Validation : puissance minimum acceptable</span>
+            </div>
+
+            <div class="form-group">
+              <label>Puissance clim maximum (W)</label>
+              <input type="number" id="cop_max_power" min="0" max="5000" step="50"
+                     value="{{ config.COP_LEARNING.max_ac_power }}">
+              <span class="hint">Validation : puissance maximum acceptable</span>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:0.75rem; margin-top:1rem">
+            <input type="checkbox" id="cop_auto_switch" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+                   {% if config.COP_LEARNING.auto_switch_to_learned %}checked{% endif %}>
+            <label for="cop_auto_switch" style="font-size:0.9rem;cursor:pointer">
+              Basculer automatiquement sur la courbe apprise (si confiance ≥ seuil)
+            </label>
+          </div>
+          <span class="hint" style="margin-left:2rem;font-size:0.75rem">
+            Si désactivé : blend progressif théorique/appris. Si activé : courbe apprise pure une fois le seuil atteint.
+          </span>
+        </div>
+      </details>
+    </div>
+
+    <hr class="section-divider">
+
     {# ── Mot de passe ── #}
     <div class="card form-section">
       <h3>🔒 Mot de passe de connexion</h3>
@@ -856,6 +951,16 @@
       },
       radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
       radiateurs_entities: getRadiateurs(),
+      cop_enabled: document.getElementById('cop_enabled').checked,
+      cop_shelly_total: getVal('cop_shelly_total'),
+      cop_shelly_heater: getVal('cop_shelly_heater'),
+      cop_thermal_kw: parseFloat(getVal('cop_thermal_kw')),
+      cop_confidence_threshold: parseFloat(getVal('cop_confidence_threshold')),
+      cop_min_samples: parseInt(getVal('cop_min_samples')),
+      cop_temp_bin: parseInt(getVal('cop_temp_bin')),
+      cop_min_power: parseInt(getVal('cop_min_power')),
+      cop_max_power: parseInt(getVal('cop_max_power')),
+      cop_auto_switch: document.getElementById('cop_auto_switch').checked,
     };
 
     fetch('/api/config', {
@@ -1014,6 +1119,16 @@
       },
       radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
       radiateurs_entities: getRadiateurs(),
+      cop_enabled: document.getElementById('cop_enabled').checked,
+      cop_shelly_total: getVal('cop_shelly_total'),
+      cop_shelly_heater: getVal('cop_shelly_heater'),
+      cop_thermal_kw: parseFloat(getVal('cop_thermal_kw')),
+      cop_confidence_threshold: parseFloat(getVal('cop_confidence_threshold')),
+      cop_min_samples: parseInt(getVal('cop_min_samples')),
+      cop_temp_bin: parseInt(getVal('cop_temp_bin')),
+      cop_min_power: parseInt(getVal('cop_min_power')),
+      cop_max_power: parseInt(getVal('cop_max_power')),
+      cop_auto_switch: document.getElementById('cop_auto_switch').checked,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1106,6 +1221,16 @@
           setChk('radiateurs_enabled', d.radiateurs_enabled);
           setRadiateurs(d.radiateurs_entities);
         }
+        setChk('cop_enabled', d.cop_enabled);
+        setVal('cop_shelly_total', d.cop_shelly_total);
+        setVal('cop_shelly_heater', d.cop_shelly_heater);
+        setVal('cop_thermal_kw', d.cop_thermal_kw);
+        setVal('cop_confidence_threshold', d.cop_confidence_threshold);
+        setVal('cop_min_samples', d.cop_min_samples);
+        setVal('cop_temp_bin', d.cop_temp_bin);
+        setVal('cop_min_power', d.cop_min_power);
+        setVal('cop_max_power', d.cop_max_power);
+        setChk('cop_auto_switch', d.cop_auto_switch);
         calcPoele();
         showToast('✓ Configuration importée — cliquez sur Enregistrer pour appliquer', true);
       } catch(err) {

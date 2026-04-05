@@ -1043,6 +1043,18 @@ def api_config_save():
                     if isinstance(e, dict) and e.get("entity_id", "").strip()
                 ],
             },
+            "COP_LEARNING": {
+                "enabled": bool(data.get("cop_enabled", False)),
+                "shelly_total_power_entity_id": str(data.get("cop_shelly_total", config.COP_LEARNING.get("shelly_total_power_entity_id", ""))).strip(),
+                "shelly_heater_power_entity_id": str(data.get("cop_shelly_heater", config.COP_LEARNING.get("shelly_heater_power_entity_id", ""))).strip(),
+                "nominal_thermal_kw": float(data.get("cop_thermal_kw", config.COP_LEARNING.get("nominal_thermal_kw", 4.0))),
+                "confidence_threshold": float(data.get("cop_confidence_threshold", config.COP_LEARNING.get("confidence_threshold", 0.6))),
+                "min_samples_per_bin": int(data.get("cop_min_samples", config.COP_LEARNING.get("min_samples_per_bin", 3))),
+                "temp_bin_size": int(data.get("cop_temp_bin", config.COP_LEARNING.get("temp_bin_size", 5))),
+                "min_ac_power": int(data.get("cop_min_power", config.COP_LEARNING.get("min_ac_power", 500))),
+                "max_ac_power": int(data.get("cop_max_power", config.COP_LEARNING.get("max_ac_power", 3000))),
+                "auto_switch_to_learned": bool(data.get("cop_auto_switch", config.COP_LEARNING.get("auto_switch_to_learned", False))),
+            },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
         with open(OVERRIDE_FILE, "w") as f:
