@@ -223,10 +223,18 @@
               <span>🔴</span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#fb923c">éteint automatiquement</span>
-            {% else %}
+            {% elif r.state == "on" %}
               <span>🟢</span>
               <span>{{ r.name }}</span>
-              <span style="font-size:0.75rem;color:#64748b">allumé</span>
+              <span style="font-size:0.75rem;color:#22c55e">allumé</span>
+            {% elif r.state == "off" %}
+              <span>⚫</span>
+              <span>{{ r.name }}</span>
+              <span style="font-size:0.75rem;color:#64748b">éteint</span>
+            {% else %}
+              <span>❓</span>
+              <span>{{ r.name }}</span>
+              <span style="font-size:0.75rem;color:#94a3b8">{{ r.state or "indisponible" }}</span>
             {% endif %}
           </p>
           {% endfor %}

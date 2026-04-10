@@ -492,17 +492,30 @@ def index():
             thermostat_state["everyone_away"] = False
             thermostat_state["presence_status"] = None
         next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
-        # Statut radiateurs pour l'affichage index (lecture seule, pas d'appel HA)
+        # Statut radiateurs pour l'affichage index avec état réel depuis HA
         managed_off = _load_managed_off()
-        radiateurs_info = [
-            {
-                "entity_id": (e["entity_id"] if isinstance(e, dict) else e),
-                "name": (e.get("name") or (e["entity_id"] if isinstance(e, dict) else e).split(".")[-1].replace("_", " ")) if isinstance(e, dict) else e.split(".")[-1].replace("_", " "),
-                "enabled": e.get("enabled", True) if isinstance(e, dict) else True,
-                "managed_off": (e["entity_id"] if isinstance(e, dict) else e) in managed_off,
-            }
-            for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", [])
-        ] if config.RADIATEURS_TEMPO_ROUGE.get("enabled") else []
+        radiateurs_info = []
+        if config.RADIATEURS_TEMPO_ROUGE.get("enabled"):
+            for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
+                entity_id = e["entity_id"] if isinstance(e, dict) else e
+                name = (e.get("name") or entity_id.split(".")[-1].replace("_", " ")) if isinstance(e, dict) else entity_id.split(".")[-1].replace("_", " ")
+                enabled = e.get("enabled", True) if isinstance(e, dict) else True
+                is_managed_off = entity_id in managed_off
+
+                # Récupérer l'état réel depuis Home Assistant
+                state = None
+                if config.HOME_ASSISTANT.get("enabled"):
+                    ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
+                    if ha_state:
+                        state = ha_state.get("state", "unknown")
+
+                radiateurs_info.append({
+                    "entity_id": entity_id,
+                    "name": name,
+                    "enabled": enabled,
+                    "managed_off": is_managed_off,
+                    "state": state,
+                })
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
                                next_schedule_start=next_start, radiateurs_info=radiateurs_info)
     except Exception as e:
