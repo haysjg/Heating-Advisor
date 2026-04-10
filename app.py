@@ -602,31 +602,39 @@ def api_dashboard_refresh():
                 })
 
         # Construire la réponse JSON
+        rec = data.get("recommendation", {})
+        weather = data.get("weather", {})
+        tempo = data.get("tempo", {})
+        tempo_today = tempo.get("today", {})
+        tempo_tomorrow = tempo.get("tomorrow", {})
+        tomorrow = data.get("tomorrow", {})
+        tomorrow_rec = tomorrow.get("recommendation", {})
+
         response = {
             "timestamp": data.get("timestamp", ""),
             "indoor": data.get("indoor", {}),
             "outdoor": {
-                "temperature": data.get("outdoor_temperature"),
-                "source": data.get("source", "météociel.fr")
+                "temperature": weather.get("temperature"),
+                "source": weather.get("source", "météociel.fr")
             },
             "recommendation": {
-                "system": data.get("recommended_system"),
-                "title": data.get("recommendation_title", ""),
-                "explanation": data.get("explanation", ""),
-                "level": data.get("level", "info"),
-                "savings_per_hour": data.get("savings_per_hour")
+                "system": rec.get("system"),
+                "title": rec.get("title", ""),
+                "explanation": rec.get("explanation", ""),
+                "level": rec.get("level", "info"),
+                "savings_per_hour": rec.get("savings_per_hour")
             },
             "tempo": {
-                "current_period": data.get("current_period"),
+                "current_period": tempo.get("current_period"),
                 "today": {
-                    "color": data.get("tempo_today"),
-                    "label": data.get("tempo_today_label", ""),
-                    "emoji": data.get("tempo_today_emoji", "")
+                    "color": tempo_today.get("color"),
+                    "label": tempo_today.get("label", ""),
+                    "emoji": tempo_today.get("emoji", "")
                 },
                 "tomorrow": {
-                    "color": data.get("tempo_tomorrow"),
-                    "label": data.get("tempo_tomorrow_label", ""),
-                    "emoji": data.get("tempo_tomorrow_emoji", "")
+                    "color": tempo_tomorrow.get("color"),
+                    "label": tempo_tomorrow.get("label", ""),
+                    "emoji": tempo_tomorrow.get("emoji", "")
                 }
             },
             "thermostat": {
@@ -641,12 +649,12 @@ def api_dashboard_refresh():
             "radiateurs": radiateurs_info,
             "tomorrow": {
                 "recommendation": {
-                    "system": data.get("tomorrow", {}).get("recommended_system"),
-                    "title": data.get("tomorrow", {}).get("recommendation_title", ""),
-                    "explanation": data.get("tomorrow", {}).get("explanation", ""),
-                    "level": data.get("tomorrow", {}).get("level", "info")
+                    "system": tomorrow_rec.get("system"),
+                    "title": tomorrow_rec.get("title", ""),
+                    "explanation": tomorrow_rec.get("explanation", ""),
+                    "level": tomorrow_rec.get("level", "info")
                 },
-                "tempo_unknown": data.get("tomorrow", {}).get("tempo_unknown", False)
+                "tempo_unknown": tomorrow.get("tempo_unknown", False)
             }
         }
 
