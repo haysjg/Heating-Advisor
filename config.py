@@ -153,5 +153,15 @@ COP_LEARNING = {
     "auto_switch_to_learned": False,
     "temp_bin_size": 5,
     "min_ac_power": 500,
-    "max_ac_power": 3000,
+    "max_ac_power": 4500,  # Augmenté pour accepter les pics de la Mitsubishi MSZ-FA35VA
+
+    # Paramètres d'échantillonnage
+    "sampling": {
+        "enabled": True,
+        "duration_seconds": 120,       # 2 minutes
+        "interval_seconds": 10,        # 1 échantillon toutes les 10s
+        "min_samples_required": 8,     # minimum 8/12 valides
+        "max_errors": 3,               # abandon après 3 erreurs consécutives
+        "task_cleanup_minutes": 10,    # rétention tasks terminées
+    }
 }

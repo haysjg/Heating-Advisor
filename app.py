@@ -25,6 +25,7 @@ import modules.homeassistant as ha_client
 import modules.thermostat as thermostat_module
 import modules.history as history_module
 import modules.cop_learning as cop_learning_module
+import modules.cop_sampling as cop_sampling_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -393,6 +394,13 @@ _scheduler.add_job(
     CronTrigger(day_of_week="mon", hour=3, minute=20, timezone="Europe/Paris"),
     id="cop_purge_job",
     misfire_grace_time=300,
+)
+# Nettoyage des tasks d'échantillonnage COP toutes les 5 minutes
+_scheduler.add_job(
+    lambda: cop_sampling_module.cleanup_old_tasks(max_age_minutes=10),
+    "interval",
+    minutes=5,
+    id="cop_sampling_cleanup"
 )
 logger.info("Historique : enregistrement toutes les 10 min")
 
@@ -848,6 +856,67 @@ def api_cop_tag():
     except Exception as e:
         logger.exception("Erreur enregistrement tag COP : %s", e)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/start-sampling", methods=["POST"])
+def api_cop_start_sampling():
+    """Démarre un échantillonnage asynchrone pour tag ON."""
+    try:
+        data = request.get_json(force=True)
+        notes = data.get("notes", "").strip()
+
+        # Validation préalable (capteurs, ballon)
+        cop_cfg = config.COP_LEARNING
+        sensors = cop_learning_module.get_current_sensors(config.HOME_ASSISTANT, cop_cfg)
+
+        if not sensors:
+            return jsonify({"error": "Capteurs Shelly indisponibles"}), 400
+
+        if sensors["heater_power"] > 50:
+            return jsonify({"error": "Tag ON refusé : ballon en chauffe"}), 400
+
+        # Capturer température extérieure
+        outdoor_temp = None
+        try:
+            data_analysis = get_analysis()
+            outdoor_temp = data_analysis.get("weather", {}).get("temperature")
+        except Exception as e:
+            logger.warning(f"Température extérieure indisponible : {e}")
+
+        # Démarrer task
+        task_id = cop_sampling_module.start_sampling_task(notes, outdoor_temp, config)
+
+        return jsonify({
+            "status": "ok",
+            "task_id": task_id,
+            "message": "Échantillonnage démarré"
+        })
+
+    except Exception as e:
+        logger.exception("Erreur start sampling")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/sampling-status/<task_id>")
+def api_cop_sampling_status(task_id):
+    """Retourne l'état d'un échantillonnage en cours."""
+    status = cop_sampling_module.get_task_status(task_id)
+
+    if not status:
+        return jsonify({"error": "Task non trouvée"}), 404
+
+    return jsonify(status)
+
+
+@app.route("/api/cop/cancel-sampling/<task_id>", methods=["POST"])
+def api_cop_cancel_sampling(task_id):
+    """Annule un échantillonnage en cours."""
+    success = cop_sampling_module.cancel_task(task_id)
+
+    if not success:
+        return jsonify({"error": "Task non trouvée"}), 404
+
+    return jsonify({"status": "ok", "message": "Échantillonnage annulé"})
 
 
 @app.route("/api/cop/data")

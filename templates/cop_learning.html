@@ -327,6 +327,29 @@
                 <button class="btn btn-danger" onclick="clearData(false)">Tout effacer</button>
             </div>
         </section>
+
+        <!-- Modal échantillonnage -->
+        <div id="sampling-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 999;"></div>
+
+        <div id="sampling-progress" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2a2a2a; padding: 30px; border-radius: 12px; z-index: 1000; box-shadow: 0 8px 32px rgba(0,0,0,0.5); min-width: 350px;">
+            <h3 style="margin-top: 0; text-align: center;">Échantillonnage en cours...</h3>
+
+            <div style="width: 100%; height: 30px; background: #1a1a1a; border-radius: 15px; overflow: hidden; margin: 20px 0;">
+                <div id="sampling-progress-fill" style="height: 100%; background: linear-gradient(90deg, #2196F3, #4CAF50); width: 0%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                    0%
+                </div>
+            </div>
+
+            <div id="sampling-status-text" style="text-align: center; color: #888; margin-bottom: 15px;">
+                Démarrage...
+            </div>
+
+            <div style="text-align: center;">
+                <button onclick="cancelSampling()" style="background: #f44336; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 14px;">
+                    Annuler
+                </button>
+            </div>
+        </div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -344,33 +367,138 @@
         }
 
         async function tagClim(tag) {
-            const notes = prompt(`Tag "${tag.toUpperCase()}" — Notes optionnelles :`);
-            if (notes === null) return; // Annulé
+            if (tag === 'off') {
+                // Tag OFF : comportement actuel inchangé
+                const notes = prompt(`Tag "OFF" — Notes optionnelles :`);
+                if (notes === null) return;
 
-            try {
                 const response = await fetch('/api/cop/tag', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tag, notes})
+                    body: JSON.stringify({tag: 'off', notes})
                 });
-
                 const result = await response.json();
 
                 if (response.ok) {
-                    if (result.status === 'ok') {
-                        showAlert(`Tag ${tag.toUpperCase()} enregistré avec succès !`, 'success');
-                        if (tag === 'on' && result.calculated_cop) {
-                            showAlert(`COP calculé : ${result.calculated_cop} (${result.deduced_ac_power}W)`, 'success');
-                        }
-                    } else if (result.status === 'warning') {
-                        showAlert(`Tag enregistré mais : ${result.validation_message}`, 'warning');
-                    }
-                    loadData(); // Rafraîchir
+                    showAlert('Tag OFF enregistré', 'success');
+                    loadData();
                 } else {
                     showAlert(`Erreur : ${result.error}`, 'error');
                 }
+                return;
+            }
+
+            // Tag ON : mode échantillonnage
+            const notes = prompt(`Tag "ON" — Notes optionnelles :\n\n⚠️ Échantillonnage sur 2 minutes`);
+            if (notes === null) return;
+
+            try {
+                const response = await fetch('/api/cop/start-sampling', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({notes})
+                });
+                const result = await response.json();
+
+                if (!response.ok) {
+                    showAlert(`Erreur : ${result.error}`, 'error');
+                    return;
+                }
+
+                showSamplingProgressUI(result.task_id);
+                await pollSamplingStatus(result.task_id);
+
             } catch (e) {
                 showAlert(`Erreur réseau : ${e.message}`, 'error');
+            }
+        }
+
+        let currentSamplingTaskId = null;
+        let samplingPollInterval = null;
+
+        function showSamplingProgressUI(taskId) {
+            currentSamplingTaskId = taskId;
+            document.getElementById('sampling-progress').style.display = 'block';
+            document.getElementById('sampling-overlay').style.display = 'block';
+            document.getElementById('sampling-progress-fill').style.width = '0%';
+            document.getElementById('sampling-progress-fill').textContent = '0%';
+            document.getElementById('sampling-status-text').textContent = 'Démarrage...';
+        }
+
+        function hideSamplingProgressUI() {
+            currentSamplingTaskId = null;
+            document.getElementById('sampling-progress').style.display = 'none';
+            document.getElementById('sampling-overlay').style.display = 'none';
+            if (samplingPollInterval) {
+                clearInterval(samplingPollInterval);
+                samplingPollInterval = null;
+            }
+        }
+
+        async function pollSamplingStatus(taskId) {
+            return new Promise((resolve, reject) => {
+                samplingPollInterval = setInterval(async () => {
+                    try {
+                        const response = await fetch(`/api/cop/sampling-status/${taskId}`);
+                        const status = await response.json();
+
+                        if (!response.ok) {
+                            clearInterval(samplingPollInterval);
+                            hideSamplingProgressUI();
+                            showAlert(`Erreur : ${status.error}`, 'error');
+                            reject(new Error(status.error));
+                            return;
+                        }
+
+                        // Update UI
+                        const progress = status.progress || 0;
+                        document.getElementById('sampling-progress-fill').style.width = `${progress}%`;
+                        document.getElementById('sampling-progress-fill').textContent = `${progress}%`;
+
+                        if (status.status === 'running') {
+                            const text = `${status.samples_collected}/${status.samples_target} mesures • ${status.estimated_remaining_seconds || 0}s restantes`;
+                            document.getElementById('sampling-status-text').textContent = text;
+                        }
+                        else if (status.status === 'completed') {
+                            clearInterval(samplingPollInterval);
+                            hideSamplingProgressUI();
+                            showAlert(`Tag ON enregistré ! COP=${status.calculated_cop} (${status.deduced_ac_power}W)`, 'success');
+                            loadData();
+                            resolve(status);
+                        }
+                        else if (status.status === 'error') {
+                            clearInterval(samplingPollInterval);
+                            hideSamplingProgressUI();
+                            showAlert(`Échec : ${status.error_message}`, 'error');
+                            reject(new Error(status.error_message));
+                        }
+                        else if (status.status === 'cancelled') {
+                            clearInterval(samplingPollInterval);
+                            hideSamplingProgressUI();
+                            showAlert('Échantillonnage annulé', 'warning');
+                            resolve(status);
+                        }
+
+                    } catch (e) {
+                        clearInterval(samplingPollInterval);
+                        hideSamplingProgressUI();
+                        showAlert(`Erreur réseau : ${e.message}`, 'error');
+                        reject(e);
+                    }
+                }, 2000); // Poll toutes les 2 secondes
+            });
+        }
+
+        async function cancelSampling() {
+            if (!currentSamplingTaskId) return;
+
+            try {
+                await fetch(`/api/cop/cancel-sampling/${currentSamplingTaskId}`, {
+                    method: 'POST'
+                });
+                // Le polling détectera le status "cancelled"
+            } catch (e) {
+                showAlert(`Erreur annulation : ${e.message}`, 'error');
             }
         }
 
