@@ -69,6 +69,9 @@ SURFACE_M2 = 80  # m²
 # ── Rafraîchissement automatique ─────────────────────────────
 REFRESH_INTERVAL_MINUTES = 30
 
+# Intervalle AJAX (secondes) - 0 pour désactiver et revenir au rechargement complet
+AJAX_REFRESH_INTERVAL = 15
+
 # ── Home Assistant (optionnel) ───────────────────────────────
 HOME_ASSISTANT = {
     "enabled": False,

@@ -517,11 +517,13 @@ def index():
                     "state": state,
                 })
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
-                               next_schedule_start=next_start, radiateurs_info=radiateurs_info)
+                               next_schedule_start=next_start, radiateurs_info=radiateurs_info,
+                               ajax_interval=config.AJAX_REFRESH_INTERVAL)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
         return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={},
-                               next_schedule_start=None, radiateurs_info=[])
+                               next_schedule_start=None, radiateurs_info=[],
+                               ajax_interval=config.AJAX_REFRESH_INTERVAL)
 
 
 @app.route("/api/data")
@@ -539,6 +541,118 @@ def api_refresh():
         data = get_analysis(force_refresh=True)
         return jsonify({"status": "ok", "timestamp": data["timestamp"]})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/refresh")
+def api_dashboard_refresh():
+    """Endpoint AJAX pour rafraîchir uniquement les données du dashboard sans recharger la page."""
+    try:
+        # Récupérer les données cachées (météo, Tempo)
+        data = get_analysis()
+
+        # Force refresh de la température intérieure (HA local, rapide)
+        _fetch_indoor()
+
+        # Récupérer l'état du thermostat
+        thermostat_state = thermostat_module.get_state()
+        if config.THERMOSTAT.get("presence_enabled"):
+            nearby_zone = config.THERMOSTAT.get("nearby_zone_name", "")
+            if nearby_zone:
+                presence = ha_client.get_presence_extended(
+                    config.HOME_ASSISTANT,
+                    config.THERMOSTAT.get("person_entities", []),
+                    nearby_zone
+                )
+            else:
+                raw = ha_client.get_presence(
+                    config.HOME_ASSISTANT,
+                    config.THERMOSTAT.get("person_entities", [])
+                )
+                presence = "home" if raw else "away" if raw is False else None
+            thermostat_state["everyone_away"] = presence == "away"
+            thermostat_state["presence_status"] = presence
+        else:
+            thermostat_state["everyone_away"] = False
+            thermostat_state["presence_status"] = None
+
+        # Récupérer les radiateurs
+        managed_off = _load_managed_off()
+        radiateurs_info = []
+        if config.RADIATEURS_TEMPO_ROUGE.get("enabled"):
+            for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
+                entity_id = e["entity_id"] if isinstance(e, dict) else e
+                name = (e.get("name") or entity_id.split(".")[-1].replace("_", " ")) if isinstance(e, dict) else entity_id.split(".")[-1].replace("_", " ")
+                enabled = e.get("enabled", True) if isinstance(e, dict) else True
+                is_managed_off = entity_id in managed_off
+
+                # État réel depuis Home Assistant
+                state = None
+                if config.HOME_ASSISTANT.get("enabled"):
+                    ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
+                    if ha_state:
+                        state = ha_state.get("state", "unknown")
+
+                radiateurs_info.append({
+                    "entity_id": entity_id,
+                    "name": name,
+                    "enabled": enabled,
+                    "managed_off": is_managed_off,
+                    "state": state,
+                })
+
+        # Construire la réponse JSON
+        response = {
+            "timestamp": data.get("timestamp", ""),
+            "indoor": data.get("indoor", {}),
+            "outdoor": {
+                "temperature": data.get("outdoor_temperature"),
+                "source": data.get("source", "météociel.fr")
+            },
+            "recommendation": {
+                "system": data.get("recommended_system"),
+                "title": data.get("recommendation_title", ""),
+                "explanation": data.get("explanation", ""),
+                "level": data.get("level", "info"),
+                "savings_per_hour": data.get("savings_per_hour")
+            },
+            "tempo": {
+                "current_period": data.get("current_period"),
+                "today": {
+                    "color": data.get("tempo_today"),
+                    "label": data.get("tempo_today_label", ""),
+                    "emoji": data.get("tempo_today_emoji", "")
+                },
+                "tomorrow": {
+                    "color": data.get("tempo_tomorrow"),
+                    "label": data.get("tempo_tomorrow_label", ""),
+                    "emoji": data.get("tempo_tomorrow_emoji", "")
+                }
+            },
+            "thermostat": {
+                "state": thermostat_state.get("state"),
+                "enabled": thermostat_state.get("enabled", False),
+                "in_schedule": thermostat_state.get("in_schedule", False),
+                "suspended_until": thermostat_state.get("suspended_until"),
+                "everyone_away": thermostat_state.get("everyone_away", False),
+                "presence_status": thermostat_state.get("presence_status"),
+                "last_turned_on": thermostat_state.get("last_turned_on")
+            },
+            "radiateurs": radiateurs_info,
+            "tomorrow": {
+                "recommendation": {
+                    "system": data.get("tomorrow", {}).get("recommended_system"),
+                    "title": data.get("tomorrow", {}).get("recommendation_title", ""),
+                    "explanation": data.get("tomorrow", {}).get("explanation", ""),
+                    "level": data.get("tomorrow", {}).get("level", "info")
+                },
+                "tempo_unknown": data.get("tomorrow", {}).get("tempo_unknown", False)
+            }
+        }
+
+        return jsonify(response)
+    except Exception as e:
+        logger.exception("Erreur api_dashboard_refresh : %s", e)
         return jsonify({"error": str(e)}), 500
 
 
