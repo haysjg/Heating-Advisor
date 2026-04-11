@@ -551,6 +551,10 @@ def api_dashboard_refresh():
         # Récupérer les données cachées (météo, Tempo)
         data = get_analysis()
 
+        # Vérifier que les données sont valides
+        if data is None:
+            return jsonify({"error": "Impossible de récupérer les données"}), 500
+
         # Force refresh de la température intérieure (HA local, rapide)
         _fetch_indoor()
 
@@ -602,13 +606,14 @@ def api_dashboard_refresh():
                 })
 
         # Construire la réponse JSON
-        rec = data.get("recommendation", {})
-        weather = data.get("weather", {})
-        tempo = data.get("tempo", {})
-        tempo_today = tempo.get("today", {})
-        tempo_tomorrow = tempo.get("tomorrow", {})
-        tomorrow = data.get("tomorrow", {})
-        tomorrow_rec = tomorrow.get("recommendation", {})
+        # Utiliser 'or {}' pour gérer le cas où les valeurs sont None au lieu de dict
+        rec = data.get("recommendation") or {}
+        weather = data.get("weather") or {}
+        tempo = data.get("tempo") or {}
+        tempo_today = tempo.get("today") or {}
+        tempo_tomorrow = tempo.get("tomorrow") or {}
+        tomorrow = data.get("tomorrow") or {}
+        tomorrow_rec = tomorrow.get("recommendation") or {}
 
         response = {
             "timestamp": data.get("timestamp", ""),
