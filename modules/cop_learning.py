@@ -9,6 +9,8 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
+from modules import migrate
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "history.db")
@@ -19,59 +21,7 @@ def _connect() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-
-    # Créer les tables si elles n'existent pas
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS cop_tags (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts TEXT NOT NULL,
-            tag TEXT NOT NULL,
-            outdoor_temp REAL,
-            total_power REAL,
-            heater_power REAL,
-            base_consumption REAL,
-            deduced_ac_power REAL,
-            notes TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS cop_base_profile (
-            hour_of_day INTEGER PRIMARY KEY,
-            avg_base_watts REAL NOT NULL,
-            sample_count INTEGER NOT NULL DEFAULT 0,
-            last_updated TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS cop_measurements (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts TEXT NOT NULL,
-            outdoor_temp REAL NOT NULL,
-            ac_power_watts REAL NOT NULL,
-            thermal_kw REAL NOT NULL DEFAULT 4.0,
-            calculated_cop REAL NOT NULL,
-            confidence_score REAL DEFAULT 1.0,
-            tag_id INTEGER,
-            FOREIGN KEY (tag_id) REFERENCES cop_tags(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS cop_curve_learned (
-            temp_bin_center REAL PRIMARY KEY,
-            avg_cop REAL NOT NULL,
-            sample_count INTEGER NOT NULL,
-            std_deviation REAL,
-            last_updated TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS cop_config (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TEXT
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_cop_tags_ts ON cop_tags(ts);
-        CREATE INDEX IF NOT EXISTS idx_cop_measurements_temp ON cop_measurements(outdoor_temp);
-        CREATE INDEX IF NOT EXISTS idx_cop_measurements_ts ON cop_measurements(ts);
-    """)
-    conn.commit()
+    migrate.run(conn)
     return conn
 
 

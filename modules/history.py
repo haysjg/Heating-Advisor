@@ -7,6 +7,8 @@ import os
 import sqlite3
 from datetime import datetime, timedelta
 
+from modules import migrate
+
 logger = logging.getLogger(__name__)
 
 DB_FILE = os.path.join(
@@ -17,37 +19,7 @@ DB_FILE = os.path.join(
 def _connect() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
     conn = sqlite3.connect(DB_FILE)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS readings (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts           TEXT    NOT NULL,
-            outdoor_temp REAL,
-            indoor_temp  REAL,
-            poele_state  TEXT,
-            tempo_color  TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS diagnose_log (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts               TEXT    NOT NULL,
-            presence_status  TEXT,
-            poele_real_state TEXT,
-            thermostat_state TEXT,
-            felt_temperature REAL,
-            indoor_temp      REAL,
-            in_schedule      INTEGER,
-            everyone_away    INTEGER,
-            suspended_until  TEXT,
-            recommendation   TEXT
-        )
-    """)
-    # Migration : ajoute la colonne tempo_color si elle n'existe pas encore
-    try:
-        conn.execute("ALTER TABLE readings ADD COLUMN tempo_color TEXT")
-    except sqlite3.OperationalError:
-        pass  # colonne déjà présente
-    conn.commit()
+    migrate.run(conn)
     return conn
 
 
