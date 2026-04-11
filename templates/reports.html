@@ -1,0 +1,495 @@
+{% extends "base.html" %}
+
+{% block title %}Rapports{% endblock %}
+
+{% block header_icon %}📈{% endblock %}
+{% block header_title %}Rapports de coûts{% endblock %}
+{% block header_sub %}{{ config.LOCATION.city }} — Bilan mensuel chauffage{% endblock %}
+
+{% block extra_head %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    .range-bar {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .range-btn {
+      padding: 0.4rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg2);
+      color: var(--text-sub);
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .range-btn:hover {
+      border-color: var(--blue);
+      color: var(--text);
+    }
+    .range-btn.active {
+      background: rgba(59,130,246,0.15);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+    .chart-wrapper {
+      position: relative;
+      height: 380px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+    .kpi-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      text-align: center;
+    }
+    .kpi-label {
+      font-size: 0.78rem;
+      color: var(--text-sub);
+      margin: 0 0 0.2rem;
+    }
+    .kpi-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .kpi-unit {
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      font-weight: 400;
+    }
+    .kpi-positive { color: #22c55e; }
+    .kpi-negative { color: #f87171; }
+    .legend-row {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+      color: var(--text-sub);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .report-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .report-table th {
+      text-align: left;
+      color: var(--text-sub);
+      font-weight: 500;
+      padding: 0.5rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .report-table td {
+      padding: 0.5rem 0.6rem;
+      border-bottom: 1px solid rgba(42,45,62,0.6);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .report-table tr:last-child td { border-bottom: none; }
+    .tempo-badge {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .tempo-B { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); color: #60a5fa; }
+    .tempo-W { background: rgba(226,232,240,0.10); border: 1px solid rgba(226,232,240,0.3); color: #e2e8f0; }
+    .tempo-R { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
+    .no-data {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-sub);
+      font-size: 0.95rem;
+    }
+    .vs-positive { color: #22c55e; font-weight: 600; }
+    .vs-negative { color: #f87171; font-weight: 600; }
+    .vs-neutral  { color: var(--text-sub); }
+  </style>
+{% endblock %}
+
+{% block extra_menu %}
+  <button class="btn-refresh" onclick="aggregateNow()" title="Relancer l'agrégation maintenant">⟳ Agréger</button>
+{% endblock %}
+
+{% block content %}
+  <!-- KPIs saison en cours -->
+  <div class="card">
+    <h2 style="margin:0 0 1rem; font-size:1rem;">Bilan saison en cours (octobre &rarr; mars)</h2>
+    <div id="kpi-no-data" class="no-data" style="display:none;">
+      Aucune donnée agrégée disponible.<br>
+      <span style="font-size:0.82rem;">Cliquez sur &laquo; Agréger &raquo; ou attendez l'agrégation automatique (2h30).</span>
+    </div>
+    <div class="kpi-grid" id="kpi-grid" style="display:none;"></div>
+  </div>
+
+  <!-- Graphique barres mensuelles -->
+  <div class="card" style="margin-top:1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem;">
+      <h2 style="margin:0; font-size:1rem;">Coûts mensuels</h2>
+      <div class="range-bar">
+        <button class="range-btn active" onclick="loadReports(12)" data-m="12">12 mois</button>
+        <button class="range-btn" onclick="loadReports(24)" data-m="24">24 mois</button>
+      </div>
+    </div>
+    <div class="legend-row" style="margin-bottom:1rem;">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#22c55e;"></div>
+        <span>Coût poêle réel</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#60a5fa;"></div>
+        <span>Équivalent clim</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#fb923c; height:3px; width:20px; border-radius:2px;"></div>
+        <span>Temp. ext. moyenne</span>
+      </div>
+    </div>
+    <div class="chart-wrapper">
+      <canvas id="reportsChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Tableau détaillé -->
+  <div class="card" style="margin-top:1rem;">
+    <h2 style="margin:0 0 1rem; font-size:1rem;">Détail mensuel</h2>
+    <div id="table-no-data" class="no-data" style="display:none;">Aucune donnée disponible.</div>
+    <div style="overflow-x:auto;">
+      <table class="report-table" id="report-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Mois</th>
+            <th>Poêle (h)</th>
+            <th>Coût poêle</th>
+            <th>Clim équiv.</th>
+            <th>Économie</th>
+            <th>Tempo</th>
+            <th>Moy. ext.</th>
+            <th>Moy. int.</th>
+            <th>vs N-1</th>
+          </tr>
+        </thead>
+        <tbody id="report-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  let chart = null;
+  let allData = [];
+
+  const MONTH_NAMES = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+  function fmtMonth(ym) {
+    const [y, m] = ym.split('-');
+    return MONTH_NAMES[parseInt(m) - 1] + ' ' + y;
+  }
+
+  function fmtEuro(v) {
+    if (v === null || v === undefined) return '—';
+    return v.toFixed(2) + ' €';
+  }
+
+  function fmtHours(minutes) {
+    if (!minutes) return '0h';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (m === 0) return h + 'h';
+    return h + 'h' + (m < 10 ? '0' : '') + m;
+  }
+
+  function setActiveBtn(months) {
+    document.querySelectorAll('[data-m]').forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.m) === months);
+    });
+  }
+
+  function getSeasonMonths(data) {
+    // Saison de chauffage : octobre (10) à mars (3) de la saison en cours
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    // Si on est entre octobre et décembre, la saison va de oct de cette année à mars de l'année prochaine
+    // Si on est entre janvier et septembre, la saison va de oct de l'année dernière à mars de cette année
+    let seasonStart, seasonEnd;
+    if (currentMonth >= 10) {
+      seasonStart = currentYear + '-10';
+      seasonEnd = (currentYear + 1) + '-03';
+    } else {
+      seasonStart = (currentYear - 1) + '-10';
+      seasonEnd = currentYear + '-03';
+    }
+    return data.filter(d => d.month >= seasonStart && d.month <= seasonEnd);
+  }
+
+  function renderKPIs(data) {
+    const grid = document.getElementById('kpi-grid');
+    const noData = document.getElementById('kpi-no-data');
+
+    if (!data.length) {
+      grid.style.display = 'none';
+      noData.style.display = 'block';
+      return;
+    }
+
+    const season = getSeasonMonths(data);
+    const src = season.length ? season : data;
+
+    const totalPoeleCost = src.reduce((s, d) => s + (d.estimated_poele_cost || 0), 0);
+    const totalClimEquiv = src.reduce((s, d) => s + (d.estimated_clim_equiv_cost || 0), 0);
+    const totalPoeleMin = src.reduce((s, d) => s + (d.poele_on_minutes || 0), 0);
+    const nbMonths = src.length;
+    const savings = totalClimEquiv - totalPoeleCost;
+    const avgPerMonth = nbMonths > 0 ? totalPoeleCost / nbMonths : 0;
+
+    const savingsClass = savings >= 0 ? 'kpi-positive' : 'kpi-negative';
+    const savingsLabel = savings >= 0 ? 'Économie vs tout-clim' : 'Surcoût vs tout-clim';
+
+    grid.innerHTML = `
+      <div class="kpi-card">
+        <p class="kpi-label">Coût total poêle</p>
+        <p class="kpi-value">${fmtEuro(totalPoeleCost)}</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">${savingsLabel}</p>
+        <p class="kpi-value ${savingsClass}">${savings >= 0 ? '+' : ''}${fmtEuro(Math.abs(savings))}</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Heures de poêle</p>
+        <p class="kpi-value">${fmtHours(totalPoeleMin)}</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Coût moyen/mois</p>
+        <p class="kpi-value">${fmtEuro(avgPerMonth)}</p>
+      </div>
+    `;
+    grid.style.display = 'grid';
+    noData.style.display = 'none';
+  }
+
+  function renderChart(data, maxMonths) {
+    const subset = data.slice(0, maxMonths).reverse();
+    if (!subset.length) return;
+
+    const labels = subset.map(d => fmtMonth(d.month));
+    const poeleCosts = subset.map(d => d.estimated_poele_cost || 0);
+    const climCosts = subset.map(d => d.estimated_clim_equiv_cost || 0);
+    const temps = subset.map(d => d.avg_outdoor_temp);
+
+    if (chart) { chart.destroy(); chart = null; }
+
+    const ctx = document.getElementById('reportsChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Coût poêle',
+            data: poeleCosts,
+            backgroundColor: 'rgba(34,197,94,0.7)',
+            borderColor: '#22c55e',
+            borderWidth: 1,
+            borderRadius: 4,
+            order: 2,
+          },
+          {
+            label: 'Clim équivalent',
+            data: climCosts,
+            backgroundColor: 'rgba(96,165,250,0.5)',
+            borderColor: '#60a5fa',
+            borderWidth: 1,
+            borderRadius: 4,
+            order: 3,
+          },
+          {
+            label: 'Temp. ext. moy.',
+            data: temps,
+            type: 'line',
+            yAxisID: 'yTemp',
+            borderColor: '#fb923c',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#fb923c',
+            tension: 0.3,
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1d27',
+            borderColor: '#2a2d3e',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#8892a4',
+            padding: 10,
+            callbacks: {
+              label: function(item) {
+                if (item.dataset.yAxisID === 'yTemp') {
+                  const v = item.parsed.y;
+                  return v !== null && v !== undefined ? `Temp. ext. : ${v.toFixed(1)} °C` : null;
+                }
+                return `${item.dataset.label} : ${item.parsed.y.toFixed(2)} €`;
+              }
+            }
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#8892a4', maxRotation: 45 },
+            grid: { color: 'rgba(42,45,62,0.8)' },
+          },
+          y: {
+            type: 'linear',
+            position: 'left',
+            beginAtZero: true,
+            ticks: {
+              color: '#8892a4',
+              callback: v => v.toFixed(0) + ' €',
+            },
+            grid: { color: 'rgba(42,45,62,0.8)' },
+            title: {
+              display: true,
+              text: 'Coût (€)',
+              color: '#8892a4',
+              font: { size: 11 },
+            },
+          },
+          yTemp: {
+            type: 'linear',
+            position: 'right',
+            ticks: {
+              color: '#fb923c',
+              callback: v => v.toFixed(0) + ' °C',
+            },
+            grid: { drawOnChartArea: false },
+            title: {
+              display: true,
+              text: 'Temp. (°C)',
+              color: '#fb923c',
+              font: { size: 11 },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  function renderTable(data) {
+    const tbody = document.getElementById('report-tbody');
+    const table = document.getElementById('report-table');
+    const noData = document.getElementById('table-no-data');
+
+    if (!data.length) {
+      table.style.display = 'none';
+      noData.style.display = 'block';
+      return;
+    }
+
+    // Index par mois pour lookup N-1
+    const byMonth = {};
+    data.forEach(d => { byMonth[d.month] = d; });
+
+    tbody.innerHTML = data.map(d => {
+      const savings = (d.estimated_clim_equiv_cost || 0) - (d.estimated_poele_cost || 0);
+      const savClass = savings > 0 ? 'vs-positive' : savings < 0 ? 'vs-negative' : 'vs-neutral';
+
+      // Comparaison N-1
+      const [y, m] = d.month.split('-');
+      const prevYear = (parseInt(y) - 1) + '-' + m;
+      const prev = byMonth[prevYear];
+      let vsN1 = '—';
+      if (prev) {
+        const diff = (d.estimated_poele_cost || 0) - (prev.estimated_poele_cost || 0);
+        if (diff > 0) vsN1 = `<span class="vs-negative">+${diff.toFixed(2)} €</span>`;
+        else if (diff < 0) vsN1 = `<span class="vs-positive">${diff.toFixed(2)} €</span>`;
+        else vsN1 = '<span class="vs-neutral">= 0</span>';
+      }
+
+      return `<tr>
+        <td style="font-weight:600">${fmtMonth(d.month)}</td>
+        <td>${fmtHours(d.poele_on_minutes)}</td>
+        <td style="color:#22c55e; font-weight:600">${fmtEuro(d.estimated_poele_cost)}</td>
+        <td style="color:#60a5fa">${fmtEuro(d.estimated_clim_equiv_cost)}</td>
+        <td class="${savClass}">${savings >= 0 ? '+' : ''}${fmtEuro(Math.abs(savings))}</td>
+        <td>
+          ${d.tempo_blue_days ? '<span class="tempo-badge tempo-B">' + d.tempo_blue_days + 'B</span> ' : ''}${d.tempo_white_days ? '<span class="tempo-badge tempo-W">' + d.tempo_white_days + 'W</span> ' : ''}${d.tempo_red_days ? '<span class="tempo-badge tempo-R">' + d.tempo_red_days + 'R</span>' : ''}
+        </td>
+        <td style="color:#fb923c">${d.avg_outdoor_temp !== null && d.avg_outdoor_temp !== undefined ? d.avg_outdoor_temp.toFixed(1) + ' °C' : '—'}</td>
+        <td style="color:#f59e0b">${d.avg_indoor_temp !== null && d.avg_indoor_temp !== undefined ? d.avg_indoor_temp.toFixed(1) + ' °C' : '—'}</td>
+        <td>${vsN1}</td>
+      </tr>`;
+    }).join('');
+
+    table.style.display = 'table';
+    noData.style.display = 'none';
+  }
+
+  async function loadReports(months) {
+    setActiveBtn(months);
+    try {
+      const res = await fetch(`/api/reports/monthly?months=${months}`);
+      allData = await res.json();
+    } catch (e) {
+      console.error('Erreur chargement rapports', e);
+      allData = [];
+    }
+
+    if (!Array.isArray(allData)) allData = [];
+
+    renderKPIs(allData);
+    renderChart(allData, months);
+    renderTable(allData);
+  }
+
+  async function aggregateNow() {
+    try {
+      const res = await fetch('/api/reports/aggregate-now', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        // Reload data
+        const activeBtn = document.querySelector('[data-m].active');
+        const months = activeBtn ? parseInt(activeBtn.dataset.m) : 12;
+        loadReports(months);
+      } else {
+        alert('Erreur : ' + (data.error || 'inconnue'));
+      }
+    } catch (e) {
+      alert('Erreur réseau : ' + e.message);
+    }
+  }
+
+  loadReports(12);
+</script>
+{% endblock %}

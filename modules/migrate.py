@@ -87,9 +87,33 @@ def _migrate_001(conn):
     """)
 
 
+def _migrate_002(conn):
+    """Ajoute la table monthly_reports pour l'agrégation des coûts mensuels."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS monthly_reports (
+            month TEXT PRIMARY KEY,
+            total_readings INTEGER DEFAULT 0,
+            poele_on_minutes INTEGER DEFAULT 0,
+            heating_days INTEGER DEFAULT 0,
+            avg_outdoor_temp REAL,
+            avg_indoor_temp REAL,
+            tempo_blue_days INTEGER DEFAULT 0,
+            tempo_white_days INTEGER DEFAULT 0,
+            tempo_red_days INTEGER DEFAULT 0,
+            estimated_poele_cost REAL DEFAULT 0,
+            estimated_clim_equiv_cost REAL DEFAULT 0,
+            rec_poele_minutes INTEGER DEFAULT 0,
+            rec_clim_minutes INTEGER DEFAULT 0,
+            rec_none_minutes INTEGER DEFAULT 0,
+            updated_at TEXT
+        );
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
+    _migrate_002,
 ]
 
 

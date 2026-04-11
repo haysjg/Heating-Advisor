@@ -402,7 +402,28 @@ _scheduler.add_job(
     minutes=5,
     id="cop_sampling_cleanup"
 )
-logger.info("Historique : enregistrement toutes les 10 min")
+# Agrégation mensuelle quotidienne à 2h30 (avant la purge)
+def _run_monthly_aggregation():
+    """Agrège le mois en cours et le mois précédent dans monthly_reports."""
+    try:
+        cfg = _build_config_dict()
+        now = datetime.now()
+        current_month = now.strftime("%Y-%m")
+        history_module.aggregate_month(current_month, cfg)
+        # Mois précédent (au cas où des données non purgées restent)
+        prev = now.replace(day=1) - timedelta(days=1)
+        prev_month = prev.strftime("%Y-%m")
+        history_module.aggregate_month(prev_month, cfg)
+    except Exception as e:
+        logger.error("Agrégation mensuelle échouée : %s", e)
+
+_scheduler.add_job(
+    _run_monthly_aggregation,
+    CronTrigger(hour=2, minute=30, timezone="Europe/Paris"),
+    id="monthly_aggregation_job",
+    misfire_grace_time=300,
+)
+logger.info("Historique : enregistrement toutes les 10 min, agrégation mensuelle à 2h30")
 
 # Cache simple en mémoire pour éviter de surcharger les APIs
 _cache: dict = {"data": None, "expires_at": None}
@@ -915,6 +936,32 @@ def api_statistics_daily():
         days = min(max(days, 1), 30)
         data = history_module.get_daily_summary(days)
         return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/reports")
+def reports_page():
+    return render_template("reports.html", config=config)
+
+
+@app.route("/api/reports/monthly")
+def api_reports_monthly():
+    try:
+        months = int(request.args.get("months", 24))
+        months = min(max(months, 1), 60)
+        data = history_module.get_monthly_reports(months)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/aggregate-now", methods=["POST"])
+def api_reports_aggregate_now():
+    """Déclenche manuellement l'agrégation du mois en cours et du mois précédent."""
+    try:
+        _run_monthly_aggregation()
+        return jsonify({"status": "ok"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
