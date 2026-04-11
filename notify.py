@@ -17,6 +17,7 @@ from modules.crypto import decrypt_password
 from modules.weather import get_tomorrow_weather
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze_tomorrow
+from modules.ntfy_push import send as send_ntfy
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -49,10 +50,67 @@ def build_email(data: dict, tempo: dict) -> tuple[str, str]:
     _mois  = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"]
     _d = datetime.now() + timedelta(days=1)
     tomorrow_date = f"{_jours[_d.weekday()].capitalize()} {_d.day} {_mois[_d.month - 1]} {_d.year}"
-    rec = data["recommendation"]
+    rec = data.get("recommendation")
     weather = data.get("weather", {})
     estimate = data.get("daily_estimate")
     tempo_color = tempo["tomorrow"]["color"]
+
+    # Cas spécial : couleur Tempo non publiée
+    if rec is None or data.get("tempo_unknown"):
+        icon = "⏳"
+        color = _level_color("warning")
+        subject = f"{icon} Chauffage demain ({tomorrow_date}) — Tempo non publié"
+
+        meteo_bloc = ""
+        if weather.get("temperature") is not None:
+            meteo_bloc = f"""
+            <p style="margin:4px 0">🌡️ Température prévue :
+                <strong>{weather['temp_min']}°C – {weather['temp_max']}°C</strong>
+                (moy. {weather['temperature']}°C)
+            </p>"""
+        else:
+            meteo_bloc = "<p style='margin:4px 0'>🌡️ Météo indisponible</p>"
+
+        public_url = config.LOCATION.get("public_url", "").strip()
+        dashboard_url = public_url if public_url else f"http://{config.LOCATION.get('nas_ip','localhost')}:{config.LOCATION.get('nas_port',8888)}"
+        domain_line = f'<p style="margin:2px 0 0;font-size:0.8em;color:#3b82f6">{public_url}</p>' if public_url else ""
+
+        html = f"""<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#0f1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e2e8f0">
+  <div style="max-width:520px;margin:32px auto;background:#1a1d27;border-radius:16px;overflow:hidden;border:1px solid #2a2d3e">
+    <div style="background:#0f1117;padding:20px 24px;border-bottom:1px solid #2a2d3e">
+      <p style="margin:0;font-size:0.85em;color:#8892a4">🏠 Conseiller Chauffage — {config.LOCATION['city']}</p>
+      <h1 style="margin:4px 0 0;font-size:1.2em">Recommandation pour demain</h1>
+      <p style="margin:2px 0 0;font-size:0.85em;color:#8892a4">{tomorrow_date}</p>
+      {domain_line}
+    </div>
+    <div style="padding:20px 24px;border-left:4px solid {color}">
+      <div style="font-size:2.5em;line-height:1;margin-bottom:8px">{icon}</div>
+      <h2 style="margin:0 0 8px;font-size:1.1em;color:{color}">Couleur Tempo non encore publiée</h2>
+      <p style="margin:0;color:#8892a4;line-height:1.5;font-size:0.9em">
+        La couleur Tempo de demain n'a pas encore été publiée par EDF.
+        Consultez le dashboard plus tard dans la soirée pour obtenir la recommandation.
+      </p>
+    </div>
+    <div style="padding:16px 24px;background:#0f1117;border-top:1px solid #2a2d3e">
+      <p style="margin:0 0 8px;font-size:0.8em;font-weight:600;color:#8892a4;text-transform:uppercase;letter-spacing:.05em">Conditions du jour</p>
+      {meteo_bloc}
+      <p style="margin:4px 0">⚡ Tarif Tempo : <strong>En attente ⏳</strong></p>
+    </div>
+    <div style="padding:14px 24px;border-top:1px solid #2a2d3e">
+      <p style="margin:0;font-size:0.75em;color:#8892a4;text-align:center">
+        Envoyé automatiquement le {datetime.now().strftime('%d/%m/%Y à %Hh%M')} —
+        <a href="{dashboard_url}" style="color:#3b82f6;text-decoration:none">Voir le dashboard</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>"""
+        return subject, html
+
+    # Cas normal : recommandation disponible
     icon = _system_icon(rec["system"])
     color = _level_color(rec["level"])
 
@@ -136,6 +194,55 @@ def build_email(data: dict, tempo: dict) -> tuple[str, str]:
 
 # ── Envoi ─────────────────────────────────────────────────────
 
+def build_ntfy_message(data: dict, tempo: dict) -> str:
+    """Construit un message texte pour ntfy."""
+    _jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"]
+    _mois  = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"]
+    _d = datetime.now() + timedelta(days=1)
+    tomorrow_date = f"{_jours[_d.weekday()].capitalize()} {_d.day} {_mois[_d.month - 1]}"
+
+    rec = data.get("recommendation")
+    weather = data.get("weather", {})
+    estimate = data.get("daily_estimate")
+    tempo_color = tempo["tomorrow"]["color"]
+
+    # Cas spécial : couleur Tempo non publiée
+    if rec is None or data.get("tempo_unknown"):
+        message = "⏳ Couleur Tempo non encore publiée\n\n"
+        message += "La couleur Tempo de demain n'a pas encore été publiée par EDF. "
+        message += "Consultez le dashboard plus tard dans la soirée.\n\n"
+
+        if weather.get("temperature") is not None:
+            message += f"🌡️ Température prévue : {weather['temp_min']}°C – {weather['temp_max']}°C (moy. {weather['temperature']}°C)"
+
+        return message
+
+    # Cas normal : recommandation disponible
+    tempo_fr = {"BLUE": "Bleu 🔵", "WHITE": "Blanc ⚪", "RED": "Rouge 🔴"}.get(tempo_color, "Inconnu ❓")
+
+    # Message principal
+    message = f"{rec['title']}\n\n{rec['explanation']}\n\n"
+
+    # Météo
+    if weather.get("temperature") is not None:
+        message += f"🌡️ Température : {weather['temp_min']}°C – {weather['temp_max']}°C (moy. {weather['temperature']}°C)\n"
+
+    # Tempo
+    message += f"⚡ Tarif Tempo : {tempo_fr}\n"
+
+    # Estimation de coût
+    if estimate and estimate.get("clim") is not None:
+        message += f"\n💰 Estimation sur {estimate['hours']}h :\n"
+        message += f"  ❄️ Clim : {estimate['clim']:.2f} €\n"
+        message += f"  🔥 Poêle : {estimate['poele']:.2f} €\n"
+
+    # Économies
+    if rec.get("savings_per_hour", 0) > 0:
+        message += f"\n💚 Économie : {rec['savings_per_hour']:.3f} €/h"
+
+    return message
+
+
 def send_email(subject: str, html: str) -> bool:
     cfg = config.EMAIL
     if not cfg.get("enabled"):
@@ -186,10 +293,19 @@ def main() -> bool:
     tempo = get_tempo_info(config.HP_START, config.HP_END)
     data = analyze_tomorrow(tomorrow_weather, tempo, cfg_dict)
 
+    # Note : même si la couleur Tempo n'est pas publiée, on envoie une notification
     subject, html = build_email(data, tempo)
     logger.info("Sujet : %s", subject)
 
-    return send_email(subject, html)
+    # Envoi email
+    email_sent = send_email(subject, html)
+
+    # Envoi notification ntfy
+    if config.NTFY.get("enabled"):
+        ntfy_message = build_ntfy_message(data, tempo)
+        send_ntfy(subject, ntfy_message, config.NTFY)
+
+    return email_sent
 
 
 if __name__ == "__main__":
