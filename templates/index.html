@@ -51,6 +51,12 @@
 
   const banner = document.getElementById('countdown-banner');
 
+  // DEBUG
+  console.log('[Countdown] suspendedUntil:', suspendedUntil);
+  console.log('[Countdown] nextScheduleISO:', nextScheduleISO);
+  console.log('[Countdown] everyoneAway:', everyoneAway);
+  console.log('[Countdown] stoveOn:', stoveOn);
+
   function fmtDuration(ms) {
     if (ms <= 0) return null;
     const totalMin = Math.floor(ms / 60000);
