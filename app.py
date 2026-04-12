@@ -73,18 +73,17 @@ def _suspend_thermostat_after_manual_off(entity_type: str) -> None:
 
 
 def _cancel_thermostat_suspension(entity_type: str) -> None:
-    """Cancel thermostat suspension on manual on."""
+    """Cancel thermostat suspension on manual on (only if suspended)."""
     try:
         state = thermostat_module.get_state()
-        new_state = {
-            **state,
-            "state": "on",
-            "active_system": entity_type,
-            "last_turned_on": datetime.now().isoformat(),
-            "suspended_until": None,
-        }
-        thermostat_module._save_state(new_state)
-        logger.info("Manual on %s - suspension cancelled", entity_type)
+        # Seulement annuler la suspension, ne pas réactiver le thermostat
+        if state.get("suspended_until"):
+            new_state = {
+                **state,
+                "suspended_until": None,
+            }
+            thermostat_module._save_state(new_state)
+            logger.info("Manual on %s - suspension cancelled", entity_type)
     except Exception as e:
         logger.error("Erreur annulation suspension thermostat : %s", e)
 
