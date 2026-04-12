@@ -175,13 +175,15 @@
       <div class="grid-2">
         <div>
           <p class="value-sub">
-            Chauffage :
-            <span class="{% if thermostat_state.state == 'on' %}thermostat-badge-on{% else %}thermostat-badge-off{% endif %}" data-value="state-badge">
-              {% if thermostat_state.state == 'on' %}
-                {% if thermostat_state.get('active_system') == 'clim' %}❄️ Clim allumée{% else %}🔥 Poêle allumé{% endif %}
-              {% else %}
-                ⏸ Éteint
-              {% endif %}
+            État Poêle :
+            <span class="{% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'poele' %}thermostat-badge-on{% else %}thermostat-badge-off{% endif %}" data-value="poele-badge">
+              {% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'poele' %}🔥 Allumé{% else %}⏹ Éteint{% endif %}
+            </span>
+          </p>
+          <p class="value-sub">
+            État Clim :
+            <span class="{% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'clim' %}thermostat-badge-on{% else %}thermostat-badge-off{% endif %}" data-value="clim-badge">
+              {% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'clim' %}❄️ Allumée{% else %}⏹ Éteinte{% endif %}
             </span>
           </p>
           <p class="value-sub">

@@ -204,20 +204,20 @@ const DashboardRefresh = {
     const card = document.querySelector('[data-refresh="thermostat"]');
     if (!card || !thermostat) return;
 
-    // Mise à jour du badge état avec système actif
-    const badgeEl = card.querySelector('[data-value="state-badge"]');
-    if (badgeEl) {
-      const isOn = thermostat.state === 'on';
-      badgeEl.className = isOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
-      if (isOn) {
-        if (thermostat.active_system === 'clim') {
-          badgeEl.textContent = '❄️ Clim allumée';
-        } else {
-          badgeEl.textContent = '🔥 Poêle allumé';
-        }
-      } else {
-        badgeEl.textContent = '⏸ Éteint';
-      }
+    // Mise à jour badge Poêle
+    const poeleBadgeEl = card.querySelector('[data-value="poele-badge"]');
+    if (poeleBadgeEl) {
+      const poeleOn = thermostat.state === 'on' && thermostat.active_system === 'poele';
+      poeleBadgeEl.className = poeleOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
+      poeleBadgeEl.textContent = poeleOn ? '🔥 Allumé' : '⏹ Éteint';
+    }
+
+    // Mise à jour badge Clim
+    const climBadgeEl = card.querySelector('[data-value="clim-badge"]');
+    if (climBadgeEl) {
+      const climOn = thermostat.state === 'on' && thermostat.active_system === 'clim';
+      climBadgeEl.className = climOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
+      climBadgeEl.textContent = climOn ? '❄️ Allumée' : '⏹ Éteinte';
     }
 
     this.flashElement(card);
