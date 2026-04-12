@@ -218,7 +218,9 @@ def get_task_status(task_id: str) -> Optional[Dict]:
         "tag_id": task.get("tag_id"),
         "calculated_cop": task.get("calculated_cop"),
         "deduced_ac_power": task.get("deduced_ac_power"),
-        "validation_message": task.get("validation_message")
+        "validation_message": task.get("validation_message"),
+        "samples": task.get("samples", []),
+        "outdoor_temp": task.get("outdoor_temp")
     }
 
 

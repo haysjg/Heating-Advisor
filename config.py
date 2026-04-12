@@ -168,5 +168,27 @@ COP_LEARNING = {
         "min_samples_required": 8,     # minimum 8/12 valides
         "max_errors": 3,               # abandon après 3 erreurs consécutives
         "task_cleanup_minutes": 10,    # rétention tasks terminées
+    },
+
+    # Apprentissage automatique
+    "auto_learning": {
+        "enabled": False,                               # activer l'apprentissage automatique
+        "polling_interval_seconds": 45,                 # fréquence de vérification état clim
+        "cooldown_after_startup_minutes": 5,            # attente stabilisation clim avant échantillonnage
+        "min_interval_between_samples_hours": 2,        # intervalle min entre deux échantillonnages
+        "heater_power_threshold": 50,                   # seuil ballon eau chaude (W)
+        "only_during_thermostat_schedule": True,        # échantillonner uniquement pendant plages chauffage
+        "blackout_hours": [                             # heures à éviter (cuisine, etc.)
+            {"start": "11:30", "end": "14:00"},         # déjeuner
+            {"start": "18:30", "end": "21:00"},         # dîner
+        ],
+
+        # Validation statistique (rejet des mesures faussées)
+        "validation": {
+            "max_variance_watts": 200,                  # variance max acceptable des échantillons
+            "max_power_jump_watts": 500,                # saut max entre 2 échantillons (détection plaque/four)
+            "max_deviation_from_theoretical": 0.5,      # écart max vs courbe théorique (50%)
+            "max_deviation_from_history": 0.3,          # écart max vs historique appris (30%)
+        }
     }
 }

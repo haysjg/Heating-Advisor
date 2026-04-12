@@ -270,6 +270,60 @@
             </div>
         </section>
 
+        <!-- Apprentissage automatique -->
+        <section class="tag-section">
+            <h2>🤖 Apprentissage Automatique</h2>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                <div style="flex: 1; min-width: 250px;">
+                    <p style="color: #888; font-size: 0.95em; margin: 0;">
+                        Détecte automatiquement quand la clim démarre et lance des échantillonnages
+                        avec validation statistique pour rejeter les mesures faussées.
+                    </p>
+                </div>
+                <div style="text-align: right;">
+                    <button id="auto-learning-toggle" onclick="toggleAutoLearning()"
+                            style="padding: 12px 30px; font-size: 1.1em; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                        <span id="auto-learning-toggle-text">--</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="auto-learning-status" style="background: #1a1a1a; border-radius: 6px; padding: 15px; margin-bottom: 15px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <span id="auto-learning-badge" style="padding: 5px 12px; border-radius: 5px; font-size: 0.9em; font-weight: bold;">--</span>
+                    <span id="auto-learning-message" style="color: #888;">Chargement...</span>
+                </div>
+                <div id="auto-learning-details" style="color: #666; font-size: 0.9em; margin-top: 10px;"></div>
+            </div>
+
+            <div class="stats-grid" style="margin-bottom: 15px;">
+                <div class="stat-card">
+                    <div class="stat-value" id="auto-stat-detections">0</div>
+                    <div class="stat-label">Détections</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="auto-stat-started">0</div>
+                    <div class="stat-label">Démarrés</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="auto-stat-successful" style="color: #4CAF50;">0</div>
+                    <div class="stat-label">✅ Validés</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="auto-stat-rejected" style="color: #f44336;">0</div>
+                    <div class="stat-label">❌ Rejetés</div>
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <button onclick="showRejectionHistory()"
+                        style="background: #2a2a2a; color: #888; padding: 8px 20px; border: 1px solid #444; border-radius: 5px; cursor: pointer; font-size: 0.9em;">
+                    📋 Voir l'historique des rejets
+                </button>
+            </div>
+        </section>
+
         <!-- Graphique comparaison courbes -->
         <section>
             <h2>Courbes COP : Théorique vs Apprise</h2>
@@ -805,8 +859,155 @@
             });
         }
 
+        async function loadAutoLearningStatus() {
+            try {
+                const response = await fetch('/api/cop/auto-learning/status');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    return;
+                }
+
+                // Bouton toggle
+                const toggleBtn = document.getElementById('auto-learning-toggle');
+                const toggleText = document.getElementById('auto-learning-toggle-text');
+
+                if (data.enabled && data.running) {
+                    toggleBtn.style.background = '#4CAF50';
+                    toggleBtn.style.color = 'white';
+                    toggleText.textContent = 'ON (désactiver)';
+                } else {
+                    toggleBtn.style.background = '#666';
+                    toggleBtn.style.color = '#ccc';
+                    toggleText.textContent = 'OFF (activer)';
+                }
+
+                // Badge de statut
+                const badge = document.getElementById('auto-learning-badge');
+                const message = document.getElementById('auto-learning-message');
+                const details = document.getElementById('auto-learning-details');
+
+                if (!data.enabled || !data.running) {
+                    badge.style.background = '#666';
+                    badge.textContent = '🔴 Désactivé';
+                    message.textContent = 'L\'apprentissage automatique est désactivé';
+                    details.textContent = '';
+                } else if (data.current_sampling_task_id) {
+                    badge.style.background = '#FF9800';
+                    badge.textContent = '🟡 Échantillonnage';
+                    message.textContent = 'Échantillonnage en cours...';
+                    details.textContent = '';
+                } else {
+                    badge.style.background = '#4CAF50';
+                    badge.textContent = '🟢 Actif';
+                    const lastCheck = data.last_check ? new Date(data.last_check).toLocaleTimeString('fr-FR') : '--';
+                    const climState = data.last_clim_state || 'inconnu';
+                    message.textContent = `En surveillance (clim: ${climState})`;
+                    details.textContent = `Dernière vérification : ${lastCheck}`;
+                }
+
+                // Statistiques
+                document.getElementById('auto-stat-detections').textContent = data.stats?.total_detections || 0;
+                document.getElementById('auto-stat-started').textContent = data.stats?.total_samples_started || 0;
+                document.getElementById('auto-stat-successful').textContent = data.stats?.total_samples_successful || 0;
+                document.getElementById('auto-stat-rejected').textContent = data.stats?.total_samples_rejected || 0;
+
+            } catch (error) {
+                console.error('Erreur chargement statut auto-learning:', error);
+            }
+        }
+
+        async function toggleAutoLearning() {
+            try {
+                const statusResponse = await fetch('/api/cop/auto-learning/status');
+                const statusData = await statusResponse.json();
+                const currentlyEnabled = statusData.enabled && statusData.running;
+
+                const response = await fetch('/api/cop/auto-learning/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enable: !currentlyEnabled})
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert(data.message, 'success');
+                    loadAutoLearningStatus();
+                } else {
+                    showAlert(`Erreur : ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showAlert(`Erreur : ${error.message}`, 'error');
+            }
+        }
+
+        async function showRejectionHistory() {
+            try {
+                const response = await fetch('/api/cop/auto-learning/history?limit=20');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showAlert(`Erreur : ${data.error}`, 'error');
+                    return;
+                }
+
+                const history = data.history || [];
+
+                if (history.length === 0) {
+                    showAlert('Aucun rejet enregistré', 'info');
+                    return;
+                }
+
+                // Créer une popup avec l'historique
+                let html = '<div style="max-height: 400px; overflow-y: auto;">';
+                html += '<h3 style="margin-top: 0;">Historique des rejets (20 derniers)</h3>';
+                html += '<table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">';
+                html += '<thead><tr style="background: #1a1a1a;">';
+                html += '<th style="padding: 8px; border: 1px solid #444;">Date</th>';
+                html += '<th style="padding: 8px; border: 1px solid #444;">T. ext.</th>';
+                html += '<th style="padding: 8px; border: 1px solid #444;">Raison</th>';
+                html += '</tr></thead><tbody>';
+
+                history.forEach(entry => {
+                    const date = new Date(entry.timestamp).toLocaleString('fr-FR');
+                    const temp = entry.outdoor_temp !== null ? `${entry.outdoor_temp.toFixed(1)}°C` : '--';
+                    const reason = entry.reason_message || entry.reason_code;
+
+                    html += `<tr>`;
+                    html += `<td style="padding: 8px; border: 1px solid #444;">${date}</td>`;
+                    html += `<td style="padding: 8px; border: 1px solid #444; text-align: center;">${temp}</td>`;
+                    html += `<td style="padding: 8px; border: 1px solid #444; color: #f44336;">${reason}</td>`;
+                    html += `</tr>`;
+                });
+
+                html += '</tbody></table></div>';
+
+                // Simple modal
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;';
+                modal.innerHTML = `
+                    <div style="background: #2a2a2a; border-radius: 8px; padding: 25px; max-width: 800px; width: 90%; max-height: 90%; overflow: auto; color: #fff;">
+                        ${html}
+                        <button onclick="this.closest('div[style*=fixed]').remove()"
+                                style="margin-top: 20px; padding: 10px 20px; background: #666; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%;">
+                            Fermer
+                        </button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+            } catch (error) {
+                showAlert(`Erreur : ${error.message}`, 'error');
+            }
+        }
+
         // Chargement initial et rafraîchissement automatique
         loadData();
-        setInterval(loadData, 30000); // 30 secondes
+        loadAutoLearningStatus();
+        setInterval(() => {
+            loadData();
+            loadAutoLearningStatus();
+        }, 30000); // 30 secondes
     </script>
 {% endblock %}

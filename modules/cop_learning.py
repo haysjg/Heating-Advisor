@@ -549,7 +549,7 @@ def purge_old(days: int = 90) -> None:
         conn.close()
 
 
-def delete_tag(tag_id: int) -> bool:
+def delete_tag(tag_id: int, config=None) -> bool:
     """Supprime un tag spécifique et ses measurements associés, puis recalcule la courbe."""
     conn = _connect()
     try:
@@ -564,8 +564,9 @@ def delete_tag(tag_id: int) -> bool:
         conn.execute("DELETE FROM cop_tags WHERE id = ?", (tag_id,))
         conn.commit()
 
-        # Recalculer la courbe
-        update_cop_curve()
+        # Recalculer la courbe (si config fourni)
+        if config:
+            update_cop_curve(config)
 
         logger.info(f"Tag {tag_id} supprimé avec succès")
         return True

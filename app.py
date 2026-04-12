@@ -26,6 +26,7 @@ import modules.thermostat as thermostat_module
 import modules.history as history_module
 import modules.cop_learning as cop_learning_module
 import modules.cop_sampling as cop_sampling_module
+import modules.cop_auto_learning as cop_auto_learning_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -185,6 +186,10 @@ def api_change_password():
 
 _scheduler = BackgroundScheduler(timezone="Europe/Paris")
 _scheduler.start()
+
+# ── Worker auto-learning COP ───────────────────────────────────
+# Démarré automatiquement si activé dans la config
+cop_auto_learning_module.start_worker(config)
 
 
 def _run_notify():
@@ -1392,6 +1397,52 @@ def api_cop_last_on_tag():
             return jsonify({"error": "Aucun tag ON trouvé"}), 404
     except Exception as e:
         logger.exception("Erreur récupération dernier tag ON : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/auto-learning/status")
+def api_cop_auto_learning_status():
+    """Retourne le statut du worker d'auto-learning."""
+    try:
+        status = cop_auto_learning_module.get_status()
+        return jsonify(status)
+    except Exception as e:
+        logger.exception("Erreur récupération statut auto-learning : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/auto-learning/toggle", methods=["POST"])
+def api_cop_auto_learning_toggle():
+    """Active ou désactive le worker d'auto-learning."""
+    try:
+        data = request.get_json(force=True)
+        enable = data.get("enable", False)
+
+        success = cop_auto_learning_module.toggle_worker(config, enable)
+
+        if success:
+            return jsonify({
+                "status": "ok",
+                "enabled": enable,
+                "message": f"Auto-learning {'activé' if enable else 'désactivé'}"
+            })
+        else:
+            return jsonify({"error": "Impossible de modifier l'état du worker"}), 400
+
+    except Exception as e:
+        logger.exception("Erreur toggle auto-learning : %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cop/auto-learning/history")
+def api_cop_auto_learning_history():
+    """Retourne l'historique des rejets d'auto-learning."""
+    try:
+        limit = int(request.args.get("limit", 20))
+        history = cop_auto_learning_module.get_rejection_history(limit)
+        return jsonify({"history": history})
+    except Exception as e:
+        logger.exception("Erreur récupération historique auto-learning : %s", e)
         return jsonify({"error": str(e)}), 500
 
 
