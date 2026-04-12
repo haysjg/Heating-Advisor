@@ -187,14 +187,19 @@ def _reschedule_notify():
 
 
 def _record_history():
-    """Enregistre un point d'historique (températures + état poêle + couleur Tempo)."""
+    """Enregistre un point d'historique (températures + état chauffage + couleur Tempo)."""
     try:
         data = get_analysis()
         outdoor_temp = data.get("weather", {}).get("temperature")
         indoor_temp = data.get("indoor", {}).get("temperature") if data.get("indoor") else None
-        poele_state = thermostat_module.get_state().get("state", "off")
+        th_state = thermostat_module.get_state()
+        # Enregistre le système actif au lieu de simplement on/off
+        if th_state.get("state") == "on":
+            heating_state = th_state.get("active_system", "poele")
+        else:
+            heating_state = "off"
         tempo_color = data.get("tempo", {}).get("today", {}).get("color")
-        history_module.record(outdoor_temp, indoor_temp, poele_state, tempo_color)
+        history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color)
     except Exception as e:
         logger.error("History record échoué : %s", e)
 
@@ -221,6 +226,8 @@ def _record_diagnose():
         humidity = indoor.get("humidity") if indoor else None
         felt = thermostat_module.felt_temperature(indoor_temp, humidity, config.THERMOSTAT) if indoor_temp is not None else None
         poele_real = ha_state.get("state") if ha_state else None
+        clim_ha_state = ha_client.get_clim_state(config.HOME_ASSISTANT)
+        clim_real = clim_ha_state.get("state") if clim_ha_state else None
         data = get_analysis()
         recommendation = data.get("recommendation", {}).get("system")
 
@@ -234,6 +241,8 @@ def _record_diagnose():
             everyone_away=(presence == "away"),
             suspended_until=th_state.get("suspended_until"),
             recommendation=recommendation,
+            clim_real_state=clim_real,
+            active_system=th_state.get("active_system"),
         )
     except Exception as e:
         logger.error("Diagnose record échoué : %s", e)
@@ -626,6 +635,13 @@ def api_dashboard_refresh():
                     "state": state,
                 })
 
+        # État clim
+        clim_state_value = None
+        if ha_client.is_clim_configured(config.HOME_ASSISTANT):
+            clim_ha = ha_client.get_clim_state(config.HOME_ASSISTANT)
+            if clim_ha:
+                clim_state_value = clim_ha.get("state")
+
         # Construire la réponse JSON
         # Utiliser 'or {}' pour gérer le cas où les valeurs sont None au lieu de dict
         rec = data.get("recommendation") or {}
@@ -665,6 +681,7 @@ def api_dashboard_refresh():
             },
             "thermostat": {
                 "state": thermostat_state.get("state"),
+                "active_system": thermostat_state.get("active_system"),
                 "enabled": thermostat_state.get("enabled", False),
                 "in_schedule": thermostat_state.get("in_schedule", False),
                 "suspended_until": thermostat_state.get("suspended_until"),
@@ -672,6 +689,7 @@ def api_dashboard_refresh():
                 "presence_status": thermostat_state.get("presence_status"),
                 "last_turned_on": thermostat_state.get("last_turned_on")
             },
+            "clim_state": clim_state_value,
             "radiateurs": radiateurs_info,
             "tomorrow": {
                 "recommendation": {
@@ -774,6 +792,31 @@ def api_ha_auto_control():
     return jsonify({"status": "ok", "auto_control": enabled})
 
 
+@app.route("/api/ha/clim/turn_on", methods=["POST"])
+def api_ha_clim_turn_on():
+    if not ha_client.is_clim_configured(config.HOME_ASSISTANT):
+        return jsonify({"error": "Clim non configurée"}), 400
+    target_temp = config.THERMOSTAT.get("temp_off", 22.9)
+    return jsonify({"status": "ok" if ha_client.turn_on_clim(config.HOME_ASSISTANT, target_temp) else "error"})
+
+
+@app.route("/api/ha/clim/turn_off", methods=["POST"])
+def api_ha_clim_turn_off():
+    if not ha_client.is_clim_configured(config.HOME_ASSISTANT):
+        return jsonify({"error": "Clim non configurée"}), 400
+    return jsonify({"status": "ok" if ha_client.turn_off_clim(config.HOME_ASSISTANT) else "error"})
+
+
+@app.route("/api/ha/clim/state")
+def api_ha_clim_state():
+    if not ha_client.is_clim_configured(config.HOME_ASSISTANT):
+        return jsonify({"error": "Clim non configurée"}), 400
+    state = ha_client.get_clim_state(config.HOME_ASSISTANT)
+    if state is None:
+        return jsonify({"error": "Impossible de récupérer l'état"}), 500
+    return jsonify(state)
+
+
 @app.route("/api/ha/state")
 def api_ha_state():
     if not ha_client.is_configured(config.HOME_ASSISTANT):
@@ -795,15 +838,20 @@ def api_thermostat_diagnose():
     next_run = None
     if job and job.next_run_time:
         next_run = job.next_run_time.astimezone(ZoneInfo("Europe/Paris")).strftime("%H:%M:%S")
+    clim_ha_state = ha_client.get_clim_state(config.HOME_ASSISTANT)
     return jsonify({
         "thermostat_enabled": config.THERMOSTAT.get("enabled", False),
         "in_schedule": is_in_schedule(config.THERMOSTAT),
         "indoor": indoor,
         "poele_real_state": ha_state.get("state") if ha_state else None,
+        "clim_real_state": clim_ha_state.get("state") if clim_ha_state else None,
+        "clim_configured": ha_client.is_clim_configured(config.HOME_ASSISTANT),
+        "active_system": state.get("active_system"),
         "thermostat_state": state,
         "temp_on": config.THERMOSTAT.get("temp_on"),
         "temp_off": config.THERMOSTAT.get("temp_off"),
         "min_on_minutes": config.THERMOSTAT.get("min_on_minutes"),
+        "min_on_minutes_clim": config.THERMOSTAT.get("min_on_minutes_clim", 15),
         "grace_minutes": config.THERMOSTAT.get("end_of_schedule_grace_minutes"),
         "use_felt_temperature": config.THERMOSTAT.get("use_felt_temperature"),
         "felt_temperature": thermostat_module.felt_temperature(
@@ -1307,6 +1355,7 @@ def api_config_save():
                 "url": str(data.get("ha_url", config.HOME_ASSISTANT.get("url", "http://192.168.1.2:8123"))).strip().rstrip("/"),
                 "token": final_ha_token,
                 "poele_entity_id": str(data.get("ha_entity_id", config.HOME_ASSISTANT.get("poele_entity_id", ""))),
+                "clim_entity_id": str(data.get("ha_clim_entity_id", config.HOME_ASSISTANT.get("clim_entity_id", ""))).strip(),
                 "auto_control": config.HOME_ASSISTANT.get("auto_control", False),
             },
             "THERMOSTAT": {
@@ -1314,6 +1363,7 @@ def api_config_save():
                 "temp_on": float(data.get("thermostat_temp_on", config.THERMOSTAT.get("temp_on", 20.0))),
                 "temp_off": float(data.get("thermostat_temp_off", config.THERMOSTAT.get("temp_off", 22.9))),
                 "min_on_minutes": int(data.get("thermostat_min_on", config.THERMOSTAT.get("min_on_minutes", 90))),
+                "min_on_minutes_clim": int(data.get("thermostat_min_on_clim", config.THERMOSTAT.get("min_on_minutes_clim", 15))),
                 "end_of_schedule_grace_minutes": int(data.get("thermostat_grace", config.THERMOSTAT.get("end_of_schedule_grace_minutes", 45))),
                 "manual_off_suspend_hours": float(data.get("thermostat_suspend_hours", config.THERMOSTAT.get("manual_off_suspend_hours", 4))),
                 "presence_enabled": bool(data.get("thermostat_presence_enabled", config.THERMOSTAT.get("presence_enabled", False))),

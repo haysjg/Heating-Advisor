@@ -110,10 +110,22 @@ def _migrate_002(conn):
     """)
 
 
+def _migrate_003(conn):
+    """Ajoute les colonnes clim_real_state et active_system à diagnose_log."""
+    # ALTER TABLE ADD COLUMN est safe en SQLite (no-op if column exists with IF NOT EXISTS not supported,
+    # but we catch errors for safety)
+    for col, col_type in [("clim_real_state", "TEXT"), ("active_system", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE diagnose_log ADD COLUMN {col} {col_type}")
+        except Exception:
+            pass  # column already exists
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
     _migrate_002,
+    _migrate_003,
 ]
 
 

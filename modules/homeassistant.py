@@ -226,6 +226,75 @@ def turn_on_entity(cfg: dict, entity_id: str) -> bool:
         return False
 
 
+def is_clim_configured(cfg: dict) -> bool:
+    """Retourne True si HA est activé et la clim configurée."""
+    return bool(
+        cfg.get("enabled")
+        and cfg.get("url")
+        and cfg.get("token")
+        and cfg.get("clim_entity_id")
+    )
+
+
+def turn_on_clim(cfg: dict, target_temp: float) -> bool:
+    """Allume la clim en mode chauffage et règle la température cible."""
+    if not is_clim_configured(cfg):
+        return False
+    try:
+        entity_id = cfg["clim_entity_id"]
+        _request(
+            f"{cfg['url'].rstrip('/')}/api/services/climate/set_hvac_mode",
+            cfg["token"],
+            method="POST",
+            body={"entity_id": entity_id, "hvac_mode": "heat"},
+        )
+        _request(
+            f"{cfg['url'].rstrip('/')}/api/services/climate/set_temperature",
+            cfg["token"],
+            method="POST",
+            body={"entity_id": entity_id, "temperature": target_temp},
+        )
+        logger.info("HA : clim allumée en mode heat à %.1f°C (%s)", target_temp, entity_id)
+        return True
+    except Exception as e:
+        logger.error("HA turn_on_clim échoué : %s", e)
+        return False
+
+
+def turn_off_clim(cfg: dict) -> bool:
+    """Éteint la clim via HA."""
+    if not is_clim_configured(cfg):
+        return False
+    try:
+        entity_id = cfg["clim_entity_id"]
+        _request(
+            f"{cfg['url'].rstrip('/')}/api/services/climate/turn_off",
+            cfg["token"],
+            method="POST",
+            body={"entity_id": entity_id},
+        )
+        logger.info("HA : clim éteinte (%s)", entity_id)
+        return True
+    except Exception as e:
+        logger.error("HA turn_off_clim échoué : %s", e)
+        return False
+
+
+def get_clim_state(cfg: dict) -> dict | None:
+    """Retourne l'état actuel de l'entité clim."""
+    if not is_clim_configured(cfg):
+        return None
+    try:
+        entity_id = cfg["clim_entity_id"]
+        return _request(
+            f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
+            cfg["token"],
+        )
+    except Exception as e:
+        logger.error("HA get_clim_state échoué : %s", e)
+        return None
+
+
 def apply_recommendation(cfg: dict, system: str) -> bool:
     """
     Applique la recommandation du Heating Advisor au poêle.

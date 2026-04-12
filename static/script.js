@@ -204,12 +204,20 @@ const DashboardRefresh = {
     const card = document.querySelector('[data-refresh="thermostat"]');
     if (!card || !thermostat) return;
 
-    // Mise à jour du badge état
+    // Mise à jour du badge état avec système actif
     const badgeEl = card.querySelector('[data-value="state-badge"]');
     if (badgeEl) {
       const isOn = thermostat.state === 'on';
       badgeEl.className = isOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
-      badgeEl.textContent = isOn ? '🔥 Allumé' : '⏸ Éteint';
+      if (isOn) {
+        if (thermostat.active_system === 'clim') {
+          badgeEl.textContent = '❄️ Clim allumée';
+        } else {
+          badgeEl.textContent = '🔥 Poêle allumé';
+        }
+      } else {
+        badgeEl.textContent = '⏸ Éteint';
+      }
     }
 
     this.flashElement(card);

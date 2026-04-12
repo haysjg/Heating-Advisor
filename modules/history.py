@@ -122,6 +122,8 @@ def record_diagnose(
     everyone_away: bool,
     suspended_until: str,
     recommendation: str,
+    clim_real_state: str = None,
+    active_system: str = None,
 ) -> None:
     """Insère un snapshot de diagnostic. Appelé toutes les ~10 min."""
     try:
@@ -130,8 +132,8 @@ def record_diagnose(
                 """INSERT INTO diagnose_log
                    (ts, presence_status, poele_real_state, thermostat_state,
                     felt_temperature, indoor_temp, in_schedule, everyone_away,
-                    suspended_until, recommendation)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    suspended_until, recommendation, clim_real_state, active_system)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     datetime.now().isoformat(timespec="seconds"),
                     presence_status,
@@ -143,6 +145,8 @@ def record_diagnose(
                     1 if everyone_away else 0,
                     suspended_until,
                     recommendation,
+                    clim_real_state,
+                    active_system,
                 ),
             )
     except Exception as e:
@@ -157,7 +161,7 @@ def get_diagnose_history(hours: int = 168) -> list[dict]:
             rows = conn.execute(
                 """SELECT ts, presence_status, poele_real_state, thermostat_state,
                           felt_temperature, indoor_temp, in_schedule, everyone_away,
-                          suspended_until, recommendation
+                          suspended_until, recommendation, clim_real_state, active_system
                    FROM diagnose_log WHERE ts >= ? ORDER BY ts DESC""",
                 (since,),
             ).fetchall()
@@ -167,6 +171,8 @@ def get_diagnose_history(hours: int = 168) -> list[dict]:
                 "thermostat_state": r[3], "felt_temperature": r[4], "indoor_temp": r[5],
                 "in_schedule": bool(r[6]), "everyone_away": bool(r[7]),
                 "suspended_until": r[8], "recommendation": r[9],
+                "clim_real_state": r[10] if len(r) > 10 else None,
+                "active_system": r[11] if len(r) > 11 else None,
             }
             for r in rows
         ]

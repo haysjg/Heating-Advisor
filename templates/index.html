@@ -175,16 +175,21 @@
       <div class="grid-2">
         <div>
           <p class="value-sub">
-            État poêle :
+            Chauffage :
             <span class="{% if thermostat_state.state == 'on' %}thermostat-badge-on{% else %}thermostat-badge-off{% endif %}" data-value="state-badge">
-              {{ '🔥 Allumé' if thermostat_state.state == 'on' else '⏸ Éteint' }}
+              {% if thermostat_state.state == 'on' %}
+                {% if thermostat_state.get('active_system') == 'clim' %}❄️ Clim allumée{% else %}🔥 Poêle allumé{% endif %}
+              {% else %}
+                ⏸ Éteint
+              {% endif %}
             </span>
           </p>
           <p class="value-sub">
             Seuils : allumage &lt; <strong>{{ config.THERMOSTAT.temp_on }}°C</strong>
             — extinction &gt;= <strong>{{ config.THERMOSTAT.temp_off }}°C</strong>
           </p>
-          <p class="value-sub">Durée min ON : <strong>{{ config.THERMOSTAT.min_on_minutes }} min</strong>
+          <p class="value-sub">Durée min ON : poêle <strong>{{ config.THERMOSTAT.min_on_minutes }} min</strong>
+            / clim <strong>{{ config.THERMOSTAT.get('min_on_minutes_clim', 15) }} min</strong>
             — Fin de plage : <strong>{{ config.THERMOSTAT.end_of_schedule_grace_minutes }} min</strong></p>
         </div>
         <div>

@@ -78,6 +78,7 @@ HOME_ASSISTANT = {
     "url": "http://192.168.1.2:8123",
     "token": "",                          # token d'accès longue durée
     "poele_entity_id": "climate.edilkamin_climate",
+    "clim_entity_id": "",                 # entité climate Sensibo (ex: climate.clim_est)
     "auto_control": False,                # pilotage automatique ON/OFF selon recommandation
     "shelly_temp_entity_id": "sensor.sonde_temperature_temperature",
     "shelly_humidity_entity_id": "sensor.sonde_temperature_humidity",
@@ -88,7 +89,8 @@ THERMOSTAT = {
     "enabled": False,
     "temp_on": 20.0,                      # allumage si temp intérieure < cette valeur (°C)
     "temp_off": 22.9,                     # extinction si temp intérieure >= cette valeur (°C)
-    "min_on_minutes": 90,                 # durée minimale ON avant extinction sur temp
+    "min_on_minutes": 90,                 # durée minimale ON avant extinction sur temp (poêle)
+    "min_on_minutes_clim": 15,            # durée minimale ON avant extinction sur temp (clim)
     "end_of_schedule_grace_minutes": 45,  # durée minimale ON avant extinction fin de plage
     "check_interval_minutes": 10,         # fréquence de vérification
     "manual_off_suspend_hours": 4,        # suspension du thermostat après extinction manuelle (heures)
