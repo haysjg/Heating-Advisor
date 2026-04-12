@@ -164,14 +164,33 @@ class TestCheckAndApply:
     """
 
     def _make_state(self, state="off", last_on=None, last_off=None,
-                    sensor_failures=0, suspended_until=None):
+                    sensor_failures=0, suspended_until=None, active_system=None):
+        """Crée un état de thermostat avec la structure system_history."""
+        # Par défaut, si state=on et pas de système spécifié, utiliser "poele"
+        if state == "on" and active_system is None:
+            active_system = "poele"
+
+        # Initialiser system_history
+        system_history = {
+            "poele": {"last_turned_on": None, "last_turned_off": None},
+            "clim": {"last_turned_on": None, "last_turned_off": None}
+        }
+
+        # Si un timestamp est fourni, le mettre dans le système approprié
+        if last_on and active_system in ("poele", "clim"):
+            system_history[active_system]["last_turned_on"] = last_on
+        if last_off and active_system in ("poele", "clim"):
+            system_history[active_system]["last_turned_off"] = last_off
+
         return {
             "state": state,
-            "last_turned_on": last_on,
+            "active_system": active_system if state == "on" else None,
+            "last_turned_on": last_on,  # Champs legacy maintenus
             "last_turned_off": last_off,
             "sensor_failures": sensor_failures,
             "last_alert_sent": None,
             "suspended_until": suspended_until,
+            "system_history": system_history
         }
 
     def test_thermostat_disabled_does_nothing(self, base_ha_cfg):
@@ -263,11 +282,14 @@ class TestCheckAndApply:
     @patch("modules.thermostat._save_state")
     @patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": 20.0, "humidity": 50.0})
     @patch("modules.homeassistant.get_state", return_value={"state": "heat"})
+    @patch("modules.homeassistant.get_clim_state", return_value={"state": "off"})
+    @patch("modules.homeassistant.is_clim_configured", return_value=True)
     @patch("modules.homeassistant.turn_off", return_value=True)
     @patch("modules.ntfy_push.send")
-    def test_reco_changed_min_on_met_turns_off(self, mock_ntfy, mock_ha_off, mock_ha_state,
-                                                mock_indoor, mock_save, mock_load,
-                                                _mock_vac, base_ha_cfg, base_thermostat_cfg):
+    def test_reco_changed_min_on_met_turns_off(self, mock_ntfy, mock_ha_off, mock_clim_cfg,
+                                                mock_clim_state, mock_ha_state, mock_indoor,
+                                                mock_save, mock_load, _mock_vac,
+                                                base_ha_cfg, base_thermostat_cfg):
         two_hours_ago = (datetime(2025, 1, 6, 8, 0, 0)).isoformat()
         mock_load.return_value = self._make_state(state="on", last_on=two_hours_ago)
         check_and_apply(base_ha_cfg, base_thermostat_cfg, "clim")  # reco changée

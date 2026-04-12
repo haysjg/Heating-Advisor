@@ -60,13 +60,15 @@ def _suspend_thermostat_after_manual_off(entity_type: str) -> None:
         suspend_hours = config.THERMOSTAT.get("manual_off_suspend_hours", 4)
         suspended_until = (datetime.now() + timedelta(hours=suspend_hours)).isoformat()
 
+        # Capturer le système actif pour mettre à jour le bon timestamp
+        active_sys = state.get("active_system", entity_type)
         new_state = {
             **state,
             "state": "off",
             "active_system": None,
-            "last_turned_off": datetime.now().isoformat(),
             "suspended_until": suspended_until,
         }
+        thermostat_module._update_system_timestamp(new_state, active_sys, "off")
         thermostat_module._save_state(new_state)
         logger.info("Manual off %s - thermostat suspended until %s", entity_type, suspended_until)
     except Exception as e:
@@ -743,7 +745,11 @@ def api_dashboard_refresh():
                 "suspended_until": thermostat_state.get("suspended_until"),
                 "everyone_away": thermostat_state.get("everyone_away", False),
                 "presence_status": thermostat_state.get("presence_status"),
-                "last_turned_on": thermostat_state.get("last_turned_on")
+                "last_turned_on": thermostat_state.get("last_turned_on"),
+                "system_history": thermostat_state.get("system_history", {
+                    "poele": {"last_turned_on": None, "last_turned_off": None},
+                    "clim": {"last_turned_on": None, "last_turned_off": None}
+                })
             },
             "clim_state": clim_state_value,
             "poele_state": poele_state_value,

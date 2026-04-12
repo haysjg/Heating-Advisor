@@ -22,7 +22,36 @@ def _load_state() -> dict:
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE) as f:
-                return json.load(f)
+                state = json.load(f)
+
+                # Migration automatique : anciens fichiers sans system_history
+                if "system_history" not in state:
+                    logger.info("Migration : création de system_history depuis les champs legacy")
+                    system_history = {
+                        "poele": {"last_turned_on": None, "last_turned_off": None},
+                        "clim": {"last_turned_on": None, "last_turned_off": None}
+                    }
+
+                    # Migrer les timestamps legacy selon active_system
+                    active = state.get("active_system")
+                    last_on = state.get("last_turned_on")
+                    last_off = state.get("last_turned_off")
+
+                    if active in ("poele", "clim") and last_on:
+                        system_history[active]["last_turned_on"] = last_on
+
+                    # Si éteint, on met last_off dans le système qui était actif, ou les deux si inconnu
+                    if last_off:
+                        if active in ("poele", "clim"):
+                            system_history[active]["last_turned_off"] = last_off
+                        else:
+                            # Active system inconnu : mettre dans les deux pour ne pas perdre l'info
+                            system_history["poele"]["last_turned_off"] = last_off
+                            system_history["clim"]["last_turned_off"] = last_off
+
+                    state["system_history"] = system_history
+
+                return state
         except Exception:
             pass
     return {
@@ -33,6 +62,10 @@ def _load_state() -> dict:
         "sensor_failures": 0,
         "last_alert_sent": None,
         "suspended_until": None,
+        "system_history": {
+            "poele": {"last_turned_on": None, "last_turned_off": None},
+            "clim": {"last_turned_on": None, "last_turned_off": None}
+        }
     }
 
 
@@ -40,6 +73,54 @@ def _save_state(state: dict) -> None:
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def _update_system_timestamp(state: dict, system: str, event_type: str) -> None:
+    """Met à jour le timestamp d'un système (poêle/clim) pour un événement (on/off).
+
+    Args:
+        state: État du thermostat
+        system: "poele" ou "clim"
+        event_type: "on" ou "off"
+    """
+    if "system_history" not in state:
+        state["system_history"] = {
+            "poele": {"last_turned_on": None, "last_turned_off": None},
+            "clim": {"last_turned_on": None, "last_turned_off": None}
+        }
+
+    if system not in ("poele", "clim"):
+        return
+
+    timestamp = datetime.now().isoformat()
+    field = f"last_turned_{event_type}"
+
+    # Mettre à jour system_history
+    state["system_history"][system][field] = timestamp
+
+    # Maintenir les champs legacy pour rétrocompatibilité
+    state[field] = timestamp
+
+
+def _get_system_timestamp(state: dict, system: str, event_type: str) -> str | None:
+    """Récupère le timestamp d'un système pour un événement.
+
+    Args:
+        state: État du thermostat
+        system: "poele" ou "clim"
+        event_type: "on" ou "off"
+
+    Returns:
+        Le timestamp ISO ou None
+    """
+    if "system_history" not in state:
+        return None
+
+    if system not in ("poele", "clim"):
+        return None
+
+    field = f"last_turned_{event_type}"
+    return state["system_history"][system].get(field)
 
 
 def get_state() -> dict:
@@ -253,7 +334,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             active = state.get("active_system", "poele")
             logger.info("Thermostat : extinction %s — mode vacances actif", _system_label(active))
             _turn_off_active_system(ha_client, ha_cfg, active)
-            _save_state({**state, "state": "off", "active_system": None, "last_turned_off": datetime.now().isoformat()})
+            new_state = {**state, "state": "off", "active_system": None}
+            _update_system_timestamp(new_state, active, "off")
+            _save_state(new_state)
             ntfy_send(f"✈️ {_system_label(active).capitalize()} éteint", "Mode vacances actif — thermostat suspendu.", ntfy_cfg)
         return
     if not ha_cfg.get("enabled") or not ha_cfg.get("url") or not ha_cfg.get("token"):
@@ -278,20 +361,21 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
         if state.get("state") == "on":
             in_schedule = is_in_schedule(thermostat_cfg)
             if not in_schedule:
-                last_on_str = state.get("last_turned_on")
+                active = state.get("active_system", "poele")
+                last_on_str = _get_system_timestamp(state, active, "on")
                 last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
                 on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 9999
                 grace = thermostat_cfg.get("end_of_schedule_grace_minutes", 45)
                 if on_minutes >= grace:
-                    active = state.get("active_system", "poele")
                     logger.info("Thermostat : extinction sécurité fin de plage (sonde HS) — %s", _system_label(active))
                     _turn_off_active_system(ha_client, ha_cfg, active)
-                    _save_state({
+                    new_state = {
                         **state,
                         "state": "off",
                         "active_system": None,
-                        "last_turned_off": datetime.now().isoformat(),
-                    })
+                    }
+                    _update_system_timestamp(new_state, active, "off")
+                    _save_state(new_state)
                     ntfy_send(
                         f"⚠️ {_system_label(active).capitalize()} éteint",
                         "Extinction sécurité — sonde hors service, fin de plage horaire.",
@@ -336,7 +420,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 logger.info("Thermostat : poêle rallumé manuellement pendant la suspension → suspension annulée")
             else:
                 logger.info("Thermostat : poêle allumé manuellement, synchronisation état → on")
-            state = {**state, "state": "on", "active_system": "poele", "last_turned_on": datetime.now().isoformat(), "suspended_until": None}
+            state = {**state, "state": "on", "active_system": "poele", "suspended_until": None}
+            _update_system_timestamp(state, "poele", "on")
             _save_state(state)
             current = "on"
             active_system = "poele"
@@ -346,7 +431,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 logger.info("Thermostat : clim allumée manuellement pendant la suspension → suspension annulée")
             else:
                 logger.info("Thermostat : clim allumée manuellement, synchronisation état → on")
-            state = {**state, "state": "on", "active_system": "clim", "last_turned_on": datetime.now().isoformat(), "suspended_until": None}
+            state = {**state, "state": "on", "active_system": "clim", "suspended_until": None}
+            _update_system_timestamp(state, "clim", "on")
             _save_state(state)
             current = "on"
             active_system = "clim"
@@ -358,34 +444,39 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             # Vérifier si l'autre système a été allumé manuellement (transition manuelle)
             if active_system == "poele" and clim_real_on:
                 logger.info("Thermostat : transition manuelle poêle → clim détectée")
-                state = {**state, "active_system": "clim", "last_turned_on": datetime.now().isoformat()}
+                state = {**state, "active_system": "clim"}
+                _update_system_timestamp(state, "clim", "on")
                 _save_state(state)
                 active_system = "clim"
             elif active_system == "clim" and poele_real_on:
                 logger.info("Thermostat : transition manuelle clim → poêle détectée")
-                state = {**state, "active_system": "poele", "last_turned_on": datetime.now().isoformat()}
+                state = {**state, "active_system": "poele"}
+                _update_system_timestamp(state, "poele", "on")
                 _save_state(state)
                 active_system = "poele"
             else:
                 # Système éteint manuellement → suspension
+                # Capturer le système actif AVANT de le mettre à None
+                prev_system = active_system
                 suspend_hours = thermostat_cfg.get("manual_off_suspend_hours", 4)
                 suspended_until = (datetime.now() + timedelta(hours=suspend_hours)).isoformat()
                 logger.info(
                     "Thermostat : %s éteint manuellement, suspension %dh jusqu'à %s",
-                    _system_label(active_system), suspend_hours, suspended_until[:16].replace("T", " "),
+                    _system_label(prev_system), suspend_hours, suspended_until[:16].replace("T", " "),
                 )
                 state = {
                     **state,
                     "state": "off",
                     "active_system": None,
-                    "last_turned_off": datetime.now().isoformat(),
                     "suspended_until": suspended_until,
                 }
+                _update_system_timestamp(state, prev_system, "off")
                 _save_state(state)
                 current = "off"
                 active_system = None
 
-    last_on_str = state.get("last_turned_on")
+    # Récupérer le timestamp du système actif
+    last_on_str = _get_system_timestamp(state, active_system, "on") if active_system else None
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
     on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
     min_on = min_on_clim if active_system == "clim" else min_on_poele
@@ -425,9 +516,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 if restricted_min >= nearby_grace:
                     logger.debug("Thermostat : zone proximité après %dh, grâce écoulée — pause", no_ignition_after)
                     if current == "on":
-                        logger.info("Thermostat : extinction %s — zone proximité après %dh (grâce écoulée)", _system_label(active_system), no_ignition_after)
-                        _turn_off_active_system(ha_client, ha_cfg, active_system)
-                        _save_state({**state, "state": "off", "active_system": None, "last_turned_off": datetime.now().isoformat()})
+                        # Capturer le système actif AVANT de le mettre à None
+                        prev_system = active_system
+                        logger.info("Thermostat : extinction %s — zone proximité après %dh (grâce écoulée)", _system_label(prev_system), no_ignition_after)
+                        _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                        new_state = {**state, "state": "off", "active_system": None}
+                        _update_system_timestamp(new_state, prev_system, "off")
+                        _save_state(new_state)
                     return
                 else:
                     logger.debug("Thermostat : zone proximité après %dh, grâce encore %d min", no_ignition_after, int(nearby_grace - restricted_min))
@@ -451,10 +546,14 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             if away_min >= away_grace:
                 logger.debug("Thermostat : absence confirmée (%.0f min >= %d min), thermostat en pause", away_min, away_grace)
                 if current == "on":
-                    logger.info("Thermostat : extinction %s — absence confirmée", _system_label(active_system))
-                    _turn_off_active_system(ha_client, ha_cfg, active_system)
-                    _save_state({**state, "state": "off", "active_system": None, "last_turned_off": datetime.now().isoformat()})
-                    ntfy_send(f"🚗 {_system_label(active_system).capitalize()} éteint", "Tout le monde absent — thermostat en pause.", ntfy_cfg)
+                    # Capturer le système actif AVANT de le mettre à None
+                    prev_system = active_system
+                    logger.info("Thermostat : extinction %s — absence confirmée", _system_label(prev_system))
+                    _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                    new_state = {**state, "state": "off", "active_system": None}
+                    _update_system_timestamp(new_state, prev_system, "off")
+                    _save_state(new_state)
+                    ntfy_send(f"🚗 {_system_label(prev_system).capitalize()} éteint", "Tout le monde absent — thermostat en pause.", ntfy_cfg)
                 return
             else:
                 logger.debug("Thermostat : absence détectée, grâce encore %d min", int(away_grace - away_min))
@@ -482,12 +581,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     effective_temp, temp_on, temp, recommendation,
                 )
                 ha_client.turn_on(ha_cfg)
-                _save_state({
+                new_state = {
                     **state,
                     "state": "on",
                     "active_system": "poele",
-                    "last_turned_on": datetime.now().isoformat(),
-                })
+                }
+                _update_system_timestamp(new_state, "poele", "on")
+                _save_state(new_state)
                 _ext = f", {outdoor_temp:.1f}°C dehors" if outdoor_temp is not None else ""
                 ntfy_send(
                     "🔥 Poêle allumé",
@@ -500,12 +600,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     effective_temp, temp_on, temp, recommendation,
                 )
                 ha_client.turn_on_clim(ha_cfg, temp_off)
-                _save_state({
+                new_state = {
                     **state,
                     "state": "on",
                     "active_system": "clim",
-                    "last_turned_on": datetime.now().isoformat(),
-                })
+                }
+                _update_system_timestamp(new_state, "clim", "on")
+                _save_state(new_state)
                 _ext = f", {outdoor_temp:.1f}°C dehors" if outdoor_temp is not None else ""
                 ntfy_send(
                     "❄️ Clim allumée",
@@ -531,24 +632,28 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                             ha_client.turn_on_clim(ha_cfg, temp_off)
                         else:
                             ha_client.turn_on(ha_cfg)
-                        _save_state({
+                        new_state = {
                             **state,
                             "state": "on",
                             "active_system": recommendation,
-                            "last_turned_on": datetime.now().isoformat(),
-                        })
+                        }
+                        _update_system_timestamp(new_state, recommendation, "on")
+                        _save_state(new_state)
                         ntfy_send(
                             f"{_system_icon(recommendation)} Transition → {_system_label(recommendation)}",
                             f"{_system_label(active_system).capitalize()} éteint, {_system_label(recommendation)} allumé. Intérieur : {temp:.1f}°C.",
                             ntfy_cfg,
                         )
                     else:
-                        _save_state({
+                        # Capturer le système avant de le mettre à None
+                        prev_system = active_system
+                        new_state = {
                             **state,
                             "state": "off",
                             "active_system": None,
-                            "last_turned_off": datetime.now().isoformat(),
-                        })
+                        }
+                        _update_system_timestamp(new_state, prev_system, "off")
+                        _save_state(new_state)
                         ntfy_send(
                             f"✅ {_system_label(active_system).capitalize()} éteint",
                             f"Recommandation : {_system_label(recommendation)} mais temp déjà atteinte ({effective_temp:.1f}°C).",
@@ -558,19 +663,22 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
             # ── Recommandation = "none" et min_on respecté ──
             if recommendation not in ("poele", "clim") and on_minutes >= min_on:
+                # Capturer le système actif AVANT de le mettre à None
+                prev_system = active_system
                 logger.info(
                     "Thermostat : extinction %s — recommandation=%s (allumé depuis %.0f min)",
-                    _system_label(active_system), recommendation, on_minutes,
+                    _system_label(prev_system), recommendation, on_minutes,
                 )
-                _turn_off_active_system(ha_client, ha_cfg, active_system)
-                _save_state({
+                _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                new_state = {
                     **state,
                     "state": "off",
                     "active_system": None,
-                    "last_turned_off": datetime.now().isoformat(),
-                })
+                }
+                _update_system_timestamp(new_state, prev_system, "off")
+                _save_state(new_state)
                 ntfy_send(
-                    f"⏹ {_system_label(active_system).capitalize()} éteint",
+                    f"⏹ {_system_label(prev_system).capitalize()} éteint",
                     f"Recommandation : aucun chauffage (allumé depuis {int(on_minutes)} min).",
                     ntfy_cfg,
                 )
@@ -578,33 +686,39 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
             # ── Température cible atteinte ──
             if effective_temp >= temp_off and on_minutes >= min_on:
+                # Capturer le système actif AVANT de le mettre à None
+                prev_system = active_system
                 logger.info(
                     "Thermostat : extinction %s (ressenti %.1f°C >= %.1f°C, réel %.1f°C, allumé depuis %.0f min)",
-                    _system_label(active_system), effective_temp, temp_off, temp, on_minutes,
+                    _system_label(prev_system), effective_temp, temp_off, temp, on_minutes,
                 )
-                _turn_off_active_system(ha_client, ha_cfg, active_system)
-                _save_state({
+                _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                new_state = {
                     **state,
                     "state": "off",
                     "active_system": None,
-                    "last_turned_off": datetime.now().isoformat(),
-                })
+                }
+                _update_system_timestamp(new_state, prev_system, "off")
+                _save_state(new_state)
                 ntfy_send(
-                    f"✅ {_system_label(active_system).capitalize()} éteint",
+                    f"✅ {_system_label(prev_system).capitalize()} éteint",
                     f"Température atteinte : {effective_temp:.1f}°C (cible {temp_off}°C), allumé depuis {int(on_minutes)} min.",
                     ntfy_cfg,
                 )
         else:
             if on_minutes >= grace:
+                # Capturer le système actif AVANT de le mettre à None
+                prev_system = active_system
                 logger.info(
                     "Thermostat : extinction %s fin de plage (allumé depuis %.0f min >= %d min)",
-                    _system_label(active_system), on_minutes, grace,
+                    _system_label(prev_system), on_minutes, grace,
                 )
-                _turn_off_active_system(ha_client, ha_cfg, active_system)
-                _save_state({
+                _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                new_state = {
                     **state,
                     "state": "off",
                     "active_system": None,
-                    "last_turned_off": datetime.now().isoformat(),
-                })
-                ntfy_send(f"🌙 {_system_label(active_system).capitalize()} éteint", "Fin de plage horaire.", ntfy_cfg)
+                }
+                _update_system_timestamp(new_state, prev_system, "off")
+                _save_state(new_state)
+                ntfy_send(f"🌙 {_system_label(prev_system).capitalize()} éteint", "Fin de plage horaire.", ntfy_cfg)

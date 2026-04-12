@@ -281,12 +281,32 @@
             — Fin de plage : <strong>{{ config.THERMOSTAT.end_of_schedule_grace_minutes }} min</strong></p>
         </div>
         <div>
-          {% if thermostat_state.last_turned_on %}
-            <p class="value-sub">Dernier allumage : <strong>{{ thermostat_state.last_turned_on[:16] | replace("T", " ") }}</strong></p>
+          {# Poêle timestamps #}
+          {% set poele_on = thermostat_state.system_history.poele.last_turned_on if thermostat_state.get('system_history') else None %}
+          {% set poele_off = thermostat_state.system_history.poele.last_turned_off if thermostat_state.get('system_history') else None %}
+          {% if poele_on or poele_off %}
+            <p class="value-sub" style="margin-top:0.5rem"><strong>🔥 Poêle :</strong></p>
+            {% if poele_on %}
+              <p class="value-sub" style="margin-left:1rem">Dernier allumage : <strong>{{ poele_on[:16] | replace("T", " ") }}</strong></p>
+            {% endif %}
+            {% if poele_off %}
+              <p class="value-sub" style="margin-left:1rem">Dernière extinction : <strong>{{ poele_off[:16] | replace("T", " ") }}</strong></p>
+            {% endif %}
           {% endif %}
-          {% if thermostat_state.last_turned_off %}
-            <p class="value-sub">Dernière extinction : <strong>{{ thermostat_state.last_turned_off[:16] | replace("T", " ") }}</strong></p>
+
+          {# Clim timestamps #}
+          {% set clim_on = thermostat_state.system_history.clim.last_turned_on if thermostat_state.get('system_history') else None %}
+          {% set clim_off = thermostat_state.system_history.clim.last_turned_off if thermostat_state.get('system_history') else None %}
+          {% if clim_on or clim_off %}
+            <p class="value-sub" style="margin-top:0.5rem"><strong>❄️ Clim :</strong></p>
+            {% if clim_on %}
+              <p class="value-sub" style="margin-left:1rem">Dernier allumage : <strong>{{ clim_on[:16] | replace("T", " ") }}</strong></p>
+            {% endif %}
+            {% if clim_off %}
+              <p class="value-sub" style="margin-left:1rem">Dernière extinction : <strong>{{ clim_off[:16] | replace("T", " ") }}</strong></p>
+            {% endif %}
           {% endif %}
+
           {% if thermostat_state.suspended_until %}
             <p class="value-sub" style="color:#fb923c">
               ⏸ Suspendu jusqu'à <strong>{{ thermostat_state.suspended_until[:16] | replace("T", " ") }}</strong>
