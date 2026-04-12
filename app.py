@@ -51,6 +51,43 @@ def _save_managed_off(entities: list) -> None:
     except Exception as e:
         logger.error("Sauvegarde managed_off échouée : %s", e)
 
+
+def _suspend_thermostat_after_manual_off(entity_type: str) -> None:
+    """Suspend thermostat for configured hours after manual off."""
+    try:
+        state = thermostat_module.get_state()
+        suspend_hours = config.THERMOSTAT.get("manual_off_suspend_hours", 4)
+        suspended_until = (datetime.now() + timedelta(hours=suspend_hours)).isoformat()
+
+        new_state = {
+            **state,
+            "state": "off",
+            "active_system": None,
+            "last_turned_off": datetime.now().isoformat(),
+            "suspended_until": suspended_until,
+        }
+        thermostat_module._save_state(new_state)
+        logger.info("Manual off %s - thermostat suspended until %s", entity_type, suspended_until)
+    except Exception as e:
+        logger.error("Erreur suspension thermostat : %s", e)
+
+
+def _cancel_thermostat_suspension(entity_type: str) -> None:
+    """Cancel thermostat suspension on manual on."""
+    try:
+        state = thermostat_module.get_state()
+        new_state = {
+            **state,
+            "state": "on",
+            "active_system": entity_type,
+            "last_turned_on": datetime.now().isoformat(),
+            "suspended_until": None,
+        }
+        thermostat_module._save_state(new_state)
+        logger.info("Manual on %s - suspension cancelled", entity_type)
+    except Exception as e:
+        logger.error("Erreur annulation suspension thermostat : %s", e)
+
 app = Flask(__name__)
 
 # ── Clé secrète persistante (sessions) ───────────────────────
@@ -642,6 +679,13 @@ def api_dashboard_refresh():
             if clim_ha:
                 clim_state_value = clim_ha.get("state")
 
+        # État poêle
+        poele_state_value = None
+        if ha_client.is_configured(config.HOME_ASSISTANT):
+            poele_ha = ha_client.get_state(config.HOME_ASSISTANT)
+            if poele_ha:
+                poele_state_value = poele_ha.get("state")
+
         # Construire la réponse JSON
         # Utiliser 'or {}' pour gérer le cas où les valeurs sont None au lieu de dict
         rec = data.get("recommendation") or {}
@@ -690,6 +734,7 @@ def api_dashboard_refresh():
                 "last_turned_on": thermostat_state.get("last_turned_on")
             },
             "clim_state": clim_state_value,
+            "poele_state": poele_state_value,
             "radiateurs": radiateurs_info,
             "tomorrow": {
                 "recommendation": {
@@ -743,6 +788,56 @@ def api_radiateurs_status():
     })
 
 
+@app.route("/api/radiateurs/turn_on/<path:entity_id>", methods=["POST"])
+def api_radiateurs_turn_on(entity_id):
+    if not config.HOME_ASSISTANT.get("enabled"):
+        return jsonify({"error": "Home Assistant non configuré"}), 400
+
+    # Vérifier que entity_id est configuré
+    cfg = config.RADIATEURS_TEMPO_ROUGE
+    configured = []
+    for e in cfg.get("entities", []):
+        eid = e["entity_id"] if isinstance(e, dict) else e
+        configured.append(eid)
+
+    if entity_id not in configured:
+        return jsonify({"error": "Radiateur non configuré"}), 404
+
+    # Retirer de managed_off si présent
+    managed = _load_managed_off()
+    if entity_id in managed:
+        managed.remove(entity_id)
+        _save_managed_off(managed)
+
+    success = ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id)
+    return jsonify({"status": "ok" if success else "error"})
+
+
+@app.route("/api/radiateurs/turn_off/<path:entity_id>", methods=["POST"])
+def api_radiateurs_turn_off(entity_id):
+    if not config.HOME_ASSISTANT.get("enabled"):
+        return jsonify({"error": "Home Assistant non configuré"}), 400
+
+    # Vérifier que entity_id est configuré
+    cfg = config.RADIATEURS_TEMPO_ROUGE
+    configured = []
+    for e in cfg.get("entities", []):
+        eid = e["entity_id"] if isinstance(e, dict) else e
+        configured.append(eid)
+
+    if entity_id not in configured:
+        return jsonify({"error": "Radiateur non configuré"}), 404
+
+    # Ajouter à managed_off si pas présent
+    managed = _load_managed_off()
+    if entity_id not in managed:
+        managed.append(entity_id)
+        _save_managed_off(managed)
+
+    success = ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id)
+    return jsonify({"status": "ok" if success else "error"})
+
+
 @app.route("/api/ntfy-test", methods=["POST"])
 def api_ntfy_test():
     from modules.ntfy_push import send as ntfy_send
@@ -761,14 +856,28 @@ def api_ntfy_test():
 def api_ha_turn_on():
     if not ha_client.is_configured(config.HOME_ASSISTANT):
         return jsonify({"error": "Home Assistant non configuré"}), 400
-    return jsonify({"status": "ok" if ha_client.turn_on(config.HOME_ASSISTANT) else "error"})
+
+    success = ha_client.turn_on(config.HOME_ASSISTANT)
+
+    # Si action manuelle, annuler suspension thermostat
+    if success and request.args.get("manual") == "true":
+        _cancel_thermostat_suspension("poele")
+
+    return jsonify({"status": "ok" if success else "error"})
 
 
 @app.route("/api/ha/turn_off", methods=["POST"])
 def api_ha_turn_off():
     if not ha_client.is_configured(config.HOME_ASSISTANT):
         return jsonify({"error": "Home Assistant non configuré"}), 400
-    return jsonify({"status": "ok" if ha_client.turn_off(config.HOME_ASSISTANT) else "error"})
+
+    success = ha_client.turn_off(config.HOME_ASSISTANT)
+
+    # Si action manuelle, suspendre thermostat 4h
+    if success and request.args.get("manual") == "true":
+        _suspend_thermostat_after_manual_off("poele")
+
+    return jsonify({"status": "ok" if success else "error"})
 
 
 @app.route("/api/ha/auto_control", methods=["POST"])
@@ -797,14 +906,26 @@ def api_ha_clim_turn_on():
     if not ha_client.is_clim_configured(config.HOME_ASSISTANT):
         return jsonify({"error": "Clim non configurée"}), 400
     target_temp = config.THERMOSTAT.get("temp_off", 22.9)
-    return jsonify({"status": "ok" if ha_client.turn_on_clim(config.HOME_ASSISTANT, target_temp) else "error"})
+    success = ha_client.turn_on_clim(config.HOME_ASSISTANT, target_temp)
+
+    # Si action manuelle, annuler suspension thermostat
+    if success and request.args.get("manual") == "true":
+        _cancel_thermostat_suspension("clim")
+
+    return jsonify({"status": "ok" if success else "error"})
 
 
 @app.route("/api/ha/clim/turn_off", methods=["POST"])
 def api_ha_clim_turn_off():
     if not ha_client.is_clim_configured(config.HOME_ASSISTANT):
         return jsonify({"error": "Clim non configurée"}), 400
-    return jsonify({"status": "ok" if ha_client.turn_off_clim(config.HOME_ASSISTANT) else "error"})
+    success = ha_client.turn_off_clim(config.HOME_ASSISTANT)
+
+    # Si action manuelle, suspendre thermostat 4h
+    if success and request.args.get("manual") == "true":
+        _suspend_thermostat_after_manual_off("clim")
+
+    return jsonify({"status": "ok" if success else "error"})
 
 
 @app.route("/api/ha/clim/state")

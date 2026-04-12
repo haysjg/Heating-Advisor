@@ -9,6 +9,283 @@ function refresh() {
     .catch(() => window.location.reload());
 }
 
+// ── Manual Control Functions ────────────────────────────
+
+async function controlPoele(action) {
+  const endpoint = action === 'on' ? '/api/ha/turn_on' : '/api/ha/turn_off';
+  const btn = document.getElementById(`btn-poele-${action}`);
+  const otherBtn = document.getElementById(`btn-poele-${action === 'on' ? 'off' : 'on'}`);
+
+  if (!btn) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = action === 'on' ? '⏳ Allumage…' : '⏳ Extinction…';
+
+  try {
+    const response = await fetch(`${endpoint}?manual=true`, { method: 'POST' });
+    const data = await response.json();
+
+    if (response.ok && data.status === 'ok') {
+      showToast(`Poêle ${action === 'on' ? 'allumé' : 'éteint'}`, 'success');
+      updatePoeleStatus();
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast(data.error || 'Erreur', 'error');
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  } catch (error) {
+    console.error('Erreur contrôle poêle:', error);
+    showToast('Erreur réseau', 'error');
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function controlClim(action) {
+  const endpoint = action === 'on' ? '/api/ha/clim/turn_on' : '/api/ha/clim/turn_off';
+  const btn = document.getElementById(`btn-clim-${action}`);
+
+  if (!btn) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = action === 'on' ? '⏳ Allumage…' : '⏳ Extinction…';
+
+  try {
+    const response = await fetch(`${endpoint}?manual=true`, { method: 'POST' });
+    const data = await response.json();
+
+    if (response.ok && data.status === 'ok') {
+      showToast(`Clim ${action === 'on' ? 'allumée' : 'éteinte'}`, 'success');
+      updateClimStatus();
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast(data.error || 'Erreur', 'error');
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  } catch (error) {
+    console.error('Erreur contrôle clim:', error);
+    showToast('Erreur réseau', 'error');
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function controlRadiateur(entityId, action) {
+  const endpoint = `/api/radiateurs/turn_${action}/${encodeURIComponent(entityId)}`;
+  const radiateur = document.querySelector(`[data-entity-id="${entityId}"]`);
+  const buttons = radiateur ? radiateur.querySelectorAll('.btn-control') : [];
+
+  buttons.forEach(btn => btn.disabled = true);
+
+  try {
+    const response = await fetch(`${endpoint}?manual=true`, { method: 'POST' });
+    const data = await response.json();
+
+    if (response.ok && data.status === 'ok') {
+      showToast(`Radiateur ${action === 'on' ? 'allumé' : 'éteint'}`, 'success');
+      updateRadiateurStatus(entityId);
+    } else {
+      showToast(data.error || 'Erreur', 'error');
+    }
+  } catch (error) {
+    console.error('Erreur contrôle radiateur:', error);
+    showToast('Erreur réseau', 'error');
+  } finally {
+    buttons.forEach(btn => btn.disabled = false);
+  }
+}
+
+async function updatePoeleStatus() {
+  try {
+    const response = await fetch('/api/ha/state');
+    const data = await response.json();
+
+    const icon = document.getElementById('poele-status-icon');
+    const text = document.getElementById('poele-status-text');
+    const btnOn = document.getElementById('btn-poele-on');
+    const btnOff = document.getElementById('btn-poele-off');
+
+    if (!icon || !text) return;
+
+    const isOn = data.state === 'heat' || data.state === 'on';
+
+    icon.textContent = isOn ? '🟢' : '⚫';
+    text.textContent = isOn ? 'Allumé' : 'Éteint';
+
+    if (btnOn) {
+      if (isOn) {
+        btnOn.classList.add('active');
+      } else {
+        btnOn.classList.remove('active');
+      }
+    }
+
+    if (btnOff) {
+      if (isOn) {
+        btnOff.classList.remove('active');
+      } else {
+        btnOff.classList.add('active');
+      }
+    }
+  } catch (e) {
+    console.warn('Erreur mise à jour état poêle:', e);
+  }
+}
+
+async function updateClimStatus() {
+  try {
+    const response = await fetch('/api/ha/clim/state');
+    const data = await response.json();
+
+    const icon = document.getElementById('clim-status-icon');
+    const text = document.getElementById('clim-status-text');
+    const btnOn = document.getElementById('btn-clim-on');
+    const btnOff = document.getElementById('btn-clim-off');
+
+    if (!icon || !text) return;
+
+    const isOn = data.state === 'heat' || data.state === 'on';
+
+    icon.textContent = isOn ? '🟢' : '⚫';
+    text.textContent = isOn ? 'Allumée' : 'Éteinte';
+
+    if (btnOn) {
+      if (isOn) {
+        btnOn.classList.add('active');
+      } else {
+        btnOn.classList.remove('active');
+      }
+    }
+
+    if (btnOff) {
+      if (isOn) {
+        btnOff.classList.remove('active');
+      } else {
+        btnOff.classList.add('active');
+      }
+    }
+  } catch (e) {
+    console.warn('Erreur mise à jour état clim:', e);
+  }
+}
+
+async function updateRadiateurStatus(entityId) {
+  try {
+    const response = await fetch('/api/radiateurs/status');
+    const data = await response.json();
+
+    const radiateur = document.querySelector(`[data-entity-id="${entityId}"]`);
+    if (!radiateur) return;
+
+    const entity = data.entities.find(e => e.entity_id === entityId);
+    if (!entity) return;
+
+    const radiateurs = Array.from(document.querySelectorAll('[data-entity-id]'));
+    const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
+
+    if (index >= 0) {
+      const icon = document.getElementById(`radiateur-${index}-icon`);
+      if (icon) {
+        const isOn = entity.state === 'on' || entity.state === 'heat';
+        icon.textContent = isOn ? '🟢' : '⚫';
+      }
+    }
+  } catch (e) {
+    console.warn('Erreur mise à jour état radiateur:', e);
+  }
+}
+
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.textContent = message;
+
+  const bgColor = type === 'success' ? '#22c55e' : type === 'error' ? '#ef4444' : '#3b82f6';
+  const duration = type === 'error' ? 4000 : 3000;
+
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: ${bgColor};
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    z-index: 9999;
+    font-size: 0.95rem;
+    font-weight: 500;
+    animation: slideInUp 0.3s ease-out;
+  `;
+
+  document.body.appendChild(toast);
+
+  const removeToast = () => {
+    toast.style.animation = 'slideOutDown 0.3s ease-out';
+    setTimeout(() => toast.remove(), 300);
+  };
+
+  setTimeout(removeToast, duration);
+}
+
+// Initialize control panel
+(function initControlPanel() {
+  if (!document.getElementById('control-panel')) return;
+
+  // Initial status update
+  updatePoeleStatus();
+  if (document.getElementById('clim-status')) {
+    updateClimStatus();
+  }
+
+  document.querySelectorAll('[data-entity-id]').forEach(r => {
+    updateRadiateurStatus(r.getAttribute('data-entity-id'));
+  });
+
+  // Poll every 15s
+  setInterval(() => {
+    updatePoeleStatus();
+    if (document.getElementById('clim-status')) {
+      updateClimStatus();
+    }
+    document.querySelectorAll('[data-entity-id]').forEach(r => {
+      updateRadiateurStatus(r.getAttribute('data-entity-id'));
+    });
+  }, 15000);
+})();
+
+// Add CSS animation keyframes if not already present
+if (!document.getElementById('control-panel-animations')) {
+  const style = document.createElement('style');
+  style.id = 'control-panel-animations';
+  style.textContent = `
+    @keyframes slideInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes slideOutDown {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 // Module de rafraîchissement AJAX du dashboard
 const DashboardRefresh = {
   intervalSeconds: 15,

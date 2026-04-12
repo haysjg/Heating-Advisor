@@ -104,6 +104,75 @@
   </script>
   {% endif %}
 
+  {# ── Manual Control Panel ── #}
+  {% if config.HOME_ASSISTANT.enabled %}
+  <section class="control-panel" id="control-panel">
+    <h3>🎛️ Contrôle Manuel</h3>
+
+    {# Poêle #}
+    <div class="control-section">
+      <div class="control-section-title">🔥 Poêle</div>
+      <div class="control-buttons">
+        <button class="btn-control btn-control-on" id="btn-poele-on" onclick="controlPoele('on')">
+          🔥 Allumer
+        </button>
+        <button class="btn-control btn-control-off" id="btn-poele-off" onclick="controlPoele('off')">
+          ⏹ Éteindre
+        </button>
+      </div>
+      <div class="control-status" id="poele-status">
+        <span id="poele-status-icon">⚫</span>
+        <span id="poele-status-text">Chargement...</span>
+      </div>
+    </div>
+
+    {# Clim (si configurée) #}
+    {% if config.HOME_ASSISTANT.get('clim_entity_id') %}
+    <div class="control-section">
+      <div class="control-section-title">❄️ Climatisation</div>
+      <div class="control-buttons">
+        <button class="btn-control btn-control-on" id="btn-clim-on" onclick="controlClim('on')">
+          ❄️ Allumer
+        </button>
+        <button class="btn-control btn-control-off" id="btn-clim-off" onclick="controlClim('off')">
+          ⏹ Éteindre
+        </button>
+      </div>
+      <div class="control-status" id="clim-status">
+        <span id="clim-status-icon">⚫</span>
+        <span id="clim-status-text">Chargement...</span>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Radiateurs #}
+    {% if radiateurs_info %}
+    <div class="control-section">
+      <div class="control-section-title">🔥 Radiateurs</div>
+      {% for r in radiateurs_info %}
+      {% if r.enabled %}
+      <div class="radiateur-control" data-entity-id="{{ r.entity_id }}">
+        <span class="radiateur-name">{{ r.name }}</span>
+        <div class="radiateur-buttons">
+          <button class="btn-control btn-control-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')">🔥</button>
+          <button class="btn-control btn-control-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')">⏹</button>
+        </div>
+        <span class="radiateur-status-icon" id="radiateur-{{ loop.index0 }}-icon">⚫</span>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Warning si thermostat actif #}
+    {% if config.THERMOSTAT.enabled %}
+    <div class="control-warning">
+      ⚠️ Thermostat actif : les actions manuelles le suspendront {{ config.THERMOSTAT.get('manual_off_suspend_hours', 4) }}h.
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
     {% if not data %}
       <div class="card card-error">
         <h2>Erreur de chargement</h2>

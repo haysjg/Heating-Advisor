@@ -281,3 +281,163 @@ main {
   font-size: 0.85em;
   margin-left: 8px;
 }
+
+/* ── Manual Control Panel ──────────────────────────────── */
+.control-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.control-panel h3 {
+  font-size: 1rem;
+  color: var(--text);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.control-section {
+  margin-bottom: 1.25rem;
+}
+
+.control-section:last-child {
+  margin-bottom: 0;
+}
+
+.control-section-title {
+  font-size: 0.75rem;
+  color: var(--text-sub);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.control-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.btn-control {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid;
+  font-family: inherit;
+}
+
+.btn-control:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.btn-control:active {
+  transform: translateY(0);
+}
+
+.btn-control-on {
+  background: rgba(34,197,94,0.15);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.btn-control-on:hover {
+  background: rgba(34,197,94,0.25);
+}
+
+.btn-control-on.active {
+  background: rgba(34,197,94,0.3);
+  border-color: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34,197,94,0.2);
+}
+
+.btn-control-off {
+  background: rgba(100,116,139,0.15);
+  border-color: #64748b;
+  color: #64748b;
+}
+
+.btn-control-off:hover {
+  background: rgba(100,116,139,0.25);
+}
+
+.btn-control-off.active {
+  background: rgba(100,116,139,0.3);
+  border-color: #64748b;
+  box-shadow: 0 0 0 2px rgba(100,116,139,0.2);
+}
+
+.btn-control:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.control-status {
+  font-size: 0.75rem;
+  color: var(--text-sub);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.control-warning {
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: #f59e0b;
+  margin-top: 0.75rem;
+}
+
+.radiateur-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.radiateur-name {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.radiateur-buttons {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.radiateur-buttons .btn-control {
+  min-width: 45px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  flex: 0;
+}
+
+.radiateur-status-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .control-buttons {
+    flex-direction: column;
+  }
+
+  .radiateur-buttons .btn-control {
+    min-width: 40px;
+  }
+}
