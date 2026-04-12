@@ -39,6 +39,70 @@
 
 {% block content %}
 
+<div class="page-wrapper">
+  {# ── Sidebar gauche avec contrôles ── #}
+  {% if config.HOME_ASSISTANT.enabled %}
+  <aside class="sidebar-controls">
+    <div class="sidebar-sticky">
+      <h3 class="sidebar-title">🎛️ Contrôles</h3>
+
+      {# Poêle #}
+      <div class="control-compact">
+        <div class="control-compact-title">🔥 Poêle</div>
+        <div class="control-compact-buttons">
+          <button class="btn-compact btn-compact-on" id="btn-poele-on" onclick="controlPoele('on')" title="Allumer le poêle">ON</button>
+          <button class="btn-compact btn-compact-off" id="btn-poele-off" onclick="controlPoele('off')" title="Éteindre le poêle">OFF</button>
+        </div>
+        <div class="control-compact-status" id="poele-status">
+          <span id="poele-status-icon">⚫</span>
+        </div>
+      </div>
+
+      {# Clim (si configurée) #}
+      {% if config.HOME_ASSISTANT.get('clim_entity_id') and config.HOME_ASSISTANT.get('clim_entity_id')|length > 0 %}
+      <div class="control-compact">
+        <div class="control-compact-title">❄️ Clim</div>
+        <div class="control-compact-buttons">
+          <button class="btn-compact btn-compact-on" id="btn-clim-on" onclick="controlClim('on')" title="Allumer la climatisation">ON</button>
+          <button class="btn-compact btn-compact-off" id="btn-clim-off" onclick="controlClim('off')" title="Éteindre la climatisation">OFF</button>
+        </div>
+        <div class="control-compact-status" id="clim-status">
+          <span id="clim-status-icon">⚫</span>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Radiateurs #}
+      {% if radiateurs_info %}
+      {% for r in radiateurs_info %}
+      {% if r.enabled %}
+      <div class="control-compact">
+        <div class="control-compact-title">🔥 {{ r.name }}</div>
+        <div class="control-compact-buttons">
+          <button class="btn-compact btn-compact-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')" title="Allumer {{ r.name }}">ON</button>
+          <button class="btn-compact btn-compact-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')" title="Éteindre {{ r.name }}">OFF</button>
+        </div>
+        <div class="control-compact-status" data-entity-id="{{ r.entity_id }}">
+          <span id="radiateur-{{ loop.index0 }}-icon">⚫</span>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+
+      {# Warning si thermostat actif #}
+      {% if config.THERMOSTAT.enabled %}
+      <div class="sidebar-warning">
+        ⚠️ Actions manuelles = suspension thermostat {{ config.THERMOSTAT.get('manual_off_suspend_hours', 4) }}h
+      </div>
+      {% endif %}
+    </div>
+  </aside>
+  {% endif %}
+
+  {# ── Contenu principal ── #}
+  <div class="main-content">
+
   {# ── Bannière erreur AJAX ── #}
   <div id="ajax-error-banner">
     ⚠️ Impossible de rafraîchir les données —
@@ -104,81 +168,6 @@
   </script>
   {% endif %}
 
-  {# ── Manual Control Panel ── #}
-  {% if config.HOME_ASSISTANT.enabled %}
-  <section class="control-panel" id="control-panel">
-    <h3>🎛️ Contrôle Manuel</h3>
-
-    {# Poêle #}
-    <div class="control-section">
-      <div class="control-section-title">🔥 Poêle</div>
-      <div class="control-buttons">
-        <button class="btn-control btn-control-on" id="btn-poele-on" onclick="controlPoele('on')">
-          🔥 Allumer
-        </button>
-        <button class="btn-control btn-control-off" id="btn-poele-off" onclick="controlPoele('off')">
-          ⏹ Éteindre
-        </button>
-      </div>
-      <div class="control-status" id="poele-status">
-        <span id="poele-status-icon">⚫</span>
-        <span id="poele-status-text">Chargement...</span>
-      </div>
-    </div>
-
-    {# Clim (si configurée) #}
-    {% if config.HOME_ASSISTANT.get('clim_entity_id') and config.HOME_ASSISTANT.get('clim_entity_id')|length > 0 %}
-    <div class="control-section">
-      <div class="control-section-title">❄️ Climatisation</div>
-      <div class="control-buttons">
-        <button class="btn-control btn-control-on" id="btn-clim-on" onclick="controlClim('on')">
-          ❄️ Allumer
-        </button>
-        <button class="btn-control btn-control-off" id="btn-clim-off" onclick="controlClim('off')">
-          ⏹ Éteindre
-        </button>
-      </div>
-      <div class="control-status" id="clim-status">
-        <span id="clim-status-icon">⚫</span>
-        <span id="clim-status-text">Chargement...</span>
-      </div>
-    </div>
-    {% endif %}
-
-    {# Radiateurs #}
-    {% if radiateurs_info %}
-    <div class="control-section">
-      <div class="control-section-title">🔥 Radiateurs</div>
-      {% for r in radiateurs_info %}
-      {% if r.enabled %}
-      <div class="control-section" style="margin-bottom: 0.75rem;">
-        <div class="control-section-title" style="font-size: 0.8rem; margin-bottom: 0.3rem;">{{ r.name }}</div>
-        <div class="control-buttons">
-          <button class="btn-control btn-control-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')">
-            🔥 Allumer
-          </button>
-          <button class="btn-control btn-control-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')">
-            ⏹ Éteindre
-          </button>
-        </div>
-        <div class="control-status" data-entity-id="{{ r.entity_id }}">
-          <span id="radiateur-{{ loop.index0 }}-icon">⚫</span>
-          <span id="radiateur-{{ loop.index0 }}-text">Chargement...</span>
-        </div>
-      </div>
-      {% endif %}
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    {# Warning si thermostat actif #}
-    {% if config.THERMOSTAT.enabled %}
-    <div class="control-warning">
-      ⚠️ Thermostat actif : les actions manuelles le suspendront {{ config.THERMOSTAT.get('manual_off_suspend_hours', 4) }}h.
-    </div>
-    {% endif %}
-  </section>
-  {% endif %}
 
     {% if not data %}
       <div class="card card-error">
@@ -573,6 +562,10 @@
     </p>
 
     {% endif %}
+
+  </div> {# fin main-content #}
+</div> {# fin page-wrapper #}
+
 {% endblock %}
 
 {% block extra_scripts %}

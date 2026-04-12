@@ -77,8 +77,8 @@ async function controlClim(action) {
 async function controlRadiateur(entityId, action) {
   const endpoint = `/api/radiateurs/turn_${action}/${encodeURIComponent(entityId)}`;
   const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
-  const section = statusDiv ? statusDiv.closest('.control-section') : null;
-  const buttons = section ? section.querySelectorAll('.btn-control') : [];
+  const compact = statusDiv ? statusDiv.closest('.control-compact') : null;
+  const buttons = compact ? compact.querySelectorAll('.btn-compact') : [];
 
   buttons.forEach(btn => btn.disabled = true);
 
@@ -106,16 +106,14 @@ async function updatePoeleStatus() {
     const data = await response.json();
 
     const icon = document.getElementById('poele-status-icon');
-    const text = document.getElementById('poele-status-text');
     const btnOn = document.getElementById('btn-poele-on');
     const btnOff = document.getElementById('btn-poele-off');
 
-    if (!icon || !text) return;
+    if (!icon) return;
 
     const isOn = data.state === 'heat' || data.state === 'on';
 
     icon.textContent = isOn ? '🟢' : '⚫';
-    text.textContent = isOn ? 'Allumé' : 'Éteint';
 
     if (btnOn) {
       if (isOn) {
@@ -143,16 +141,14 @@ async function updateClimStatus() {
     const data = await response.json();
 
     const icon = document.getElementById('clim-status-icon');
-    const text = document.getElementById('clim-status-text');
     const btnOn = document.getElementById('btn-clim-on');
     const btnOff = document.getElementById('btn-clim-off');
 
-    if (!icon || !text) return;
+    if (!icon) return;
 
     const isOn = data.state === 'heat' || data.state === 'on';
 
     icon.textContent = isOn ? '🟢' : '⚫';
-    text.textContent = isOn ? 'Allumée' : 'Éteinte';
 
     if (btnOn) {
       if (isOn) {
@@ -185,20 +181,18 @@ async function updateRadiateurStatus(entityId) {
     const entity = data.entities.find(e => e.entity_id === entityId);
     if (!entity) return;
 
-    const radiateurs = Array.from(document.querySelectorAll('.control-status[data-entity-id]'));
+    const radiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-entity-id]'));
     const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
 
     if (index >= 0) {
       const icon = document.getElementById(`radiateur-${index}-icon`);
-      const text = document.getElementById(`radiateur-${index}-text`);
-      const section = statusDiv.closest('.control-section');
-      const btnOn = section ? section.querySelector('.btn-control-on') : null;
-      const btnOff = section ? section.querySelector('.btn-control-off') : null;
+      const compact = statusDiv.closest('.control-compact');
+      const btnOn = compact ? compact.querySelector('.btn-compact-on') : null;
+      const btnOff = compact ? compact.querySelector('.btn-compact-off') : null;
 
       const isOn = entity.state === 'on' || entity.state === 'heat';
 
       if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-      if (text) text.textContent = isOn ? 'Allumé' : 'Éteint';
 
       if (btnOn) {
         if (isOn) {
@@ -255,7 +249,7 @@ function showToast(message, type = 'info') {
 
 // Initialize control panel
 (function initControlPanel() {
-  if (!document.getElementById('control-panel')) return;
+  if (!document.querySelector('.sidebar-controls')) return;
 
   // Initial status update
   updatePoeleStatus();
@@ -263,7 +257,7 @@ function showToast(message, type = 'info') {
     updateClimStatus();
   }
 
-  document.querySelectorAll('.control-status[data-entity-id]').forEach(r => {
+  document.querySelectorAll('.control-compact-status[data-entity-id]').forEach(r => {
     updateRadiateurStatus(r.getAttribute('data-entity-id'));
   });
 
@@ -273,7 +267,7 @@ function showToast(message, type = 'info') {
     if (document.getElementById('clim-status')) {
       updateClimStatus();
     }
-    document.querySelectorAll('.control-status[data-entity-id]').forEach(r => {
+    document.querySelectorAll('.control-compact-status[data-entity-id]').forEach(r => {
       updateRadiateurStatus(r.getAttribute('data-entity-id'));
     });
   }, 15000);
