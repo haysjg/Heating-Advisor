@@ -151,13 +151,20 @@
       <div class="control-section-title">🔥 Radiateurs</div>
       {% for r in radiateurs_info %}
       {% if r.enabled %}
-      <div class="radiateur-control" data-entity-id="{{ r.entity_id }}">
-        <span class="radiateur-name">{{ r.name }}</span>
-        <div class="radiateur-buttons">
-          <button class="btn-control btn-control-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')">🔥</button>
-          <button class="btn-control btn-control-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')">⏹</button>
+      <div class="control-section" style="margin-bottom: 0.75rem;">
+        <div class="control-section-title" style="font-size: 0.8rem; margin-bottom: 0.3rem;">{{ r.name }}</div>
+        <div class="control-buttons">
+          <button class="btn-control btn-control-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')">
+            🔥 Allumer
+          </button>
+          <button class="btn-control btn-control-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')">
+            ⏹ Éteindre
+          </button>
         </div>
-        <span class="radiateur-status-icon" id="radiateur-{{ loop.index0 }}-icon">⚫</span>
+        <div class="control-status" data-entity-id="{{ r.entity_id }}">
+          <span id="radiateur-{{ loop.index0 }}-icon">⚫</span>
+          <span id="radiateur-{{ loop.index0 }}-text">Chargement...</span>
+        </div>
       </div>
       {% endif %}
       {% endfor %}

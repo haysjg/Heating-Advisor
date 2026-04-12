@@ -76,8 +76,9 @@ async function controlClim(action) {
 
 async function controlRadiateur(entityId, action) {
   const endpoint = `/api/radiateurs/turn_${action}/${encodeURIComponent(entityId)}`;
-  const radiateur = document.querySelector(`[data-entity-id="${entityId}"]`);
-  const buttons = radiateur ? radiateur.querySelectorAll('.btn-control') : [];
+  const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
+  const section = statusDiv ? statusDiv.closest('.control-section') : null;
+  const buttons = section ? section.querySelectorAll('.btn-control') : [];
 
   buttons.forEach(btn => btn.disabled = true);
 
@@ -178,20 +179,41 @@ async function updateRadiateurStatus(entityId) {
     const response = await fetch('/api/radiateurs/status');
     const data = await response.json();
 
-    const radiateur = document.querySelector(`[data-entity-id="${entityId}"]`);
-    if (!radiateur) return;
+    const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
+    if (!statusDiv) return;
 
     const entity = data.entities.find(e => e.entity_id === entityId);
     if (!entity) return;
 
-    const radiateurs = Array.from(document.querySelectorAll('[data-entity-id]'));
+    const radiateurs = Array.from(document.querySelectorAll('.control-status[data-entity-id]'));
     const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
 
     if (index >= 0) {
       const icon = document.getElementById(`radiateur-${index}-icon`);
-      if (icon) {
-        const isOn = entity.state === 'on' || entity.state === 'heat';
-        icon.textContent = isOn ? '🟢' : '⚫';
+      const text = document.getElementById(`radiateur-${index}-text`);
+      const section = statusDiv.closest('.control-section');
+      const btnOn = section ? section.querySelector('.btn-control-on') : null;
+      const btnOff = section ? section.querySelector('.btn-control-off') : null;
+
+      const isOn = entity.state === 'on' || entity.state === 'heat';
+
+      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
+      if (text) text.textContent = isOn ? 'Allumé' : 'Éteint';
+
+      if (btnOn) {
+        if (isOn) {
+          btnOn.classList.add('active');
+        } else {
+          btnOn.classList.remove('active');
+        }
+      }
+
+      if (btnOff) {
+        if (isOn) {
+          btnOff.classList.remove('active');
+        } else {
+          btnOff.classList.add('active');
+        }
       }
     }
   } catch (e) {
@@ -241,7 +263,7 @@ function showToast(message, type = 'info') {
     updateClimStatus();
   }
 
-  document.querySelectorAll('[data-entity-id]').forEach(r => {
+  document.querySelectorAll('.control-status[data-entity-id]').forEach(r => {
     updateRadiateurStatus(r.getAttribute('data-entity-id'));
   });
 
@@ -251,7 +273,7 @@ function showToast(message, type = 'info') {
     if (document.getElementById('clim-status')) {
       updateClimStatus();
     }
-    document.querySelectorAll('[data-entity-id]').forEach(r => {
+    document.querySelectorAll('.control-status[data-entity-id]').forEach(r => {
       updateRadiateurStatus(r.getAttribute('data-entity-id'));
     });
   }, 15000);
