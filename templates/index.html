@@ -47,7 +47,8 @@
   const suspendedUntil  = {{ (thermostat_state.suspended_until or 'null') | tojson }};
   const nextScheduleISO = {{ (next_schedule_start or 'null') | tojson }};
   const everyoneAway    = {{ 'true' if thermostat_state.get('everyone_away') else 'false' }};
-  const stoveOn         = {{ 'true' if thermostat_state.get('state') == 'on' else 'false' }};
+  // Basé sur l'état réel du poêle, pas l'état du thermostat
+  const stoveOn         = {{ 'true' if poele_state and poele_state != 'off' else 'false' }};
 
   const banner = document.getElementById('countdown-banner');
 
@@ -98,12 +99,15 @@
 
   // Fonction pour mettre à jour l'état depuis AJAX
   function updateCountdownFromDashboard(dashboardData) {
+    // Mettre à jour basé sur l'état réel du poêle (pas le thermostat)
+    if (dashboardData.poele_state !== undefined) {
+      currentStoveOn = dashboardData.poele_state && dashboardData.poele_state !== 'off';
+    }
     if (dashboardData.thermostat) {
-      currentStoveOn = dashboardData.thermostat.state === 'on';
       currentSuspendedUntil = dashboardData.thermostat.suspended_until;
       currentEveryoneAway = dashboardData.thermostat.everyone_away || false;
-      update();
     }
+    update();
   }
 
   // Exposer la fonction globalement pour que DashboardRefresh puisse l'appeler

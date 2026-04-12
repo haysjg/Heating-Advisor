@@ -558,6 +558,14 @@ def index():
             thermostat_state["everyone_away"] = False
             thermostat_state["presence_status"] = None
         next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
+
+        # État réel du poêle depuis Home Assistant
+        poele_state_value = None
+        if ha_client.is_configured(config.HOME_ASSISTANT):
+            poele_ha = ha_client.get_state(config.HOME_ASSISTANT)
+            if poele_ha:
+                poele_state_value = poele_ha.get("state")
+
         # Statut radiateurs pour l'affichage index avec état réel depuis HA
         managed_off = _load_managed_off()
         radiateurs_info = []
@@ -584,11 +592,11 @@ def index():
                 })
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
                                next_schedule_start=next_start, radiateurs_info=radiateurs_info,
-                               ajax_interval=config.AJAX_REFRESH_INTERVAL)
+                               poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
         return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={},
-                               next_schedule_start=None, radiateurs_info=[],
+                               next_schedule_start=None, radiateurs_info=[], poele_state=None,
                                ajax_interval=config.AJAX_REFRESH_INTERVAL)
 
 
