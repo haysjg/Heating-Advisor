@@ -734,6 +734,17 @@
         </label>
       </div>
 
+      <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
+        <input type="checkbox" id="cop_auto_learning_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--green);cursor:pointer"
+               {% if config.COP_LEARNING.get('auto_learning', {}).get('enabled') %}checked{% endif %}>
+        <label for="cop_auto_learning_enabled" style="font-size:0.9rem;cursor:pointer">
+          🤖 Activer l'apprentissage automatique (détection + validation statistique)
+        </label>
+      </div>
+      <span class="hint" style="margin-left:2rem;margin-bottom:1rem;display:block;font-size:0.75rem">
+        Surveille la clim et lance automatiquement des échantillonnages avec rejet des mesures faussées
+      </span>
+
       <div class="form-grid">
         <div class="form-group">
           <label>Entité Shelly : Consommation totale</label>
@@ -960,6 +971,7 @@
       radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
       radiateurs_entities: getRadiateurs(),
       cop_enabled: document.getElementById('cop_enabled').checked,
+      cop_auto_learning_enabled: document.getElementById('cop_auto_learning_enabled').checked,
       cop_shelly_total: getVal('cop_shelly_total'),
       cop_shelly_heater: getVal('cop_shelly_heater'),
       cop_thermal_kw: parseFloat(getVal('cop_thermal_kw')),
@@ -1141,6 +1153,7 @@
       radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
       radiateurs_entities: getRadiateurs(),
       cop_enabled: document.getElementById('cop_enabled').checked,
+      cop_auto_learning_enabled: document.getElementById('cop_auto_learning_enabled').checked,
       cop_shelly_total: getVal('cop_shelly_total'),
       cop_shelly_heater: getVal('cop_shelly_heater'),
       cop_thermal_kw: parseFloat(getVal('cop_thermal_kw')),
@@ -1245,6 +1258,7 @@
           setRadiateurs(d.radiateurs_entities);
         }
         setChk('cop_enabled', d.cop_enabled);
+        setChk('cop_auto_learning_enabled', d.cop_auto_learning_enabled);
         setVal('cop_shelly_total', d.cop_shelly_total);
         setVal('cop_shelly_heater', d.cop_shelly_heater);
         setVal('cop_thermal_kw', d.cop_thermal_kw);

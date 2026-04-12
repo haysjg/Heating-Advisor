@@ -1575,6 +1575,9 @@ def api_config_save():
                 "min_ac_power": int(data.get("cop_min_power", config.COP_LEARNING.get("min_ac_power", 500))),
                 "max_ac_power": int(data.get("cop_max_power", config.COP_LEARNING.get("max_ac_power", 3000))),
                 "auto_switch_to_learned": bool(data.get("cop_auto_switch", config.COP_LEARNING.get("auto_switch_to_learned", False))),
+                "auto_learning": {
+                    "enabled": bool(data.get("cop_auto_learning_enabled", config.COP_LEARNING.get("auto_learning", {}).get("enabled", False))),
+                },
             },
         }
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
@@ -1585,6 +1588,15 @@ def api_config_save():
         _cache["expires_at"] = None
         _reschedule_notify()
         _reschedule_radiateurs()
+
+        # Redémarrer le worker auto-learning si la config a changé
+        auto_learning_enabled = config.COP_LEARNING.get("auto_learning", {}).get("enabled", False)
+        if auto_learning_enabled:
+            cop_auto_learning_module.stop_worker()
+            cop_auto_learning_module.start_worker(config)
+        else:
+            cop_auto_learning_module.stop_worker()
+
         return jsonify({"status": "ok"})
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
