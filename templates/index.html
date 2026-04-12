@@ -39,6 +39,65 @@
 
 {% block content %}
 
+{# ── Bannière countdown (avant le layout wrapper) ── #}
+{% if config.THERMOSTAT.enabled %}
+<div id="countdown-banner" class="countdown-banner"></div>
+<script>
+(function() {
+  const suspendedUntil  = {{ (thermostat_state.suspended_until or 'null') | tojson }};
+  const nextScheduleISO = {{ (next_schedule_start or 'null') | tojson }};
+  const everyoneAway    = {{ 'true' if thermostat_state.get('everyone_away') else 'false' }};
+  const stoveOn         = {{ 'true' if thermostat_state.get('state') == 'on' else 'false' }};
+
+  const banner = document.getElementById('countdown-banner');
+
+  function fmtDuration(ms) {
+    if (ms <= 0) return null;
+    const totalMin = Math.floor(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h > 0) return h + 'h ' + String(m).padStart(2, '0') + 'min';
+    return m + 'min';
+  }
+
+  function update() {
+    const now = Date.now();
+    banner.style.display = 'none';
+
+    if (everyoneAway) {
+      banner.className = 'countdown-banner countdown-banner-away';
+      banner.innerHTML = '🚗 Mode absent — thermostat en pause jusqu\'au retour';
+      banner.style.display = 'flex';
+      return;
+    }
+
+    if (suspendedUntil) {
+      const ms = new Date(suspendedUntil).getTime() - now;
+      if (ms > 0) {
+        banner.className = 'countdown-banner countdown-banner-suspend';
+        banner.innerHTML = '⏸ Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
+        banner.style.display = 'flex';
+        return;
+      }
+    }
+
+    if (!stoveOn && nextScheduleISO) {
+      const ms = new Date(nextScheduleISO).getTime() - now;
+      if (ms > 0) {
+        banner.className = 'countdown-banner countdown-banner-schedule';
+        banner.innerHTML = '⏰ Prochain créneau d\'allumage dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
+        banner.style.display = 'flex';
+        return;
+      }
+    }
+  }
+
+  update();
+  setInterval(update, 30000);
+})();
+</script>
+{% endif %}
+
 <div class="page-wrapper">
   {# ── Sidebar gauche avec contrôles ── #}
   {% if config.HOME_ASSISTANT.enabled %}
@@ -108,65 +167,6 @@
     ⚠️ Impossible de rafraîchir les données —
     <button onclick="location.reload()">Recharger la page</button>
   </div>
-
-  {# ── Bannière countdown ── #}
-  {% if config.THERMOSTAT.enabled %}
-  <div id="countdown-banner" class="countdown-banner"></div>
-  <script>
-  (function() {
-    const suspendedUntil  = {{ (thermostat_state.suspended_until or 'null') | tojson }};
-    const nextScheduleISO = {{ (next_schedule_start or 'null') | tojson }};
-    const everyoneAway    = {{ 'true' if thermostat_state.get('everyone_away') else 'false' }};
-    const stoveOn         = {{ 'true' if thermostat_state.get('state') == 'on' else 'false' }};
-
-    const banner = document.getElementById('countdown-banner');
-
-    function fmtDuration(ms) {
-      if (ms <= 0) return null;
-      const totalMin = Math.floor(ms / 60000);
-      const h = Math.floor(totalMin / 60);
-      const m = totalMin % 60;
-      if (h > 0) return h + 'h ' + String(m).padStart(2, '0') + 'min';
-      return m + 'min';
-    }
-
-    function update() {
-      const now = Date.now();
-      banner.style.display = 'none';
-
-      if (everyoneAway) {
-        banner.className = 'countdown-banner countdown-banner-away';
-        banner.innerHTML = '🚗 Mode absent — thermostat en pause jusqu\'au retour';
-        banner.style.display = 'flex';
-        return;
-      }
-
-      if (suspendedUntil) {
-        const ms = new Date(suspendedUntil).getTime() - now;
-        if (ms > 0) {
-          banner.className = 'countdown-banner countdown-banner-suspend';
-          banner.innerHTML = '⏸ Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
-          banner.style.display = 'flex';
-          return;
-        }
-      }
-
-      if (!stoveOn && nextScheduleISO) {
-        const ms = new Date(nextScheduleISO).getTime() - now;
-        if (ms > 0) {
-          banner.className = 'countdown-banner countdown-banner-schedule';
-          banner.innerHTML = '⏰ Prochain créneau d\'allumage dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
-          banner.style.display = 'flex';
-          return;
-        }
-      }
-    }
-
-    update();
-    setInterval(update, 30000);
-  })();
-  </script>
-  {% endif %}
 
 
     {% if not data %}
