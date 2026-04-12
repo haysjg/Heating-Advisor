@@ -386,6 +386,11 @@ const DashboardRefresh = {
       this.updateTomorrow(data.tomorrow);
       this.updateTimestamp(data.timestamp);
 
+      // Mise à jour du countdown banner
+      if (window.updateCountdownFromDashboard) {
+        window.updateCountdownFromDashboard(data);
+      }
+
       console.log('[Dashboard] Rafraîchissement réussi');
 
     } catch (error) {

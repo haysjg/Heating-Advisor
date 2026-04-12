@@ -51,11 +51,9 @@
 
   const banner = document.getElementById('countdown-banner');
 
-  // DEBUG
-  console.log('[Countdown] suspendedUntil:', suspendedUntil);
-  console.log('[Countdown] nextScheduleISO:', nextScheduleISO);
-  console.log('[Countdown] everyoneAway:', everyoneAway);
-  console.log('[Countdown] stoveOn:', stoveOn);
+  let currentStoveOn = stoveOn;
+  let currentSuspendedUntil = suspendedUntil;
+  let currentEveryoneAway = everyoneAway;
 
   function fmtDuration(ms) {
     if (ms <= 0) return null;
@@ -70,15 +68,15 @@
     const now = Date.now();
     banner.style.display = 'none';
 
-    if (everyoneAway) {
+    if (currentEveryoneAway) {
       banner.className = 'countdown-banner countdown-banner-away';
       banner.innerHTML = '🚗 Mode absent — thermostat en pause jusqu\'au retour';
       banner.style.display = 'flex';
       return;
     }
 
-    if (suspendedUntil) {
-      const ms = new Date(suspendedUntil).getTime() - now;
+    if (currentSuspendedUntil) {
+      const ms = new Date(currentSuspendedUntil).getTime() - now;
       if (ms > 0) {
         banner.className = 'countdown-banner countdown-banner-suspend';
         banner.innerHTML = '⏸ Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
@@ -87,7 +85,7 @@
       }
     }
 
-    if (!stoveOn && nextScheduleISO) {
+    if (!currentStoveOn && nextScheduleISO) {
       const ms = new Date(nextScheduleISO).getTime() - now;
       if (ms > 0) {
         banner.className = 'countdown-banner countdown-banner-schedule';
@@ -97,6 +95,19 @@
       }
     }
   }
+
+  // Fonction pour mettre à jour l'état depuis AJAX
+  function updateCountdownFromDashboard(dashboardData) {
+    if (dashboardData.thermostat) {
+      currentStoveOn = dashboardData.thermostat.state === 'on';
+      currentSuspendedUntil = dashboardData.thermostat.suspended_until;
+      currentEveryoneAway = dashboardData.thermostat.everyone_away || false;
+      update();
+    }
+  }
+
+  // Exposer la fonction globalement pour que DashboardRefresh puisse l'appeler
+  window.updateCountdownFromDashboard = updateCountdownFromDashboard;
 
   update();
   setInterval(update, 30000);
