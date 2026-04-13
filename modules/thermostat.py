@@ -429,6 +429,14 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     current = state.get("state", "off")
     active_system = state.get("active_system")
 
+    logger.debug(
+        "Thermostat : HA réel — poêle=%s, clim=%s | stocké: état=%s, système=%s",
+        "ON" if poele_real_on else "off",
+        "ON" if clim_real_on else "off",
+        current,
+        active_system or "aucun",
+    )
+
     # Sync : un système allumé manuellement
     if current == "off":
         if poele_real_on:
@@ -501,6 +509,15 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
     min_on = min_on_clim if active_system == "clim" else min_on_poele
 
+    logger.info(
+        "Thermostat check — temp=%.1f°C (ressenti=%.1f°C), cible=[%.1f–%.1f°C], "
+        "état=%s/%s, reco=%s, plage=%s, allumé=%d min",
+        temp, effective_temp, temp_on, temp_off,
+        current, active_system or "aucun",
+        recommendation, "oui" if in_schedule else "non",
+        int(on_minutes),
+    )
+
     # ── Mode absent / proximité ───────────────────────────────
     if thermostat_cfg.get("presence_enabled"):
         person_entities = thermostat_cfg.get("person_entities", [])
@@ -515,6 +532,21 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             presence = "home" if raw else "away" if raw is False else None
 
         away_grace = thermostat_cfg.get("away_grace_minutes", 5)
+
+        _away_since_short = state.get("away_since", "")[:16] if state.get("away_since") else "aucun"
+        _nearby_since_short = state.get("nearby_restricted_since", "")[:16] if state.get("nearby_restricted_since") else "aucun"
+        logger.info(
+            "Thermostat : présence=%s | away_since=%s, nearby_restricted_since=%s",
+            presence or "inconnue",
+            _away_since_short,
+            _nearby_since_short,
+        )
+
+        if presence is None:
+            logger.warning(
+                "Thermostat : présence indéterminée (HA injoignable ou entités non configurées) — "
+                "thermostat continue sans vérification de présence"
+            )
 
         if presence == "home":
             if state.get("nearby_restricted_since") or state.get("away_since"):
@@ -534,7 +566,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 restricted_min = (datetime.now() - datetime.fromisoformat(state["nearby_restricted_since"])).total_seconds() / 60
 
                 if restricted_min >= nearby_grace:
-                    logger.debug("Thermostat : zone proximité après %dh, grâce écoulée — pause", no_ignition_after)
+                    logger.info("Thermostat : zone proximité après %dh, grâce écoulée (%.0f min >= %d min) — pause allumage", no_ignition_after, restricted_min, nearby_grace)
                     if current == "on":
                         # Capturer le système actif AVANT de le mettre à None
                         prev_system = active_system
@@ -545,7 +577,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         _save_state(new_state)
                     return
                 else:
-                    logger.debug("Thermostat : zone proximité après %dh, grâce encore %d min", no_ignition_after, int(nearby_grace - restricted_min))
+                    logger.info("Thermostat : zone proximité après %dh, grâce encore %d min (écoulé %.0f min / %d min)", no_ignition_after, int(nearby_grace - restricted_min), restricted_min, nearby_grace)
                     if current == "off":
                         return  # pas de nouvel allumage pendant la grâce
             else:
@@ -564,7 +596,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
             away_min = (datetime.now() - datetime.fromisoformat(state["away_since"])).total_seconds() / 60
             if away_min >= away_grace:
-                logger.debug("Thermostat : absence confirmée (%.0f min >= %d min), thermostat en pause", away_min, away_grace)
+                logger.info("Thermostat : absence confirmée (%.0f min >= %d min) — thermostat en pause", away_min, away_grace)
                 if current == "on":
                     # Capturer le système actif AVANT de le mettre à None
                     prev_system = active_system
@@ -576,7 +608,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     ntfy_send(f"🚗 {_system_label(prev_system).capitalize()} éteint", "Tout le monde absent — thermostat en pause.", ntfy_cfg)
                 return
             else:
-                logger.debug("Thermostat : absence détectée, grâce encore %d min", int(away_grace - away_min))
+                logger.info("Thermostat : absence détectée, grâce encore %d min (écoulé %.0f min / %d min)", int(away_grace - away_min), away_min, away_grace)
                 if current == "off":
                     return
 
