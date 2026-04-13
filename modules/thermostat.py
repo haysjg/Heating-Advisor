@@ -353,6 +353,23 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
     state = _load_state()
 
+    # ── Chevauchement clim → poêle : vérification expiration ────
+    clim_overlap_str = state.get("clim_overlap_until")
+    if clim_overlap_str:
+        try:
+            if datetime.now() >= datetime.fromisoformat(clim_overlap_str):
+                logger.info("Thermostat : fin chevauchement clim → poêle, extinction clim")
+                ha_client.turn_off_clim(ha_cfg)
+                _update_system_timestamp(state, "clim", "off")
+                state = {**state, "clim_overlap_until": None}
+                _save_state(state)
+            else:
+                remaining_min = int((datetime.fromisoformat(clim_overlap_str) - datetime.now()).total_seconds() / 60)
+                logger.debug("Thermostat : chevauchement clim → poêle actif, extinction clim dans %d min", remaining_min)
+        except Exception:
+            state = {**state, "clim_overlap_until": None}
+            _save_state(state)
+
     if not sensor_ok:
         logger.warning("Thermostat : température intérieure indisponible")
         state = _handle_sensor_failure(state, email_cfg)
@@ -440,9 +457,12 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     elif current == "on":
         # Vérifier si le système actif a été éteint manuellement
         system_still_on = (active_system == "poele" and poele_real_on) or (active_system == "clim" and clim_real_on)
+        in_clim_overlap = bool(state.get("clim_overlap_until"))
         if not system_still_on:
             # Vérifier si l'autre système a été allumé manuellement (transition manuelle)
-            if active_system == "poele" and clim_real_on:
+            if active_system == "poele" and clim_real_on and in_clim_overlap:
+                pass  # chevauchement clim → poêle : clim encore active normalement, pas une transition manuelle
+            elif active_system == "poele" and clim_real_on:
                 logger.info("Thermostat : transition manuelle poêle → clim détectée")
                 state = {**state, "active_system": "clim"}
                 _update_system_timestamp(state, "clim", "on")
@@ -619,7 +639,54 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             if recommendation in ("poele", "clim") and recommendation != active_system and on_minutes >= min_on:
                 can_switch_to_clim = recommendation == "clim" and clim_available
                 can_switch_to_poele = recommendation == "poele"
-                if can_switch_to_clim or can_switch_to_poele:
+
+                # ── Transition clim → poêle : chevauchement pour montée en température ──
+                if active_system == "clim" and can_switch_to_poele:
+                    overlap_min = thermostat_cfg.get("clim_to_poele_overlap_minutes", 20)
+                    if effective_temp < temp_on:
+                        overlap_until = (datetime.now() + timedelta(minutes=overlap_min)).isoformat()
+                        logger.info(
+                            "Thermostat : transition clim → poêle avec chevauchement %d min (allumé depuis %.0f min, temp %.1f°C)",
+                            overlap_min, on_minutes, effective_temp,
+                        )
+                        ha_client.turn_on(ha_cfg)
+                        new_state = {
+                            **state,
+                            "state": "on",
+                            "active_system": "poele",
+                            "clim_overlap_until": overlap_until,
+                        }
+                        _update_system_timestamp(new_state, "poele", "on")
+                        _save_state(new_state)
+                        ntfy_send(
+                            "🔥 Transition → poêle",
+                            f"Poêle allumé, clim maintenue {overlap_min} min le temps de la montée en température. Intérieur : {temp:.1f}°C.",
+                            ntfy_cfg,
+                        )
+                    else:
+                        # Temp déjà atteinte : éteindre clim normalement sans démarrer le poêle
+                        logger.info(
+                            "Thermostat : clim → poêle, temp déjà atteinte (%.1f°C), extinction clim sans démarrer le poêle",
+                            effective_temp,
+                        )
+                        ha_client.turn_off_clim(ha_cfg)
+                        prev_system = active_system
+                        new_state = {
+                            **state,
+                            "state": "off",
+                            "active_system": None,
+                        }
+                        _update_system_timestamp(new_state, prev_system, "off")
+                        _save_state(new_state)
+                        ntfy_send(
+                            f"✅ {_system_label(prev_system).capitalize()} éteint",
+                            f"Recommandation : {_system_label('poele')} mais temp déjà atteinte ({effective_temp:.1f}°C).",
+                            ntfy_cfg,
+                        )
+                    return
+
+                # ── Transition standard (poêle → clim ou autre) ──────────
+                elif can_switch_to_clim or can_switch_to_poele:
                     logger.info(
                         "Thermostat : transition %s → %s (allumé depuis %.0f min, temp %.1f°C)",
                         _system_label(active_system), _system_label(recommendation), on_minutes, effective_temp,

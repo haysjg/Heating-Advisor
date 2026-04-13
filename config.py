@@ -92,6 +92,7 @@ THERMOSTAT = {
     "min_on_minutes": 90,                 # durée minimale ON avant extinction sur temp (poêle)
     "min_on_minutes_clim": 15,            # durée minimale ON avant extinction sur temp (clim)
     "end_of_schedule_grace_minutes": 45,  # durée minimale ON avant extinction fin de plage
+    "clim_to_poele_overlap_minutes": 20,  # maintien de la clim pendant la montée en température du poêle (clim → poêle)
     "check_interval_minutes": 10,         # fréquence de vérification
     "manual_off_suspend_hours": 4,        # suspension du thermostat après extinction manuelle (heures)
     "presence_enabled": False,            # mode absent : thermostat en pause si tout le monde est parti
@@ -99,7 +100,7 @@ THERMOSTAT = {
     "nearby_zone_name": "nearby",         # nom de la zone HA de proximité (slug, ex. "nearby")
     "nearby_no_ignition_after": 20,       # heure à partir de laquelle la zone proximité = restriction (0-23)
     "nearby_grace_minutes": 20,           # grâce avant extinction si tout le monde en zone proximité après l'heure
-    "away_grace_minutes": 5,              # grâce avant extinction si tout le monde hors zone (évite faux positifs GPS)
+    "away_grace_minutes": 15,             # grâce avant extinction si tout le monde hors zone (évite faux positifs GPS)
     "use_felt_temperature": True,         # utiliser la température ressentie (temp + correction humidité)
     "humidity_reference": 50.0,           # humidité de référence (%)
     "humidity_correction_factor": 0.05,   # correction °C par % d'écart à la référence
