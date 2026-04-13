@@ -1,0 +1,456 @@
+{% extends "base.html" %}
+
+{% block title %}Documentation{% endblock %}
+
+{% block header_icon %}📖{% endblock %}
+{% block header_title %}Documentation{% endblock %}
+{% block header_sub %}Règles métier, thermostat, logs et maintenance{% endblock %}
+
+{% block extra_head %}
+<style>
+  .docs-wrapper {
+    max-width: 860px;
+    margin: 2rem auto;
+    padding: 0 1rem 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .docs-section {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .docs-section-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .docs-section-header h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .docs-section-body {
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .rule {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .rule-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text);
+  }
+  .rule-desc {
+    font-size: 0.88rem;
+    color: var(--text-sub);
+    line-height: 1.6;
+  }
+  .rule-example {
+    font-size: 0.82rem;
+    color: #60a5fa;
+    background: rgba(59,130,246,0.07);
+    border-left: 2px solid #3b82f6;
+    border-radius: 0 6px 6px 0;
+    padding: 0.4rem 0.75rem;
+    margin-top: 0.1rem;
+    line-height: 1.5;
+  }
+
+  .rule + .rule {
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .badge-red    { background: rgba(239,68,68,0.15);   color: #ef4444; }
+  .badge-blue   { background: rgba(59,130,246,0.15);  color: #60a5fa; }
+  .badge-yellow { background: rgba(245,158,11,0.15);  color: #fbbf24; }
+  .badge-green  { background: rgba(34,197,94,0.15);   color: #4ade80; }
+  .badge-gray   { background: rgba(100,116,139,0.15); color: #94a3b8; }
+
+  pre.cmd {
+    background: #0b0d14;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+    font-family: 'SFMono-Regular', 'Consolas', monospace;
+    font-size: 0.83rem;
+    color: #a5f3fc;
+    overflow-x: auto;
+    line-height: 1.7;
+    margin: 0;
+  }
+  pre.cmd .comment {
+    color: #475569;
+  }
+
+  .cmd-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .cmd-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .pages-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem;
+  }
+  .page-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    text-decoration: none;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    transition: border-color 0.15s;
+  }
+  .page-card:hover { border-color: var(--blue); }
+  .page-card-title { font-size: 0.92rem; font-weight: 600; }
+  .page-card-desc  { font-size: 0.8rem; color: var(--text-sub); line-height: 1.4; }
+
+  .tip {
+    font-size: 0.83rem;
+    color: var(--text-sub);
+    background: rgba(245,158,11,0.07);
+    border-left: 2px solid #f59e0b;
+    border-radius: 0 6px 6px 0;
+    padding: 0.5rem 0.75rem;
+    line-height: 1.5;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="docs-wrapper">
+
+  <!-- ── 1. Règles métier ──────────────────────────────────────── -->
+  <div class="docs-section">
+    <div class="docs-section-header">
+      <span>⚙️</span>
+      <h2>Règles de recommandation</h2>
+    </div>
+    <div class="docs-section-body">
+
+      <div class="rule">
+        <div class="rule-title">
+          <span class="badge badge-red">Tempo ROUGE</span>&nbsp; Toujours le poêle
+        </div>
+        <div class="rule-desc">
+          En jour Tempo Rouge, le kWh en Heures Pleines coûte
+          <strong>{{ "%.4f"|format(config.TEMPO_PRICES.RED.HP) }} €</strong>.
+          La clim n'est jamais recommandée, même si son COP est favorable.
+        </div>
+        <div class="rule-example">
+          Exemple : Tempo Rouge, 3°C dehors, COP clim estimé à 2,0 →
+          coût clim ≈ 0,38 €/kWh thermique vs poêle ≈ 0,047 €/kWh thermique.
+          → Poêle recommandé.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">
+          <span class="badge badge-yellow">Seuil de confort clim</span>&nbsp;
+          Poêle si T° ext &lt; {{ config.CLIM.comfort_min_temp }}°C
+        </div>
+        <div class="rule-desc">
+          En dessous de <strong>{{ config.CLIM.comfort_min_temp }}°C</strong> extérieurs,
+          la clim ({{ config.CLIM.model }}) chauffe insuffisamment : le flux d'air chaud
+          est trop faible pour maintenir le confort. Le poêle est recommandé à sa place,
+          même si le coût électrique serait théoriquement inférieur.
+        </div>
+        <div class="rule-example">
+          Exemple : 5°C dehors, Tempo Blanc →
+          coût clim ≈ 0,086 €/kWh thermique vs poêle ≈ 0,047 €/kWh thermique.
+          Mais clim insuffisante sous {{ config.CLIM.comfort_min_temp }}°C → Poêle recommandé.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">
+          <span class="badge badge-gray">Limite technique clim</span>&nbsp;
+          Clim arrêtée si T° ext &lt; {{ config.CLIM.min_outdoor_temp }}°C
+        </div>
+        <div class="rule-desc">
+          En dessous de <strong>{{ config.CLIM.min_outdoor_temp }}°C</strong> extérieurs,
+          la clim ne fonctionne plus. Seul le poêle est proposé.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">
+          <span class="badge badge-blue">Comparaison économique</span>&nbsp;
+          Clim si coût kWh &lt; coût granulés
+        </div>
+        <div class="rule-desc">
+          Hors cas particuliers ci-dessus, l'app compare le coût réel par kWh thermique
+          des deux systèmes en tenant compte du COP de la clim (variable selon T° ext)
+          et du rendement du poêle.
+        </div>
+        <div class="rule-example">
+          Exemple : 10°C dehors, Tempo Blanc HP ({{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HP) }} €/kWh),
+          COP clim estimé à {{ config.CLIM.nominal_cop }} →
+          coût clim ≈ {{ "%.3f"|format(config.TEMPO_PRICES.WHITE.HP / config.CLIM.nominal_cop) }} €/kWh thermique
+          vs poêle ≈ {{ "%.3f"|format(config.POELE.pellet_price_per_kg / config.POELE.consumption_kg_per_hour / config.POELE.thermal_output_kw) }} €/kWh thermique.
+          → Clim recommandée.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">
+          <span class="badge badge-gray">Nuit</span>&nbsp;
+          Pas de chauffage en Heures Creuses (22h – 6h)
+        </div>
+        <div class="rule-desc">
+          Entre {{ config.HP_END }}h et {{ config.HP_START }}h (Heures Creuses),
+          aucun chauffage n'est recommandé, quelle que soit la température.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 2. Thermostat automatique ────────────────────────────── -->
+  <div class="docs-section">
+    <div class="docs-section-header">
+      <span>🌡️</span>
+      <h2>Thermostat automatique</h2>
+    </div>
+    <div class="docs-section-body">
+
+      <div class="rule">
+        <div class="rule-title">Seuils d'allumage / extinction</div>
+        <div class="rule-desc">
+          Le thermostat allume le chauffage quand la température intérieure passe sous
+          <strong>{{ config.THERMOSTAT.temp_on }}°C</strong> (ressenti)
+          et l'éteint quand elle atteint <strong>{{ config.THERMOSTAT.temp_off }}°C</strong>.
+          Le ressenti tient compte de l'humidité (correction de ±{{ config.THERMOSTAT.humidity_correction_factor }}°C par % d'écart à {{ config.THERMOSTAT.humidity_reference|int }}% HR).
+        </div>
+        <div class="rule-example">
+          Exemple : 19,8°C réel, 62% HR → ressenti ≈ 19,2°C &lt; {{ config.THERMOSTAT.temp_on }}°C → allumage.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Durée minimale avant extinction sur température</div>
+        <div class="rule-desc">
+          Pour éviter les cycles courts, le chauffage ne peut pas s'éteindre avant
+          <strong>{{ config.THERMOSTAT.min_on_minutes }} min</strong> (poêle)
+          ou <strong>{{ config.THERMOSTAT.min_on_minutes_clim }} min</strong> (clim)
+          après son allumage, même si la température cible est déjà atteinte.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Plages horaires</div>
+        <div class="rule-desc">
+          Le thermostat ne fonctionne qu'à l'intérieur des plages horaires configurées
+          dans <a href="/config" style="color:var(--blue)">Config</a>.
+          Hors plage, le système s'éteint après une grâce de
+          <strong>{{ config.THERMOSTAT.end_of_schedule_grace_minutes }} min</strong>
+          (pour absorber les démarrages tardifs en fin de plage).
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Suspension après extinction manuelle</div>
+        <div class="rule-desc">
+          Si le poêle ou la clim est éteint manuellement, le thermostat se suspend
+          pendant <strong>{{ config.THERMOSTAT.manual_off_suspend_hours }}h</strong>
+          pour ne pas le rallumer immédiatement. Il reprend ensuite normalement.
+          Rallumer manuellement annule la suspension.
+        </div>
+        <div class="rule-example">
+          Exemple : tu éteins le poêle à 21h → thermostat suspendu jusqu'à 1h,
+          même si la température redescend sous {{ config.THERMOSTAT.temp_on }}°C.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Transition clim → poêle : chevauchement {{ config.THERMOSTAT.clim_to_poele_overlap_minutes }} min</div>
+        <div class="rule-desc">
+          Quand la recommandation passe de la clim au poêle, le poêle est allumé
+          immédiatement mais la clim reste active pendant
+          <strong>{{ config.THERMOSTAT.clim_to_poele_overlap_minutes }} min</strong>
+          le temps que le poêle monte en température.
+        </div>
+        <div class="rule-example">
+          Exemple : recommandation passe à poêle à 8h00 → poêle allumé à 8h00,
+          clim éteinte à 8h20.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 3. Mode présence ──────────────────────────────────────── -->
+  {% if config.THERMOSTAT.presence_enabled %}
+  <div class="docs-section">
+    <div class="docs-section-header">
+      <span>📍</span>
+      <h2>Mode présence (zones GPS)</h2>
+    </div>
+    <div class="docs-section-body">
+
+      <div class="rule">
+        <div class="rule-title">Trois zones</div>
+        <div class="rule-desc">
+          <span class="badge badge-green">home</span> Dans la maison (rayon ~350 m) — thermostat actif normalement.<br><br>
+          <span class="badge badge-yellow">nearby</span> En zone de proximité (~3500 m) — allumage bloqué après
+          <strong>{{ config.THERMOSTAT.nearby_no_ignition_after }}h</strong>,
+          extinction après <strong>{{ config.THERMOSTAT.nearby_grace_minutes }} min</strong> de grâce.<br><br>
+          <span class="badge badge-red">away</span> Absent — extinction après
+          <strong>{{ config.THERMOSTAT.away_grace_minutes }} min</strong> de grâce.
+        </div>
+        <div class="rule-example">
+          Exemple : tu pars faire une course à 19h30, GPS en zone <em>away</em>.
+          Grâce de {{ config.THERMOSTAT.away_grace_minutes }} min → extinction à 19h45 si tu n'es pas rentré.
+          Si tu rentres à 19h40, la grâce se réinitialise et le chauffage continue.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Grâce GPS</div>
+        <div class="rule-desc">
+          Les {{ config.THERMOSTAT.away_grace_minutes }} min de grâce avant extinction absorbent
+          les fluctuations GPS (passage temporaire hors zone sans déplacement réel).
+          La grâce repart à zéro dès que la zone redevient <em>nearby</em> ou <em>home</em>.
+        </div>
+        <div class="rule-example">
+          Exemple : GPS fluctue brièvement hors zone à 14h02, rentre dans <em>nearby</em> à 14h05 →
+          grâce de {{ config.THERMOSTAT.away_grace_minutes }} min jamais écoulée → aucune extinction.
+        </div>
+      </div>
+
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── 4. Commandes utiles ───────────────────────────────────── -->
+  <div class="docs-section">
+    <div class="docs-section-header">
+      <span>💻</span>
+      <h2>Commandes utiles (NAS Synology)</h2>
+    </div>
+    <div class="docs-section-body">
+
+      <div class="cmd-group">
+        <div class="cmd-label">Accéder aux logs (SSH sur le NAS)</div>
+        <pre class="cmd"><span class="comment"># Logs en direct</span>
+cd /volume1/docker/heating-advisor
+docker-compose logs -f
+
+<span class="comment"># Logs filtrés sur le thermostat</span>
+docker-compose logs -f | grep -i thermostat
+
+<span class="comment"># Logs des dernières 2 heures</span>
+docker-compose logs --since 2h
+
+<span class="comment"># Logs depuis une date / heure précise</span>
+docker-compose logs --since "2026-04-13T06:00:00"</pre>
+      </div>
+
+      <div class="tip">
+        Les logs de niveau DEBUG (états HA bruts) ne s'affichent pas par défaut.
+        Les décisions importantes (allumage, extinction, présence, zones) sont en niveau INFO.
+      </div>
+
+      <div class="cmd-group">
+        <div class="cmd-label">Mettre à jour et rebuilder le container</div>
+        <pre class="cmd"><span class="comment"># Depuis le NAS, en SSH</span>
+cd /volume1/docker/heating-advisor
+wget https://github.com/haysjg/Heating-Advisor/archive/refs/heads/main.tar.gz -O ha.tar.gz
+tar xzf ha.tar.gz --strip-components=1 && rm ha.tar.gz
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d</pre>
+      </div>
+
+      <div class="tip">
+        Le <code style="background:rgba(255,255,255,0.06);padding:0.1rem 0.4rem;border-radius:4px">--no-cache</code>
+        est indispensable : les templates HTML sont copiés dans l'image au moment du build,
+        pas montés en volume.
+      </div>
+
+      <div class="cmd-group">
+        <div class="cmd-label">Vérifier l'état du container</div>
+        <pre class="cmd">docker-compose ps
+docker-compose logs --tail=20</pre>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 5. Pages et outils ────────────────────────────────────── -->
+  <div class="docs-section">
+    <div class="docs-section-header">
+      <span>🗺️</span>
+      <h2>Pages et outils</h2>
+    </div>
+    <div class="docs-section-body">
+      <div class="pages-grid">
+        <a href="/" class="page-card">
+          <div class="page-card-title">🏠 Accueil</div>
+          <div class="page-card-desc">Recommandation du jour, météo, coûts comparés, contrôles manuels.</div>
+        </a>
+        <a href="/absence" class="page-card">
+          <div class="page-card-title">🏖️ Absence</div>
+          <div class="page-card-desc">Programmer une période de vacances — thermostat suspendu pendant l'absence.</div>
+        </a>
+        <a href="/statistics" class="page-card">
+          <div class="page-card-title">📊 Statistiques</div>
+          <div class="page-card-desc">Historique des températures intérieure / extérieure et des heures de chauffage.</div>
+        </a>
+        <a href="/reports" class="page-card">
+          <div class="page-card-title">📈 Rapports</div>
+          <div class="page-card-desc">Agrégats mensuels : heures poêle / clim, coûts estimés.</div>
+        </a>
+        <a href="/config" class="page-card">
+          <div class="page-card-title">⚙️ Config</div>
+          <div class="page-card-desc">Paramètres Tempo, plages horaires, thermostat, Home Assistant, notifications.</div>
+        </a>
+        <a href="/api/thermostat/diagnose" class="page-card" target="_blank">
+          <div class="page-card-title">🔍 Diagnostic</div>
+          <div class="page-card-desc">JSON brut : état du thermostat, timestamps, présence, suspension. Utile pour déboguer.</div>
+        </a>
+        {% if config.COP_LEARNING.enabled %}
+        <a href="/cop-learning" class="page-card">
+          <div class="page-card-title">🎓 COP Learning</div>
+          <div class="page-card-desc">Apprentissage du COP réel de la clim par mesures terrain.</div>
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

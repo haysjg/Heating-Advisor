@@ -1164,6 +1164,11 @@ def api_diagnose_history():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/docs")
+def docs_page():
+    return render_template("docs.html", config=config)
+
+
 @app.route("/cop-learning")
 def cop_learning_page():
     return render_template("cop_learning.html", config=config)
