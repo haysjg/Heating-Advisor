@@ -229,10 +229,19 @@
         {% endif %}
         {% if data.inactive_reasons %}
         {% set ir = data.inactive_reasons %}
+        {# Détecte si aucun système ne tourne physiquement (HA activé + thermostat off) #}
+        {% set nothing_running = config.HOME_ASSISTANT.enabled and thermostat_state.get('state') != 'on' %}
         {% if ir.clim or ir.poele %}
         <div class="inactive-reasons" data-value="inactive-reasons">
           {% if ir.shared and ir.clim %}
+            {# Les deux inactifs pour la même raison (nuit, temp cible atteinte) #}
             <div class="inactive-reason"><span class="inactive-icon">💤</span><span>{{ ir.clim }}</span></div>
+          {% elif nothing_running and rec.system != 'none' %}
+            {# Le système recommandé n'est pas non plus en route : message neutre #}
+            <div class="inactive-reason"><span class="inactive-icon">💤</span><span>
+              {% if rec.system == 'clim' %}❄️ Clim recommandée{% else %}🔥 Poêle recommandé{% endif %}
+              — thermostat en attente (température intérieure dans les seuils ou hors plage horaire).
+            </span></div>
           {% else %}
             {% if ir.clim %}
             <div class="inactive-reason"><span class="inactive-icon">❄️</span><span>{{ ir.clim }}</span></div>
