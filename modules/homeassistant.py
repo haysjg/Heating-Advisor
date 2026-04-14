@@ -140,7 +140,9 @@ def get_presence_extended(cfg: dict, person_entities: list, nearby_zone_name: st
                 f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
                 cfg["token"],
             )
-            states.append(state.get("state", "not_home"))
+            person_state = state.get("state", "not_home")
+            states.append(person_state)
+            logger.info("HA présence — %s: %s", entity_id, person_state)
         if any(s == "home" for s in states):
             return "home"
         if any(s == nearby_zone_name for s in states):
