@@ -14,3 +14,8 @@ services:
     # - ./config.py:/app/config.py   # Décommentez pour éditer la config sans rebuild
     extra_hosts:
       - "host.docker.internal:host-gateway"  # Accès au NAS depuis le container (IP stable)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"   # 10 Mo par fichier de log
+        max-file: "5"     # 5 fichiers max → 50 Mo total
