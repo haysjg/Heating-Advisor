@@ -255,6 +255,68 @@ def make_recommendation(
     }
 
 
+def build_inactive_reasons(
+    temp: float,
+    clim_result: dict,
+    poele_result: dict,
+    recommendation: dict,
+    tempo_color: str,
+    tempo_period: str,
+    target_temp: float,
+    hp_start: int,
+    hp_end: int,
+    no_heating_at_night: bool,
+) -> dict:
+    """
+    Retourne, pour chaque système inactif, la raison principale.
+    None = le système est celui recommandé.
+    Si les deux sont inactifs pour la même raison, `shared` est rempli.
+    """
+    system = recommendation.get("system")
+
+    # Les deux inactifs pour la même raison
+    if system == "none":
+        if temp is not None and temp >= target_temp:
+            msg = f"Température extérieure ({temp:.1f}°C) ≥ température cible ({target_temp}°C) — chauffage inutile."
+        elif no_heating_at_night and tempo_period == "HC":
+            msg = f"Hors plage de chauffage ({hp_end}h–{hp_start}h) — pas de chauffage la nuit."
+        else:
+            msg = "Aucun chauffage nécessaire actuellement."
+        return {"clim": msg, "poele": msg, "shared": True}
+
+    clim_reason = None
+    poele_reason = None
+
+    # Clim inactive
+    if system != "clim":
+        if not clim_result.get("available"):
+            clim_reason = clim_result.get("note", "Non opérationnelle.")
+        elif tempo_color == "RED":
+            clim_reason = "Jour Tempo ROUGE — clim exclue pour éviter le tarif à 0,756 €/kWh."
+        elif clim_result.get("comfort_insufficient"):
+            comfort_min = clim_result.get("note", "température trop basse")
+            clim_reason = f"{comfort_min} — le poêle chauffe mieux à cette température."
+        elif clim_result.get("cost_per_hour") and poele_result.get("cost_per_hour"):
+            diff = round(clim_result["cost_per_hour"] - poele_result["cost_per_hour"], 3)
+            clim_reason = (
+                f"Plus coûteuse que le poêle : {clim_result['cost_per_hour']:.3f} €/h "
+                f"vs {poele_result['cost_per_hour']:.3f} €/h (+{diff:.3f} €/h)."
+            )
+
+    # Poêle inactif
+    if system != "poele":
+        if clim_result.get("cost_per_hour") and poele_result.get("cost_per_hour"):
+            diff = round(poele_result["cost_per_hour"] - clim_result["cost_per_hour"], 3)
+            poele_reason = (
+                f"Plus coûteux que la clim : {poele_result['cost_per_hour']:.3f} €/h "
+                f"vs {clim_result['cost_per_hour']:.3f} €/h (+{diff:.3f} €/h)."
+            )
+        else:
+            poele_reason = "La climatisation est préférée actuellement."
+
+    return {"clim": clim_reason, "poele": poele_reason, "shared": False}
+
+
 def analyze(weather: dict, tempo: dict, config: dict) -> dict:
     """
     Point d'entrée principal. Retourne l'analyse complète.
@@ -270,39 +332,60 @@ def analyze(weather: dict, tempo: dict, config: dict) -> dict:
 
     target_temp = config.get("TARGET_TEMP", 21)
 
+    _inactive_common = {
+        "clim": None, "poele": None, "shared": False,
+        "_temp": temp, "_target": target_temp,
+        "_period": period, "_hp_start": config["HP_START"], "_hp_end": config["HP_END"],
+        "_no_night": no_heating_at_night,
+    }
+
     # Heures Creuses + pas de chauffage la nuit → rien à recommander
     if no_heating_at_night and period == "HC":
+        rec_none = {
+            "system": "none",
+            "level": "info",
+            "title": "Pas de chauffage la nuit",
+            "explanation": f"Il est {tempo['current_hour']}h — hors plage de chauffage ({config['HP_START']}h–{config['HP_END']}h).",
+            "savings_per_hour": 0,
+        }
+        clim_none = {"available": False, "note": "Pas de chauffage la nuit"}
+        poele_none = {"available": False, "note": "Pas de chauffage la nuit"}
         return {
             "timestamp": datetime.now().isoformat(),
             "weather": weather,
             "tempo": tempo,
-            "clim": {"available": False, "note": "Pas de chauffage la nuit"},
-            "poele": {"available": False, "note": "Pas de chauffage la nuit"},
-            "recommendation": {
-                "system": "none",
-                "level": "info",
-                "title": "Pas de chauffage la nuit",
-                "explanation": f"Il est {tempo['current_hour']}h — hors plage de chauffage ({config['HP_START']}h–{config['HP_END']}h).",
-                "savings_per_hour": 0,
-            },
+            "clim": clim_none,
+            "poele": poele_none,
+            "recommendation": rec_none,
+            "inactive_reasons": build_inactive_reasons(
+                temp, clim_none, poele_none, rec_none, color, period,
+                target_temp, config["HP_START"], config["HP_END"], no_heating_at_night,
+            ),
             "daily_estimate": None,
         }
 
     # Température extérieure ≥ température cible → pas de chauffage nécessaire
     if temp is not None and temp >= target_temp:
+        rec_none = {
+            "system": "none",
+            "level": "info",
+            "title": "Pas de chauffage nécessaire",
+            "explanation": f"La température extérieure ({temp:.1f}°C) est supérieure ou égale à la température cible ({target_temp}°C).",
+            "savings_per_hour": 0,
+        }
+        clim_none = {"available": False, "note": "Chauffage inutile"}
+        poele_none = {"available": False, "note": "Chauffage inutile"}
         return {
             "timestamp": datetime.now().isoformat(),
             "weather": weather,
             "tempo": tempo,
-            "clim": {"available": False, "note": "Chauffage inutile"},
-            "poele": {"available": False, "note": "Chauffage inutile"},
-            "recommendation": {
-                "system": "none",
-                "level": "info",
-                "title": "Pas de chauffage nécessaire",
-                "explanation": f"La température extérieure ({temp:.1f}°C) est supérieure ou égale à la température cible ({target_temp}°C).",
-                "savings_per_hour": 0,
-            },
+            "clim": clim_none,
+            "poele": poele_none,
+            "recommendation": rec_none,
+            "inactive_reasons": build_inactive_reasons(
+                temp, clim_none, poele_none, rec_none, color, period,
+                target_temp, config["HP_START"], config["HP_END"], no_heating_at_night,
+            ),
             "daily_estimate": None,
         }
 
@@ -336,6 +419,10 @@ def analyze(weather: dict, tempo: dict, config: dict) -> dict:
         "clim": clim_result,
         "poele": poele_result,
         "recommendation": recommendation,
+        "inactive_reasons": build_inactive_reasons(
+            temp, clim_result, poele_result, recommendation, color, period,
+            target_temp, config["HP_START"], config["HP_END"], no_heating_at_night,
+        ),
         "daily_estimate": daily_estimate,
     }
 

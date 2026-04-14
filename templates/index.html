@@ -14,6 +14,23 @@
     .thermostat-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; }
     .thermostat-badge-on  { background: rgba(251,146,60,0.15); border: 1px solid #fb923c; color: #fb923c; border-radius: 6px; padding: 0.15rem 0.5rem; font-size: 0.8rem; font-weight: 600; }
     .thermostat-badge-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; border-radius: 6px; padding: 0.15rem 0.5rem; font-size: 0.8rem; }
+    .inactive-reasons {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .inactive-reason {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      color: var(--text-sub);
+      line-height: 1.4;
+    }
+    .inactive-icon { flex-shrink: 0; }
     .countdown-banner {
       margin: 1rem 1rem 0;
       padding: 0.7rem 1.25rem;
@@ -209,6 +226,23 @@
         <p data-value="explanation">{{ rec.explanation }}</p>
         {% if rec.savings_per_hour > 0 %}
           <span class="badge" data-value="savings">Économie : {{ "%.3f"|format(rec.savings_per_hour) }} €/h</span>
+        {% endif %}
+        {% if data.inactive_reasons %}
+        {% set ir = data.inactive_reasons %}
+        {% if ir.clim or ir.poele %}
+        <div class="inactive-reasons" data-value="inactive-reasons">
+          {% if ir.shared and ir.clim %}
+            <div class="inactive-reason"><span class="inactive-icon">💤</span><span>{{ ir.clim }}</span></div>
+          {% else %}
+            {% if ir.clim %}
+            <div class="inactive-reason"><span class="inactive-icon">❄️</span><span>{{ ir.clim }}</span></div>
+            {% endif %}
+            {% if ir.poele %}
+            <div class="inactive-reason"><span class="inactive-icon">🔥</span><span>{{ ir.poele }}</span></div>
+            {% endif %}
+          {% endif %}
+        </div>
+        {% endif %}
         {% endif %}
       </div>
     </section>
