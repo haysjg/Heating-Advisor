@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Conseiller Chauffage{% endblock %} – {{ config.LOCATION.city }}</title>
+  <title>{% block title %}Heating Advisor{% endblock %} – {{ config.LOCATION.city }}</title>
   <link rel="stylesheet" href="/static/style.css">
   {% block extra_head %}{% endblock %}
 </head>
@@ -12,7 +12,7 @@
     <div class="header-inner">
       <span class="header-icon">{% block header_icon %}🏠{% endblock %}</span>
       <div>
-        <h1>{% block header_title %}Conseiller Chauffage{% endblock %}</h1>
+        <h1>{% block header_title %}Heating Advisor{% endblock %}</h1>
         <p class="header-sub">{% block header_sub %}{{ config.LOCATION.city }} ({{ config.LOCATION.postal_code }}){% endblock %}</p>
       </div>
       {% if config.HOME_ASSISTANT.enabled and show_thermostat_toggle|default(false) %}
