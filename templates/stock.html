@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+
+{% block title %}Stock Granulés{% endblock %}
+{% block header_icon %}🪵{% endblock %}
+{% block header_title %}Stock Granulés{% endblock %}
+{% block header_sub %}{{ config.LOCATION.city }} — Suivi de consommation{% endblock %}
+
+{% block extra_head %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    .stock-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 640px) { .stock-grid { grid-template-columns: 1fr; } }
+
+    .gauge-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .gauge-bar-bg {
+      width: 100%;
+      height: 18px;
+      background: var(--border);
+      border-radius: 9px;
+      overflow: hidden;
+    }
+    .gauge-bar-fill {
+      height: 100%;
+      border-radius: 9px;
+      transition: width 0.6s ease;
+    }
+    .gauge-bar-fill.high   { background: var(--green); }
+    .gauge-bar-fill.medium { background: var(--yellow); }
+    .gauge-bar-fill.low    { background: var(--red); }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: var(--text-sub); }
+    .stat-val   { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    .big-number {
+      font-size: 2.8rem;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .big-unit { font-size: 1rem; color: var(--text-sub); margin-left: 0.2rem; }
+
+    .alert-banner {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.4);
+      border-radius: 12px;
+      padding: 0.9rem 1.25rem;
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 500;
+    }
+
+    .delivery-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .delivery-table th {
+      text-align: left;
+      color: var(--text-sub);
+      font-weight: 500;
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .delivery-table td {
+      padding: 0.5rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+    .delivery-table tr:last-child td { border-bottom: none; }
+    .btn-del {
+      background: none;
+      border: 1px solid rgba(239,68,68,0.4);
+      border-radius: 6px;
+      color: var(--red);
+      cursor: pointer;
+      padding: 0.2rem 0.55rem;
+      font-size: 0.8rem;
+      transition: background 0.15s;
+    }
+    .btn-del:hover { background: rgba(239,68,68,0.1); }
+
+    .btn-add {
+      background: rgba(34,197,94,0.12);
+      border: 1px solid var(--green);
+      border-radius: 8px;
+      color: var(--green);
+      cursor: pointer;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .btn-add:hover { opacity: 0.8; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .modal-box h3 { font-size: 1rem; }
+    .modal-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+    .modal-grid .full { grid-column: 1 / -1; }
+    .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
+    .form-group label { font-size: 0.82rem; color: var(--text-sub); }
+    .form-group input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.5rem 0.75rem;
+      font-size: 0.95rem;
+    }
+    .form-group input:focus { outline: none; border-color: var(--blue); }
+    .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
+    .btn-cancel {
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      cursor: pointer;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+    }
+    .btn-confirm {
+      background: var(--green);
+      border: none;
+      border-radius: 8px;
+      color: #0f1117;
+      cursor: pointer;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+    .computed-kg {
+      background: rgba(59,130,246,0.06);
+      border: 1px solid rgba(59,130,246,0.25);
+      border-radius: 8px;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.9rem;
+      color: var(--blue);
+      font-weight: 600;
+    }
+    .chart-wrapper { position: relative; height: 260px; }
+
+    .toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      padding: 0.75rem 1.25rem; border-radius: 10px;
+      font-size: 0.9rem; font-weight: 600;
+      opacity: 0; transform: translateY(10px);
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none; z-index: 300;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast-ok  { background: rgba(34,197,94,0.15); border: 1px solid var(--green); color: var(--green); }
+    .toast-err { background: rgba(239,68,68,0.15); border: 1px solid var(--red); color: var(--red); }
+
+    .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-sub); }
+    .empty-state p { margin-top: 0.5rem; font-size: 0.9rem; }
+  </style>
+{% endblock %}
+
+{% block content %}
+
+{% if stock.configured %}
+
+  {# ── Alerte stock faible ── #}
+  {% if stock.alert %}
+  <div class="alert-banner">
+    ⚠️ Stock faible — environ <strong>{{ stock.days_remaining }} jours</strong> restants (seuil : {{ stock.alert_threshold_days }} jours).
+    Pensez à commander.
+  </div>
+  {% endif %}
+
+  {# ── Jauge + métriques principales ── #}
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <h2 style="font-size:1rem; color:var(--text-sub);">Stock estimé</h2>
+      <span style="font-size:0.82rem; color:var(--text-sub);">depuis {{ stock.oldest_date }}</span>
+    </div>
+
+    <div class="gauge-wrapper">
+      <div style="width:100%; display:flex; justify-content:space-between; font-size:0.82rem; color:var(--text-sub); margin-bottom:0.2rem;">
+        <span>0 kg</span>
+        <span>{{ stock.total_kg_delivered }} kg livrés</span>
+      </div>
+      <div class="gauge-bar-bg" style="width:100%">
+        <div class="gauge-bar-fill {% if stock.remaining_pct > 40 %}high{% elif stock.remaining_pct > 20 %}medium{% else %}low{% endif %}"
+             style="width: {{ [stock.remaining_pct, 100]|min }}%"></div>
+      </div>
+    </div>
+
+    <div class="stock-grid" style="margin-top:1.25rem;">
+      <div style="text-align:center; padding:0.75rem; background:var(--bg); border-radius:10px;">
+        <div class="big-number {% if stock.remaining_pct > 40 %}{% elif stock.remaining_pct > 20 %}{% else %}{% endif %}"
+             style="color: {% if stock.remaining_pct > 40 %}var(--green){% elif stock.remaining_pct > 20 %}var(--yellow){% else %}var(--red){% endif %}">
+          {{ stock.remaining_kg }}<span class="big-unit">kg</span>
+        </div>
+        <div style="font-size:0.82rem; color:var(--text-sub); margin-top:0.3rem;">restants ({{ stock.remaining_pct }}%)</div>
+      </div>
+      <div style="text-align:center; padding:0.75rem; background:var(--bg); border-radius:10px;">
+        {% if stock.days_remaining is not none %}
+        <div class="big-number" style="color: {% if stock.days_remaining > stock.alert_threshold_days %}var(--text){% else %}var(--red){% endif %}">
+          {{ stock.days_remaining }}<span class="big-unit">j</span>
+        </div>
+        <div style="font-size:0.82rem; color:var(--text-sub); margin-top:0.3rem;">jours estimés</div>
+        {% else %}
+        <div style="color:var(--text-sub); font-size:0.9rem; padding:0.5rem;">Pas assez de données</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="margin-top:1.25rem;">
+      <div class="stat-row">
+        <span class="stat-label">Consommé depuis livraison</span>
+        <span class="stat-val">{{ stock.total_kg_consumed }} kg</span>
+      </div>
+      {% if stock.avg_daily_kg %}
+      <div class="stat-row">
+        <span class="stat-label">Moyenne journalière</span>
+        <span class="stat-val">{{ stock.avg_daily_kg }} kg/j</span>
+      </div>
+      {% endif %}
+      <div class="stat-row">
+        <span class="stat-label">Taux de consommation</span>
+        <span class="stat-val">{{ stock.consumption_kg_per_hour }} kg/h</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── Graphique consommation journalière ── #}
+  {% if stock.daily_breakdown %}
+  <div class="card">
+    <h2 style="font-size:1rem; color:var(--text-sub); margin-bottom:1rem;">Consommation journalière (kg)</h2>
+    <div class="chart-wrapper">
+      <canvas id="chartStock"></canvas>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Historique des livraisons ── #}
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <h2 style="font-size:1rem; color:var(--text-sub);">Historique des livraisons</h2>
+      <button class="btn-add" onclick="openModal()">+ Ajouter une livraison</button>
+    </div>
+
+    {% if stock.deliveries %}
+    <table class="delivery-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Sacs</th>
+          <th>kg/sac</th>
+          <th>Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in stock.deliveries %}
+        <tr>
+          <td>{{ d.date }}</td>
+          <td>{{ d.nb_sacs }}</td>
+          <td>{{ d.poids_sac }} kg</td>
+          <td><strong>{{ (d.nb_sacs * d.poids_sac)|round(0)|int }} kg</strong></td>
+          <td><button class="btn-del" onclick="deleteDelivery({{ loop.index0 }})">✕</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-sub); font-size:0.9rem;">Aucune livraison enregistrée.</p>
+    {% endif %}
+  </div>
+
+{% else %}
+  {# ── État vide ── #}
+  <div class="card">
+    <div class="empty-state">
+      <div style="font-size:3rem;">🪵</div>
+      <p>Aucune livraison enregistrée.</p>
+      <p>Ajoutez votre première livraison pour commencer le suivi du stock.</p>
+      <button class="btn-add" style="margin-top:1rem;" onclick="openModal()">+ Ajouter une livraison</button>
+    </div>
+  </div>
+{% endif %}
+
+{# ── Modal ajout livraison ── #}
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalIfBackdrop(event)">
+  <div class="modal-box">
+    <h3>🪵 Nouvelle livraison</h3>
+    <div class="modal-grid">
+      <div class="form-group full">
+        <label>Date de livraison</label>
+        <input type="date" id="m-date">
+      </div>
+      <div class="form-group">
+        <label>Nombre de sacs</label>
+        <input type="number" id="m-sacs" min="1" step="1" placeholder="72" oninput="updateModalKg()">
+      </div>
+      <div class="form-group">
+        <label>Poids par sac (kg)</label>
+        <input type="number" id="m-poids" min="1" step="0.5" placeholder="15" oninput="updateModalKg()">
+      </div>
+      <div class="form-group full">
+        <label>Total calculé</label>
+        <div class="computed-kg" id="m-total">— kg</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-confirm" onclick="submitDelivery()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ── Toast ───────────────────────────────────────────
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + type + ' show';
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+// ── Modal ───────────────────────────────────────────
+function openModal() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('m-date').value = today;
+  document.getElementById('m-sacs').value = '';
+  document.getElementById('m-poids').value = '15';
+  updateModalKg();
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+function closeModalIfBackdrop(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+function updateModalKg() {
+  const sacs  = parseFloat(document.getElementById('m-sacs').value) || 0;
+  const poids = parseFloat(document.getElementById('m-poids').value) || 0;
+  const total = sacs > 0 && poids > 0 ? (sacs * poids).toFixed(0) + ' kg' : '— kg';
+  document.getElementById('m-total').textContent = total;
+}
+
+async function submitDelivery() {
+  const date  = document.getElementById('m-date').value;
+  const sacs  = parseInt(document.getElementById('m-sacs').value);
+  const poids = parseFloat(document.getElementById('m-poids').value);
+  if (!date || !sacs || !poids) {
+    showToast('Veuillez remplir tous les champs', 'err');
+    return;
+  }
+  try {
+    const res = await fetch('/api/stock/delivery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, nb_sacs: sacs, poids_sac: poids }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    showToast('Livraison enregistrée', 'ok');
+    closeModal();
+    setTimeout(() => location.reload(), 800);
+  } catch (e) {
+    showToast('Erreur : ' + e.message, 'err');
+  }
+}
+
+async function deleteDelivery(idx) {
+  if (!confirm('Supprimer cette livraison ?')) return;
+  try {
+    const res = await fetch('/api/stock/delivery/' + idx, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error);
+    showToast('Livraison supprimée', 'ok');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) {
+    showToast('Erreur : ' + e.message, 'err');
+  }
+}
+
+// ── Graphique ───────────────────────────────────────
+{% if stock.configured and stock.daily_breakdown %}
+(function() {
+  const raw = {{ stock.daily_breakdown | tojson }};
+  // Garder les 30 derniers jours pour la lisibilité
+  const data = raw.slice(-30);
+  const labels = data.map(d => d.date);
+  const values = data.map(d => d.kg);
+
+  new Chart(document.getElementById('chartStock'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Granulés (kg)',
+        data: values,
+        backgroundColor: 'rgba(251,146,60,0.55)',
+        borderColor: '#fb923c',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#8892a4', maxTicksLimit: 10, maxRotation: 0 },
+          grid: { color: 'rgba(42,45,62,0.8)' },
+        },
+        y: {
+          ticks: { color: '#8892a4' },
+          grid: { color: 'rgba(42,45,62,0.8)' },
+          beginAtZero: true,
+        }
+      }
+    }
+  });
+})();
+{% endif %}
+</script>
+{% endblock %}

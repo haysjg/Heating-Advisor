@@ -112,6 +112,35 @@ def get_daily_summary(days: int = 30) -> list[dict]:
         return []
 
 
+def get_pellet_consumption_since(since_date: str) -> dict:
+    """
+    Calcule la consommation réelle de granulés depuis une date donnée.
+    since_date : format YYYY-MM-DD
+    Retourne : {total_on_minutes, daily_breakdown: [{date, on_minutes}]}
+    """
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT substr(ts, 1, 10) AS day,
+                       SUM(CASE WHEN poele_state = 'on' THEN 1 ELSE 0 END) * 10 AS on_minutes
+                FROM readings
+                WHERE ts >= ?
+                GROUP BY day
+                ORDER BY day
+                """,
+                (since_date,),
+            ).fetchall()
+        total_on_minutes = sum(r[1] for r in rows)
+        return {
+            "total_on_minutes": total_on_minutes,
+            "daily_breakdown": [{"date": r[0], "on_minutes": r[1]} for r in rows],
+        }
+    except Exception as e:
+        logger.error("History : erreur consommation granulés : %s", e)
+        return {"total_on_minutes": 0, "daily_breakdown": []}
+
+
 def record_diagnose(
     presence_status: str,
     poele_real_state: str,

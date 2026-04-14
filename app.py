@@ -1613,5 +1613,132 @@ def api_config_save():
         return jsonify({"error": str(e)}), 400
 
 
+# ── Stock granulés ────────────────────────────────────────────
+
+def _load_deliveries() -> list:
+    """Charge l'historique des livraisons depuis le fichier d'overrides."""
+    try:
+        if os.path.exists(OVERRIDE_FILE):
+            with open(OVERRIDE_FILE) as f:
+                return json.load(f).get("_deliveries", [])
+    except Exception:
+        pass
+    return []
+
+
+def _save_deliveries(deliveries: list) -> None:
+    """Persiste la liste des livraisons dans le fichier d'overrides."""
+    try:
+        override = {}
+        if os.path.exists(OVERRIDE_FILE):
+            with open(OVERRIDE_FILE) as f:
+                override = json.load(f)
+        override["_deliveries"] = deliveries
+        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(override, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error("Stock : sauvegarde livraisons échouée : %s", e)
+
+
+def _compute_stock() -> dict:
+    """
+    Calcule l'état du stock de granulés à partir des livraisons et de l'historique.
+    Retourne un dict complet avec kg restants, jours estimés, breakdown journalier, etc.
+    """
+    deliveries = _load_deliveries()
+    if not deliveries:
+        return {"configured": False}
+
+    consumption_kg_per_hour = config.POELE.get("consumption_kg_per_hour", 1.0)
+    alert_threshold_days = 15
+
+    # Trier les livraisons par date
+    deliveries_sorted = sorted(deliveries, key=lambda d: d["date"])
+    oldest_date = deliveries_sorted[0]["date"]
+    total_kg_delivered = sum(d["nb_sacs"] * d["poids_sac"] for d in deliveries_sorted)
+
+    # Consommation réelle depuis la première livraison
+    consumption_data = history_module.get_pellet_consumption_since(oldest_date)
+    total_on_minutes = consumption_data["total_on_minutes"]
+    total_kg_consumed = round(total_on_minutes / 60 * consumption_kg_per_hour, 2)
+    remaining_kg = round(max(total_kg_delivered - total_kg_consumed, 0), 2)
+
+    # Estimation des jours restants (basée sur les 30 derniers jours ou depuis début)
+    days_since = max((datetime.now() - datetime.strptime(oldest_date, "%Y-%m-%d")).days, 1)
+    avg_daily_kg = round(total_kg_consumed / days_since, 3) if total_kg_consumed > 0 else None
+    days_remaining = round(remaining_kg / avg_daily_kg) if avg_daily_kg and avg_daily_kg > 0 else None
+
+    # Breakdown journalier enrichi avec kg
+    daily_breakdown = [
+        {
+            "date": d["date"],
+            "on_minutes": d["on_minutes"],
+            "kg": round(d["on_minutes"] / 60 * consumption_kg_per_hour, 3),
+        }
+        for d in consumption_data["daily_breakdown"]
+    ]
+
+    return {
+        "configured": True,
+        "deliveries": deliveries_sorted,
+        "total_kg_delivered": round(total_kg_delivered, 1),
+        "total_kg_consumed": total_kg_consumed,
+        "remaining_kg": remaining_kg,
+        "remaining_pct": round(remaining_kg / total_kg_delivered * 100, 1) if total_kg_delivered > 0 else 0,
+        "avg_daily_kg": avg_daily_kg,
+        "days_remaining": days_remaining,
+        "alert": days_remaining is not None and days_remaining <= alert_threshold_days,
+        "alert_threshold_days": alert_threshold_days,
+        "daily_breakdown": daily_breakdown,
+        "oldest_date": oldest_date,
+        "consumption_kg_per_hour": consumption_kg_per_hour,
+    }
+
+
+@app.route("/stock")
+def stock_page():
+    stock = _compute_stock()
+    return render_template("stock.html", config=config, stock=stock)
+
+
+@app.route("/api/stock")
+def api_stock():
+    return jsonify(_compute_stock())
+
+
+@app.route("/api/stock/delivery", methods=["POST"])
+def api_stock_delivery_add():
+    data = request.get_json(force=True)
+    try:
+        delivery = {
+            "date": str(data["date"]),
+            "nb_sacs": int(data["nb_sacs"]),
+            "poids_sac": float(data["poids_sac"]),
+        }
+        # Validation basique
+        if not delivery["date"] or delivery["nb_sacs"] <= 0 or delivery["poids_sac"] <= 0:
+            return jsonify({"error": "Données invalides"}), 400
+        deliveries = _load_deliveries()
+        deliveries.append(delivery)
+        deliveries.sort(key=lambda d: d["date"])
+        _save_deliveries(deliveries)
+        logger.info("Stock : livraison ajoutée %s — %d sacs × %.1f kg", delivery["date"], delivery["nb_sacs"], delivery["poids_sac"])
+        return jsonify({"status": "ok"})
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/stock/delivery/<int:idx>", methods=["DELETE"])
+def api_stock_delivery_delete(idx: int):
+    deliveries = _load_deliveries()
+    if idx < 0 or idx >= len(deliveries):
+        return jsonify({"error": "Index invalide"}), 400
+    removed = deliveries.pop(idx)
+    _save_deliveries(deliveries)
+    logger.info("Stock : livraison supprimée index %d (%s)", idx, removed.get("date"))
+    return jsonify({"status": "ok"})
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
