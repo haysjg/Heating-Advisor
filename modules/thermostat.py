@@ -168,6 +168,55 @@ def is_on_vacation() -> bool:
         return False
 
 
+# ── Horaires d'absence récurrents ─────────────────────────────────
+
+
+def get_absence_schedules() -> list:
+    """Retourne la liste des horaires d'absence récurrents."""
+    state = _load_state()
+    return state.get("absence_schedules", [])
+
+
+def add_absence_schedule(days: list, start: str, end: str) -> None:
+    """Ajoute un horaire d'absence récurrent (jours ex. ['mon','fri'], heures HH:MM)."""
+    state = _load_state()
+    schedules = state.get("absence_schedules", [])
+    ordered_days = sorted(days, key=lambda d: DAY_KEYS.index(d) if d in DAY_KEYS else 99)
+    schedules.append({"days": ordered_days, "start": start, "end": end})
+    _save_state({**state, "absence_schedules": schedules})
+
+
+def remove_absence_schedule(idx: int) -> None:
+    """Supprime un horaire d'absence par son index. Silencieux si hors-bornes."""
+    state = _load_state()
+    schedules = state.get("absence_schedules", [])
+    if 0 <= idx < len(schedules):
+        schedules.pop(idx)
+    _save_state({**state, "absence_schedules": schedules})
+
+
+def is_in_absence_schedule() -> bool:
+    """Retourne True si l'heure actuelle tombe dans un horaire d'absence récurrent."""
+    schedules = get_absence_schedules()
+    if not schedules:
+        return False
+    now = datetime.now()
+    day_key = DAY_KEYS[now.weekday()]
+    for sched in schedules:
+        if day_key not in sched.get("days", []):
+            continue
+        try:
+            sh, sm = map(int, sched["start"].split(":"))
+            eh, em = map(int, sched["end"].split(":"))
+            start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            end_dt = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+            if start_dt <= now <= end_dt:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def is_in_schedule(cfg: dict) -> bool:
     """Retourne True si l'heure actuelle est dans la plage du jour courant."""
     now = datetime.now()
@@ -338,6 +387,18 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             _update_system_timestamp(new_state, active, "off")
             _save_state(new_state)
             ntfy_send(f"✈️ {_system_label(active).capitalize()} éteint", "Mode vacances actif — thermostat suspendu.", ntfy_cfg)
+        return
+    if is_in_absence_schedule():
+        state = _load_state()
+        if state.get("state") == "on":
+            import modules.homeassistant as ha_client
+            active = state.get("active_system", "poele")
+            logger.info("Thermostat : extinction %s — horaire d'absence actif", _system_label(active))
+            _turn_off_active_system(ha_client, ha_cfg, active)
+            new_state = {**state, "state": "off", "active_system": None}
+            _update_system_timestamp(new_state, active, "off")
+            _save_state(new_state)
+            ntfy_send(f"🏠 {_system_label(active).capitalize()} éteint", "Horaire d'absence — thermostat suspendu.", ntfy_cfg)
         return
     if not ha_cfg.get("enabled") or not ha_cfg.get("url") or not ha_cfg.get("token"):
         logger.warning("Thermostat : Home Assistant non configuré, skip")

@@ -1046,6 +1046,55 @@ def api_thermostat_vacation_clear():
     return jsonify({"status": "ok"})
 
 
+VALID_DAY_KEYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+
+
+@app.route("/api/thermostat/absence-schedules", methods=["GET"])
+def api_absence_schedules_get():
+    schedules = thermostat_module.get_absence_schedules()
+    active = thermostat_module.is_in_absence_schedule()
+    return jsonify({"schedules": schedules, "active": active})
+
+
+@app.route("/api/thermostat/absence-schedules", methods=["POST"])
+def api_absence_schedules_add():
+    data = request.get_json(force=True)
+    days = data.get("days", [])
+    start = str(data.get("start", "")).strip()
+    end = str(data.get("end", "")).strip()
+    if not days or not isinstance(days, list):
+        return jsonify({"error": "Sélectionnez au moins un jour"}), 400
+    invalid = [d for d in days if d not in VALID_DAY_KEYS]
+    if invalid:
+        return jsonify({"error": f"Jours invalides : {invalid}"}), 400
+    import re
+    hhmm = re.compile(r"^\d{2}:\d{2}$")
+    if not hhmm.match(start) or not hhmm.match(end):
+        return jsonify({"error": "Horaires invalides (format HH:MM attendu)"}), 400
+    try:
+        sh, sm = map(int, start.split(":"))
+        eh, em = map(int, end.split(":"))
+        if not (0 <= sh <= 23 and 0 <= sm <= 59 and 0 <= eh <= 23 and 0 <= em <= 59):
+            raise ValueError()
+        if sh * 60 + sm >= eh * 60 + em:
+            return jsonify({"error": "L'heure de début doit être avant l'heure de fin"}), 400
+    except (ValueError, AttributeError):
+        return jsonify({"error": "Horaires invalides (format HH:MM attendu)"}), 400
+    thermostat_module.add_absence_schedule(days, start, end)
+    logger.info("Horaire d'absence ajouté : %s %s–%s", days, start, end)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/thermostat/absence-schedules/<int:idx>", methods=["DELETE"])
+def api_absence_schedules_remove(idx):
+    schedules = thermostat_module.get_absence_schedules()
+    if idx < 0 or idx >= len(schedules):
+        return jsonify({"error": "Index invalide"}), 400
+    thermostat_module.remove_absence_schedule(idx)
+    logger.info("Horaire d'absence supprimé (index %d)", idx)
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/thermostat/resume", methods=["POST"])
 def api_thermostat_resume():
     """Annule la suspension du thermostat."""
@@ -1075,7 +1124,16 @@ def api_thermostat_toggle():
 def absence_page():
     vacation = thermostat_module.get_vacation()
     on_vacation = thermostat_module.is_on_vacation()
-    return render_template("absence.html", config=config, vacation=vacation, on_vacation=on_vacation)
+    absence_schedules = thermostat_module.get_absence_schedules()
+    in_absence_schedule = thermostat_module.is_in_absence_schedule()
+    return render_template(
+        "absence.html",
+        config=config,
+        vacation=vacation,
+        on_vacation=on_vacation,
+        absence_schedules=absence_schedules,
+        in_absence_schedule=in_absence_schedule,
+    )
 
 
 @app.route("/statistics")
