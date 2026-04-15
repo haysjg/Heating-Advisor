@@ -281,7 +281,7 @@
     function buildSummary(records) {
       const outdoorTemps = records.map(r => r.outdoor_temp).filter(v => v !== null && v !== undefined);
       const indoorTemps  = records.map(r => r.indoor_temp).filter(v => v !== null && v !== undefined);
-      const onCount      = records.filter(r => r.poele_state === 'on').length;
+      const onCount      = records.filter(r => ['on','poele','clim'].includes(r.poele_state)).length;
       const totalMin     = records.length * 10;
       const onMin        = onCount * 10;
 
@@ -338,7 +338,7 @@
       const labels       = records.map(r => new Date(r.ts));
       const outdoorData  = records.map(r => r.outdoor_temp);
       const indoorData   = records.map(r => r.indoor_temp);
-      const poeleData    = records.map(r => r.poele_state === 'on' ? 1 : 0);
+      const poeleData    = records.map(r => ['on','poele','clim'].includes(r.poele_state) ? 1 : 0);
 
       const hasIndoor = indoorData.some(v => v !== null && v !== undefined);
 
