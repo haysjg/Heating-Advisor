@@ -6,8 +6,35 @@ Partagé entre app.py et notify.py.
 import json
 import logging
 import os
+import threading
 
 logger = logging.getLogger(__name__)
+
+_override_lock = threading.Lock()
+
+
+def patch_override(updater) -> None:
+    """Read-modify-write thread-safe sur OVERRIDE_FILE. updater(dict) applique les modifications."""
+    with _override_lock:
+        data = {}
+        if os.path.exists(OVERRIDE_FILE):
+            try:
+                with open(OVERRIDE_FILE) as f:
+                    data = json.load(f)
+            except Exception:
+                pass
+        updater(data)
+        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def write_override(data: dict) -> None:
+    """Écrase OVERRIDE_FILE avec data (thread-safe)."""
+    with _override_lock:
+        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
 OVERRIDE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "config_override.json")
 

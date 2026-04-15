@@ -7,7 +7,6 @@ import logging
 import json
 import os
 import secrets as _secrets
-import threading
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -20,7 +19,7 @@ import config
 from modules.weather import get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze, analyze_tomorrow
-from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE
+from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override, write_override as _write_override
 from modules.crypto import encrypt_password, is_configured
 import modules.homeassistant as ha_client
 import modules.thermostat as thermostat_module
@@ -34,33 +33,6 @@ logger = logging.getLogger(__name__)
 
 RADIATEURS_MANAGED_OFF_FILE = os.path.join(os.path.dirname(__file__), "data", "radiateurs_managed_off.json")
 DELIVERIES_FILE = os.path.join(os.path.dirname(__file__), "data", "deliveries.json")
-
-_override_lock = threading.Lock()
-
-
-def _patch_override(updater) -> None:
-    """Read-modify-write thread-safe sur OVERRIDE_FILE. updater(dict) applique les modifications."""
-    with _override_lock:
-        data = {}
-        if os.path.exists(OVERRIDE_FILE):
-            try:
-                with open(OVERRIDE_FILE) as f:
-                    data = json.load(f)
-            except Exception:
-                pass
-        updater(data)
-        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def _write_override(data: dict) -> None:
-    """Écrase OVERRIDE_FILE avec data (thread-safe)."""
-    with _override_lock:
-        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
 
 def _load_managed_off() -> list:
     try:
