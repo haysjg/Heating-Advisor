@@ -7,6 +7,7 @@ import logging
 import json
 import os
 import secrets as _secrets
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -33,6 +34,32 @@ logger = logging.getLogger(__name__)
 
 RADIATEURS_MANAGED_OFF_FILE = os.path.join(os.path.dirname(__file__), "data", "radiateurs_managed_off.json")
 DELIVERIES_FILE = os.path.join(os.path.dirname(__file__), "data", "deliveries.json")
+
+_override_lock = threading.Lock()
+
+
+def _patch_override(updater) -> None:
+    """Read-modify-write thread-safe sur OVERRIDE_FILE. updater(dict) applique les modifications."""
+    with _override_lock:
+        data = {}
+        if os.path.exists(OVERRIDE_FILE):
+            try:
+                with open(OVERRIDE_FILE) as f:
+                    data = json.load(f)
+            except Exception:
+                pass
+        updater(data)
+        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def _write_override(data: dict) -> None:
+    """Écrase OVERRIDE_FILE avec data (thread-safe)."""
+    with _override_lock:
+        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def _load_managed_off() -> list:
@@ -170,13 +197,7 @@ def api_change_password():
         return jsonify({"error": "Le nouveau mot de passe doit faire au moins 8 caractères"}), 400
     new_hash = generate_password_hash(new_pwd)
     try:
-        override = {}
-        if os.path.exists(OVERRIDE_FILE):
-            with open(OVERRIDE_FILE) as f:
-                override = json.load(f)
-        override.setdefault("AUTH", {})["password_hash"] = new_hash
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(override, f, indent=2, ensure_ascii=False)
+        _patch_override(lambda d: d.setdefault("AUTH", {}).__setitem__("password_hash", new_hash))
         config.AUTH["password_hash"] = new_hash
         logger.info("Mot de passe modifié")
     except Exception as e:
@@ -905,15 +926,8 @@ def api_ha_auto_control():
     data = request.get_json(force=True)
     enabled = bool(data.get("enabled", False))
     config.HOME_ASSISTANT["auto_control"] = enabled
-    # Persiste dans le fichier d'overrides
     try:
-        override = {}
-        if os.path.exists(OVERRIDE_FILE):
-            with open(OVERRIDE_FILE) as f:
-                override = json.load(f)
-        override.setdefault("HOME_ASSISTANT", {})["auto_control"] = enabled
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(override, f, indent=2, ensure_ascii=False)
+        _patch_override(lambda d: d.setdefault("HOME_ASSISTANT", {}).__setitem__("auto_control", enabled))
     except Exception as e:
         logger.error("Sauvegarde auto_control échouée : %s", e)
     logger.info("HA auto_control → %s", enabled)
@@ -1080,13 +1094,7 @@ def api_thermostat_toggle():
     enabled = bool(data.get("enabled", False))
     config.THERMOSTAT["enabled"] = enabled
     try:
-        override = {}
-        if os.path.exists(OVERRIDE_FILE):
-            with open(OVERRIDE_FILE) as f:
-                override = json.load(f)
-        override.setdefault("THERMOSTAT", {})["enabled"] = enabled
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(override, f, indent=2, ensure_ascii=False)
+        _patch_override(lambda d: d.setdefault("THERMOSTAT", {}).__setitem__("enabled", enabled))
     except Exception as e:
         logger.error("Sauvegarde thermostat enabled échouée : %s", e)
     _reschedule_thermostat()
@@ -1592,9 +1600,7 @@ def api_config_save():
                 },
             },
         }
-        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(override, f, indent=2, ensure_ascii=False)
+        _write_override(override)
         apply_overrides(config, override)
         _cache["data"] = None
         _cache["expires_at"] = None
