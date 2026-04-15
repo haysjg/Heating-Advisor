@@ -68,7 +68,7 @@ def get_daily_summary(days: int = 30) -> list[dict]:
                 """
                 SELECT
                     substr(ts, 1, 10) AS day,
-                    SUM(CASE WHEN poele_state IN ('on', 'poele', 'clim') THEN 1 ELSE 0 END) * 10 AS on_minutes,
+                    SUM(CASE WHEN poele_state IN ('on', 'poele') THEN 1 ELSE 0 END) * 10 AS on_minutes,
                     SUM(CASE WHEN poele_state = 'off' THEN 1 ELSE 0 END) * 10 AS off_minutes,
                     AVG(outdoor_temp) AS avg_outdoor,
                     AVG(indoor_temp)  AS avg_indoor
@@ -123,7 +123,7 @@ def get_pellet_consumption_since(since_date: str) -> dict:
             rows = conn.execute(
                 """
                 SELECT substr(ts, 1, 10) AS day,
-                       SUM(CASE WHEN poele_state IN ('on', 'poele', 'clim') THEN 1 ELSE 0 END) * 10 AS on_minutes
+                       SUM(CASE WHEN poele_state IN ('on', 'poele') THEN 1 ELSE 0 END) * 10 AS on_minutes
                 FROM readings
                 WHERE ts >= ?
                 GROUP BY day
@@ -295,14 +295,14 @@ def aggregate_month(year_month: str, config: dict) -> bool:
                     tempo_day_colors[day][tempo_color] = tempo_day_colors[day].get(tempo_color, 0) + 1
 
                 # Coût poêle si allumé
-                if poele_state in ("on", "poele", "clim"):
+                if poele_state in ("on", "poele"):
                     poele_on_count += 1
                     heating_days_set.add(day)
                     total_poele_cost += (10 / 60) * poele_cost_per_hour
 
                 # Coût clim équivalent (pour toutes les lectures où le poêle est on
                 # OU où du chauffage est nécessaire)
-                if poele_state in ("on", "poele", "clim") and outdoor_temp is not None:
+                if poele_state in ("on", "poele") and outdoor_temp is not None:
                     color = tempo_color or "BLUE"
                     elec_price = tempo_prices.get(color, tempo_prices.get("BLUE", {})).get(period, 0.15)
                     cop = interpolate_cop(outdoor_temp, cop_curve)
