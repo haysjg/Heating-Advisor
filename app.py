@@ -1675,6 +1675,18 @@ def _compute_stock() -> dict:
         for d in consumption_data["daily_breakdown"]
     ]
 
+    # Statistiques de coût (uniquement sur les livraisons avec prix renseigné)
+    priced = [d for d in deliveries_sorted if d.get("prix_total")]
+    total_cost = round(sum(d["prix_total"] for d in priced), 2) if priced else None
+    priced_kg = sum(d["nb_sacs"] * d["poids_sac"] for d in priced)
+    avg_price_per_kg = round(sum(d["prix_total"] for d in priced) / priced_kg, 4) if priced and priced_kg > 0 else None
+
+    # Enrichir chaque livraison avec le prix/kg calculé
+    for d in deliveries_sorted:
+        if d.get("prix_total"):
+            kg = d["nb_sacs"] * d["poids_sac"]
+            d["prix_par_kg"] = round(d["prix_total"] / kg, 4) if kg > 0 else None
+
     return {
         "configured": True,
         "deliveries": deliveries_sorted,
@@ -1687,6 +1699,8 @@ def _compute_stock() -> dict:
         "alert": days_remaining is not None and days_remaining <= alert_threshold_days,
         "alert_threshold_days": alert_threshold_days,
         "daily_breakdown": daily_breakdown,
+        "total_cost": total_cost,
+        "avg_price_per_kg": avg_price_per_kg,
         "oldest_date": oldest_date,
         "consumption_kg_per_hour": consumption_kg_per_hour,
     }
@@ -1712,9 +1726,13 @@ def api_stock_delivery_add():
             "nb_sacs": int(data["nb_sacs"]),
             "poids_sac": float(data["poids_sac"]),
         }
-        # Validation basique
         if not delivery["date"] or delivery["nb_sacs"] <= 0 or delivery["poids_sac"] <= 0:
             return jsonify({"error": "Données invalides"}), 400
+        prix_raw = data.get("prix_total")
+        if prix_raw not in (None, "", 0):
+            prix = float(prix_raw)
+            if prix > 0:
+                delivery["prix_total"] = round(prix, 2)
         deliveries = _load_deliveries()
         deliveries.append(delivery)
         deliveries.sort(key=lambda d: d["date"])

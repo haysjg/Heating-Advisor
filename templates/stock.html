@@ -269,6 +269,18 @@
         <span class="stat-label">Taux de consommation</span>
         <span class="stat-val">{{ stock.consumption_kg_per_hour }} kg/h</span>
       </div>
+      {% if stock.total_cost %}
+      <div class="stat-row">
+        <span class="stat-label">Coût total livraisons</span>
+        <span class="stat-val">{{ "%.2f"|format(stock.total_cost) }} €</span>
+      </div>
+      {% endif %}
+      {% if stock.avg_price_per_kg %}
+      <div class="stat-row">
+        <span class="stat-label">Prix moyen du kg</span>
+        <span class="stat-val">{{ "%.4f"|format(stock.avg_price_per_kg) }} €/kg</span>
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -297,6 +309,8 @@
           <th>Sacs</th>
           <th>kg/sac</th>
           <th>Total</th>
+          <th>Prix total</th>
+          <th>€/kg</th>
           <th></th>
         </tr>
       </thead>
@@ -307,6 +321,8 @@
           <td>{{ d.nb_sacs }}</td>
           <td>{{ d.poids_sac }} kg</td>
           <td><strong>{{ (d.nb_sacs * d.poids_sac)|round(0)|int }} kg</strong></td>
+          <td>{% if d.prix_total %}{{ "%.2f"|format(d.prix_total) }} €{% else %}<span style="color:var(--text-sub)">—</span>{% endif %}</td>
+          <td>{% if d.prix_par_kg %}<span style="color:var(--text-sub)">{{ "%.4f"|format(d.prix_par_kg) }}</span>{% else %}<span style="color:var(--text-sub)">—</span>{% endif %}</td>
           <td><button class="btn-del" onclick="deleteDelivery({{ loop.index0 }})">✕</button></td>
         </tr>
         {% endfor %}
@@ -340,14 +356,18 @@
       </div>
       <div class="form-group">
         <label>Nombre de sacs</label>
-        <input type="number" id="m-sacs" min="1" step="1" placeholder="72" oninput="updateModalKg()">
+        <input type="number" id="m-sacs" min="1" step="1" placeholder="72" oninput="updateModalCalc()">
       </div>
       <div class="form-group">
         <label>Poids par sac (kg)</label>
-        <input type="number" id="m-poids" min="1" step="0.5" placeholder="15" oninput="updateModalKg()">
+        <input type="number" id="m-poids" min="1" step="0.5" placeholder="15" oninput="updateModalCalc()">
       </div>
       <div class="form-group full">
-        <label>Total calculé</label>
+        <label>Prix total de la livraison (€) <span style="color:var(--text-sub);font-weight:400">— optionnel</span></label>
+        <input type="number" id="m-prix" min="0" step="0.01" placeholder="ex: 350.00" oninput="updateModalCalc()">
+      </div>
+      <div class="form-group full">
+        <label>Récapitulatif</label>
         <div class="computed-kg" id="m-total">— kg</div>
       </div>
     </div>
@@ -378,7 +398,8 @@ function openModal() {
   document.getElementById('m-date').value = today;
   document.getElementById('m-sacs').value = '';
   document.getElementById('m-poids').value = '15';
-  updateModalKg();
+  document.getElementById('m-prix').value = '';
+  updateModalCalc();
   document.getElementById('modal-overlay').classList.add('open');
 }
 function closeModal() {
@@ -387,26 +408,34 @@ function closeModal() {
 function closeModalIfBackdrop(e) {
   if (e.target === document.getElementById('modal-overlay')) closeModal();
 }
-function updateModalKg() {
+function updateModalCalc() {
   const sacs  = parseFloat(document.getElementById('m-sacs').value) || 0;
   const poids = parseFloat(document.getElementById('m-poids').value) || 0;
-  const total = sacs > 0 && poids > 0 ? (sacs * poids).toFixed(0) + ' kg' : '— kg';
-  document.getElementById('m-total').textContent = total;
+  const prix  = parseFloat(document.getElementById('m-prix').value) || 0;
+  const totalKg = sacs > 0 && poids > 0 ? sacs * poids : 0;
+  let label = totalKg > 0 ? totalKg.toFixed(0) + ' kg' : '— kg';
+  if (totalKg > 0 && prix > 0) {
+    label += ' — ' + (prix / totalKg).toFixed(4) + ' €/kg';
+  }
+  document.getElementById('m-total').textContent = label;
 }
 
 async function submitDelivery() {
   const date  = document.getElementById('m-date').value;
   const sacs  = parseInt(document.getElementById('m-sacs').value);
   const poids = parseFloat(document.getElementById('m-poids').value);
+  const prix  = parseFloat(document.getElementById('m-prix').value) || null;
   if (!date || !sacs || !poids) {
-    showToast('Veuillez remplir tous les champs', 'err');
+    showToast('Veuillez remplir tous les champs obligatoires', 'err');
     return;
   }
+  const payload = { date, nb_sacs: sacs, poids_sac: poids };
+  if (prix && prix > 0) payload.prix_total = prix;
   try {
     const res = await fetch('/api/stock/delivery', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date, nb_sacs: sacs, poids_sac: poids }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error((await res.json()).error);
     showToast('Livraison enregistrée', 'ok');
