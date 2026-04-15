@@ -98,6 +98,18 @@
       transition: background 0.15s;
     }
     .btn-del:hover { background: rgba(239,68,68,0.1); }
+    .btn-edit {
+      background: none;
+      border: 1px solid rgba(59,130,246,0.4);
+      border-radius: 6px;
+      color: var(--blue);
+      cursor: pointer;
+      padding: 0.2rem 0.55rem;
+      font-size: 0.8rem;
+      transition: background 0.15s;
+      margin-right: 0.25rem;
+    }
+    .btn-edit:hover { background: rgba(59,130,246,0.1); }
 
     .btn-add {
       background: rgba(34,197,94,0.12);
@@ -324,7 +336,10 @@
           <td><strong>{{ (d.nb_sacs * d.poids_sac)|round(0)|int }} kg</strong></td>
           <td>{% if d.prix_total %}{{ "%.2f"|format(d.prix_total) }} €{% else %}<span style="color:var(--text-sub)">—</span>{% endif %}</td>
           <td>{% if d.prix_par_kg %}<span style="color:var(--text-sub)">{{ "%.4f"|format(d.prix_par_kg) }}</span>{% else %}<span style="color:var(--text-sub)">—</span>{% endif %}</td>
-          <td><button class="btn-del" onclick="deleteDelivery({{ loop.index0 }})">✕</button></td>
+          <td style="white-space:nowrap">
+            <button class="btn-edit" onclick="openEditModal({{ loop.index0 }}, '{{ d.date }}', {{ d.nb_sacs }}, {{ d.poids_sac }}, {{ d.prix_total if d.prix_total else 'null' }})">✎</button>
+            <button class="btn-del" onclick="deleteDelivery({{ loop.index0 }})">✕</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -346,10 +361,10 @@
   </div>
 {% endif %}
 
-{# ── Modal ajout livraison ── #}
+{# ── Modal ajout / édition livraison ── #}
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalIfBackdrop(event)">
   <div class="modal-box">
-    <h3>🪵 Nouvelle livraison</h3>
+    <h3 id="m-title">🪵 Nouvelle livraison</h3>
     <div class="modal-grid">
       <div class="form-group full">
         <label>Date de livraison</label>
@@ -374,7 +389,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Annuler</button>
-      <button class="btn-confirm" onclick="submitDelivery()">Enregistrer</button>
+      <button class="btn-confirm" id="m-submit" onclick="submitDelivery()">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -394,12 +409,28 @@ function showToast(msg, type) {
 }
 
 // ── Modal ───────────────────────────────────────────
+let _editIdx = null;  // null = ajout, entier = édition
+
 function openModal() {
+  _editIdx = null;
+  document.getElementById('m-title').textContent = '🪵 Nouvelle livraison';
+  document.getElementById('m-submit').textContent = 'Enregistrer';
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('m-date').value = today;
   document.getElementById('m-sacs').value = '';
   document.getElementById('m-poids').value = '15';
   document.getElementById('m-prix').value = '';
+  updateModalCalc();
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function openEditModal(idx, date, sacs, poids, prix) {
+  _editIdx = idx;
+  document.getElementById('m-title').textContent = '✎ Modifier la livraison';
+  document.getElementById('m-submit').textContent = 'Modifier';
+  document.getElementById('m-date').value = date;
+  document.getElementById('m-sacs').value = sacs;
+  document.getElementById('m-poids').value = poids;
+  document.getElementById('m-prix').value = prix !== null ? prix : '';
   updateModalCalc();
   document.getElementById('modal-overlay').classList.add('open');
 }
@@ -432,14 +463,17 @@ async function submitDelivery() {
   }
   const payload = { date, nb_sacs: sacs, poids_sac: poids };
   if (prix && prix > 0) payload.prix_total = prix;
+  const isEdit = _editIdx !== null;
+  const url    = isEdit ? '/api/stock/delivery/' + _editIdx : '/api/stock/delivery';
+  const method = isEdit ? 'PUT' : 'POST';
   try {
-    const res = await fetch('/api/stock/delivery', {
-      method: 'POST',
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error((await res.json()).error);
-    showToast('Livraison enregistrée', 'ok');
+    showToast(isEdit ? 'Livraison modifiée' : 'Livraison enregistrée', 'ok');
     closeModal();
     setTimeout(() => location.reload(), 800);
   } catch (e) {

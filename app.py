@@ -1686,6 +1686,34 @@ def api_stock_delivery_add():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/stock/delivery/<int:idx>", methods=["PUT"])
+def api_stock_delivery_update(idx: int):
+    data = request.get_json(force=True)
+    try:
+        delivery = {
+            "date": str(data["date"]),
+            "nb_sacs": int(data["nb_sacs"]),
+            "poids_sac": float(data["poids_sac"]),
+        }
+        if not delivery["date"] or delivery["nb_sacs"] <= 0 or delivery["poids_sac"] <= 0:
+            return jsonify({"error": "Données invalides"}), 400
+        prix_raw = data.get("prix_total")
+        if prix_raw not in (None, "", 0):
+            prix = float(prix_raw)
+            if prix > 0:
+                delivery["prix_total"] = round(prix, 2)
+        deliveries = _load_deliveries()
+        if idx < 0 or idx >= len(deliveries):
+            return jsonify({"error": "Index invalide"}), 400
+        deliveries[idx] = delivery
+        deliveries.sort(key=lambda d: d["date"])
+        _save_deliveries(deliveries)
+        logger.info("Stock : livraison modifiée index %d → %s", idx, delivery["date"])
+        return jsonify({"status": "ok"})
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+
+
 @app.route("/api/stock/delivery/<int:idx>", methods=["DELETE"])
 def api_stock_delivery_delete(idx: int):
     deliveries = _load_deliveries()
