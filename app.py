@@ -113,7 +113,6 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=24)
 limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 load_overrides(config)
-_migrate_deliveries_from_override()
 
 # ── Authentification ─────────────────────────────────────────
 
@@ -1758,6 +1757,8 @@ def api_stock_delivery_delete(idx: int):
     logger.info("Stock : livraison supprimée index %d (%s)", idx, removed.get("date"))
     return jsonify({"status": "ok"})
 
+
+_migrate_deliveries_from_override()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
