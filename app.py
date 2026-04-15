@@ -1664,6 +1664,7 @@ def _compute_stock() -> dict:
     days_since = max((datetime.now() - datetime.strptime(oldest_date, "%Y-%m-%d")).days, 1)
     avg_daily_kg = round(total_kg_consumed / days_since, 3) if total_kg_consumed > 0 else None
     days_remaining = round(remaining_kg / avg_daily_kg) if avg_daily_kg and avg_daily_kg > 0 else None
+    depletion_date = (datetime.now() + timedelta(days=days_remaining)).strftime("%d %b %Y") if days_remaining is not None else None
 
     # Breakdown journalier enrichi avec kg
     daily_breakdown = [
@@ -1696,6 +1697,7 @@ def _compute_stock() -> dict:
         "remaining_pct": round(remaining_kg / total_kg_delivered * 100, 1) if total_kg_delivered > 0 else 0,
         "avg_daily_kg": avg_daily_kg,
         "days_remaining": days_remaining,
+        "depletion_date": depletion_date,
         "alert": days_remaining is not None and days_remaining <= alert_threshold_days,
         "alert_threshold_days": alert_threshold_days,
         "daily_breakdown": daily_breakdown,

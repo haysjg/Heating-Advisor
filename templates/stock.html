@@ -211,7 +211,7 @@
   {# ── Alerte stock faible ── #}
   {% if stock.alert %}
   <div class="alert-banner">
-    ⚠️ Stock faible — environ <strong>{{ stock.days_remaining }} jours</strong> restants (seuil : {{ stock.alert_threshold_days }} jours).
+    ⚠️ Stock faible — environ <strong>{{ stock.days_remaining }} jours</strong> restants (épuisement estimé le {{ stock.depletion_date }}).
     Pensez à commander.
   </div>
   {% endif %}
@@ -248,6 +248,7 @@
           {{ stock.days_remaining }}<span class="big-unit">j</span>
         </div>
         <div style="font-size:0.82rem; color:var(--text-sub); margin-top:0.3rem;">jours estimés</div>
+        <div style="font-size:0.78rem; color:var(--text-sub); margin-top:0.2rem;">≈ {{ stock.depletion_date }}</div>
         {% else %}
         <div style="color:var(--text-sub); font-size:0.9rem; padding:0.5rem;">Pas assez de données</div>
         {% endif %}
