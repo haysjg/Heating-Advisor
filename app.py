@@ -1591,6 +1591,17 @@ def api_config_save():
                 },
             },
         }
+        # Préserver les clés non gérées par ce formulaire (ex: _deliveries)
+        existing = {}
+        if os.path.exists(OVERRIDE_FILE):
+            try:
+                with open(OVERRIDE_FILE) as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        for key in ("_deliveries",):
+            if key in existing:
+                override[key] = existing[key]
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
         with open(OVERRIDE_FILE, "w") as f:
             json.dump(override, f, indent=2, ensure_ascii=False)
