@@ -457,7 +457,7 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
         hp_price = config["TEMPO_PRICES"]["RED"]["HP"]
         effective_cop_curve = get_effective_cop_curve(config)
         clim_result = compute_clim_cost(temp, config["CLIM"], hp_price, effective_cop_curve) if temp is not None else {
-            "available": False, "cost_per_hour": None
+            "available": False, "cost_per_hour": None, "note": "Température extérieure indisponible"
         }
         clim_cost = clim_result.get("cost_per_hour")
         poele_cost = poele_result["cost_per_hour"]
@@ -495,7 +495,7 @@ def analyze_tomorrow(tomorrow_weather: dict, tempo: dict, config: dict) -> dict:
     hp_price = config["TEMPO_PRICES"][color]["HP"]
     effective_cop_curve = get_effective_cop_curve(config)
     clim_result = compute_clim_cost(temp, config["CLIM"], hp_price, effective_cop_curve) if temp is not None else {
-        "available": False, "cost_per_hour": None
+        "available": False, "cost_per_hour": None, "note": "Température extérieure indisponible"
     }
     poele_result = compute_poele_cost(config["POELE"])
 
