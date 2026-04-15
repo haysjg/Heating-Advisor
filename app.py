@@ -32,6 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 RADIATEURS_MANAGED_OFF_FILE = os.path.join(os.path.dirname(__file__), "data", "radiateurs_managed_off.json")
+DELIVERIES_FILE = os.path.join(os.path.dirname(__file__), "data", "deliveries.json")
 
 
 def _load_managed_off() -> list:
@@ -112,6 +113,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=24)
 limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 load_overrides(config)
+_migrate_deliveries_from_override()
 
 # ── Authentification ─────────────────────────────────────────
 
@@ -1591,17 +1593,6 @@ def api_config_save():
                 },
             },
         }
-        # Préserver les clés non gérées par ce formulaire (ex: _deliveries)
-        existing = {}
-        if os.path.exists(OVERRIDE_FILE):
-            try:
-                with open(OVERRIDE_FILE) as f:
-                    existing = json.load(f)
-            except Exception:
-                pass
-        for key in ("_deliveries",):
-            if key in existing:
-                override[key] = existing[key]
         os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
         with open(OVERRIDE_FILE, "w") as f:
             json.dump(override, f, indent=2, ensure_ascii=False)
@@ -1626,28 +1617,45 @@ def api_config_save():
 
 # ── Stock granulés ────────────────────────────────────────────
 
-def _load_deliveries() -> list:
-    """Charge l'historique des livraisons depuis le fichier d'overrides."""
+def _migrate_deliveries_from_override() -> None:
+    """Migration unique : déplace _deliveries de config_override.json vers deliveries.json."""
+    if os.path.exists(DELIVERIES_FILE):
+        return
     try:
-        if os.path.exists(OVERRIDE_FILE):
-            with open(OVERRIDE_FILE) as f:
-                return json.load(f).get("_deliveries", [])
+        if not os.path.exists(OVERRIDE_FILE):
+            return
+        with open(OVERRIDE_FILE) as f:
+            override = json.load(f)
+        if "_deliveries" not in override:
+            return
+        deliveries = override.pop("_deliveries")
+        os.makedirs(os.path.dirname(DELIVERIES_FILE), exist_ok=True)
+        with open(DELIVERIES_FILE, "w") as f:
+            json.dump(deliveries, f, indent=2, ensure_ascii=False)
+        with open(OVERRIDE_FILE, "w") as f:
+            json.dump(override, f, indent=2, ensure_ascii=False)
+        logger.info("Migration : %d livraison(s) déplacée(s) vers deliveries.json", len(deliveries))
+    except Exception as e:
+        logger.error("Migration livraisons échouée : %s", e)
+
+
+def _load_deliveries() -> list:
+    """Charge l'historique des livraisons depuis deliveries.json."""
+    try:
+        if os.path.exists(DELIVERIES_FILE):
+            with open(DELIVERIES_FILE) as f:
+                return json.load(f)
     except Exception:
         pass
     return []
 
 
 def _save_deliveries(deliveries: list) -> None:
-    """Persiste la liste des livraisons dans le fichier d'overrides."""
+    """Persiste la liste des livraisons dans deliveries.json."""
     try:
-        override = {}
-        if os.path.exists(OVERRIDE_FILE):
-            with open(OVERRIDE_FILE) as f:
-                override = json.load(f)
-        override["_deliveries"] = deliveries
-        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(override, f, indent=2, ensure_ascii=False)
+        os.makedirs(os.path.dirname(DELIVERIES_FILE), exist_ok=True)
+        with open(DELIVERIES_FILE, "w") as f:
+            json.dump(deliveries, f, indent=2, ensure_ascii=False)
     except Exception as e:
         logger.error("Stock : sauvegarde livraisons échouée : %s", e)
 
