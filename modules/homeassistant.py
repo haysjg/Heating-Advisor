@@ -145,8 +145,17 @@ def get_presence_extended(cfg: dict, person_entities: list, nearby_zone_name: st
             logger.info("HA présence — %s: %s", entity_id, person_state)
         if any(s == "home" for s in states):
             return "home"
-        if any(s == nearby_zone_name for s in states):
+        nearby_lower = nearby_zone_name.lower()
+        if any(s.lower() == nearby_lower for s in states):
+            if not any(s == nearby_zone_name for s in states):
+                logger.warning(
+                    "HA présence — zone '%s' reconnue en ignorant la casse (config: '%s'). "
+                    "Corriger nearby_zone_name dans la config.",
+                    next(s for s in states if s.lower() == nearby_lower),
+                    nearby_zone_name,
+                )
             return "nearby"
+        logger.debug("HA présence — aucun dans zone proximité '%s', états: %s", nearby_zone_name, states)
         return "away"
     except Exception as e:
         logger.error("HA get_presence_extended échoué : %s", e)

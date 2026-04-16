@@ -659,8 +659,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
         elif presence == "nearby":
             if state.get("away_since"):
+                was_shut_down_for_absence = state.get("state") == "off"
                 state = {**state, "away_since": None}
                 _save_state(state)
+                if was_shut_down_for_absence:
+                    logger.info("Thermostat : retour en zone proximité après absence — chauffage éligible au redémarrage")
+            else:
+                was_shut_down_for_absence = False
             if datetime.now().hour >= no_ignition_after:
                 if not state.get("nearby_restricted_since"):
                     state = {**state, "nearby_restricted_since": datetime.now().isoformat()}
@@ -713,7 +718,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     prev_system = active_system
                     logger.info("Thermostat : extinction %s — absence confirmée", _system_label(prev_system))
                     _turn_off_active_system(ha_client, ha_cfg, prev_system)
-                    new_state = {**state, "state": "off", "active_system": None}
+                    new_state = {**state, "state": "off", "active_system": None, "off_reason": "absence"}
                     _update_system_timestamp(new_state, prev_system, "off")
                     _save_state(new_state)
                     ntfy_send(f"🚗 {_system_label(prev_system).capitalize()} éteint", "Tout le monde absent — thermostat en pause.", ntfy_cfg)
@@ -759,17 +764,20 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     effective_temp, temp_on, temp, recommendation,
                 )
                 ha_client.turn_on(ha_cfg)
+                off_reason = state.get("off_reason")
                 new_state = {
                     **state,
                     "state": "on",
                     "active_system": "poele",
+                    "off_reason": None,
                 }
                 _update_system_timestamp(new_state, "poele", "on")
                 _save_state(new_state)
                 _ext = f", {outdoor_temp:.1f}°C dehors" if outdoor_temp is not None else ""
+                _reason = " (retour détecté)" if off_reason == "absence" else ""
                 ntfy_send(
                     "🔥 Poêle allumé",
-                    f"Intérieur : {temp:.1f}°C (ressenti {effective_temp:.1f}°C){_ext}.",
+                    f"Intérieur : {temp:.1f}°C (ressenti {effective_temp:.1f}°C){_ext}{_reason}.",
                     ntfy_cfg,
                 )
             elif recommendation == "clim" and clim_available:
@@ -778,17 +786,20 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     effective_temp, temp_on, temp, recommendation,
                 )
                 ha_client.turn_on_clim(ha_cfg, temp_off)
+                off_reason = state.get("off_reason")
                 new_state = {
                     **state,
                     "state": "on",
                     "active_system": "clim",
+                    "off_reason": None,
                 }
                 _update_system_timestamp(new_state, "clim", "on")
                 _save_state(new_state)
                 _ext = f", {outdoor_temp:.1f}°C dehors" if outdoor_temp is not None else ""
+                _reason = " (retour détecté)" if off_reason == "absence" else ""
                 ntfy_send(
                     "❄️ Clim allumée",
-                    f"Intérieur : {temp:.1f}°C (ressenti {effective_temp:.1f}°C){_ext}. Consigne : {temp_off}°C.",
+                    f"Intérieur : {temp:.1f}°C (ressenti {effective_temp:.1f}°C){_ext}. Consigne : {temp_off}°C{_reason}.",
                     ntfy_cfg,
                 )
             else:
