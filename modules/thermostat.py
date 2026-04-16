@@ -367,6 +367,34 @@ def _system_icon(system: str | None) -> str:
     return {"poele": "🔥", "clim": "❄️"}.get(system, "⏹")
 
 
+def _maybe_send_no_ignition_notif(
+    state: dict, reason_key: str, title: str, message: str, ntfy_cfg: dict, throttle_minutes: int = 60
+) -> dict:
+    """Envoie une notification 'non-allumage' throttlée.
+
+    N'envoie que si la raison a changé ou si le délai throttle_minutes est écoulé.
+    """
+    from modules.ntfy_push import send as ntfy_send
+    last = state.get("no_ignition_notif", {})
+    last_reason = last.get("reason")
+    last_time_str = last.get("sent_at")
+
+    should_send = last_reason != reason_key
+    if not should_send:
+        if last_time_str:
+            elapsed = (datetime.now() - datetime.fromisoformat(last_time_str)).total_seconds() / 60
+            should_send = elapsed >= throttle_minutes
+        else:
+            should_send = True
+
+    if should_send:
+        ntfy_send(title, message, ntfy_cfg)
+        state = {**state, "no_ignition_notif": {"reason": reason_key, "sent_at": datetime.now().isoformat()}}
+        _save_state(state)
+
+    return state
+
+
 def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, email_cfg: dict = None,
                     ntfy_cfg: dict = None, outdoor_temp: float = None) -> None:
     """
@@ -480,12 +508,15 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
     # ── Synchronisation avec l'état réel HA (poêle + clim) ───
     ha_state = ha_client.get_state(ha_cfg)
-    poele_real_on = ha_state is not None and ha_state.get("state") not in ("off", "unavailable", "unknown", None)
+    poele_ha_unavailable = ha_state is None or ha_state.get("state") in ("unavailable", "unknown")
+    poele_real_on = not poele_ha_unavailable and ha_state.get("state") not in ("off", None)
 
     clim_real_on = False
+    clim_ha_unavailable = True
     if clim_available:
         clim_state = ha_client.get_clim_state(ha_cfg)
-        clim_real_on = clim_state is not None and clim_state.get("state") not in ("off", "unavailable", "unknown", None)
+        clim_ha_unavailable = clim_state is None or clim_state.get("state") in ("unavailable", "unknown")
+        clim_real_on = not clim_ha_unavailable and clim_state.get("state") not in ("off", None)
 
     current = state.get("state", "off")
     active_system = state.get("active_system")
@@ -528,8 +559,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
         system_still_on = (active_system == "poele" and poele_real_on) or (active_system == "clim" and clim_real_on)
         in_clim_overlap = bool(state.get("clim_overlap_until"))
         if not system_still_on:
+            # Si HA rapporte l'entité comme indisponible, ne pas interpréter comme extinction manuelle
+            if active_system == "poele" and poele_ha_unavailable:
+                logger.debug("Thermostat : poêle indisponible dans HA (unavailable/injoignable) — état conservé")
+            elif active_system == "clim" and clim_ha_unavailable:
+                logger.debug("Thermostat : clim indisponible dans HA — état conservé")
             # Vérifier si l'autre système a été allumé manuellement (transition manuelle)
-            if active_system == "poele" and clim_real_on and in_clim_overlap:
+            elif active_system == "poele" and clim_real_on and in_clim_overlap:
                 pass  # chevauchement clim → poêle : clim encore active normalement, pas une transition manuelle
             elif active_system == "poele" and clim_real_on:
                 logger.info("Thermostat : transition manuelle poêle → clim détectée")
@@ -567,7 +603,14 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     # Récupérer le timestamp du système actif
     last_on_str = _get_system_timestamp(state, active_system, "on") if active_system else None
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
-    on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
+    if last_on is None and active_system:
+        # Timestamp manquant (état migré ou corrompu) : on considère que le système
+        # est allumé depuis longtemps pour que toutes les conditions min_on soient satisfaites
+        # et que l'extinction puisse avoir lieu normalement.
+        logger.warning("Thermostat : timestamp last_turned_on manquant pour %s — on_minutes forcé à 9999", active_system)
+        on_minutes = 9999.0
+    else:
+        on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 0
     min_on = min_on_clim if active_system == "clim" else min_on_poele
 
     logger.info(
@@ -636,6 +679,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         new_state = {**state, "state": "off", "active_system": None}
                         _update_system_timestamp(new_state, prev_system, "off")
                         _save_state(new_state)
+                    elif effective_temp < temp_on:
+                        state = _maybe_send_no_ignition_notif(
+                            state, "nearby_restricted",
+                            "🏃 Chauffage non démarré",
+                            f"Température basse ({effective_temp:.1f}°C) — retour imminent (zone proximité).",
+                            ntfy_cfg,
+                        )
                     return
                 else:
                     logger.info("Thermostat : zone proximité après %dh, grâce encore %d min (écoulé %.0f min / %d min)", no_ignition_after, int(nearby_grace - restricted_min), restricted_min, nearby_grace)
@@ -667,6 +717,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     _update_system_timestamp(new_state, prev_system, "off")
                     _save_state(new_state)
                     ntfy_send(f"🚗 {_system_label(prev_system).capitalize()} éteint", "Tout le monde absent — thermostat en pause.", ntfy_cfg)
+                elif effective_temp < temp_on:
+                    state = _maybe_send_no_ignition_notif(
+                        state, "away",
+                        "🚗 Chauffage non démarré",
+                        f"Température basse ({effective_temp:.1f}°C) — tout le monde absent.",
+                        ntfy_cfg,
+                    )
                 return
             else:
                 logger.info("Thermostat : absence détectée, grâce encore %d min (écoulé %.0f min / %d min)", int(away_grace - away_min), away_min, away_grace)
@@ -680,6 +737,14 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
         if datetime.now() < suspended_until:
             remaining = int((suspended_until - datetime.now()).total_seconds() / 60)
             logger.debug("Thermostat : suspendu encore %d min", remaining)
+            if effective_temp < temp_on:
+                until_str = suspended_until.strftime("%Hh%M")
+                state = _maybe_send_no_ignition_notif(
+                    state, "suspended",
+                    "⏸ Chauffage non démarré",
+                    f"Température basse ({effective_temp:.1f}°C) — thermostat suspendu encore {remaining} min (jusqu'à {until_str}, extinction manuelle).",
+                    ntfy_cfg,
+                )
             return
         else:
             logger.info("Thermostat : fin de suspension, reprise normale")
@@ -726,6 +791,30 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     f"Intérieur : {temp:.1f}°C (ressenti {effective_temp:.1f}°C){_ext}. Consigne : {temp_off}°C.",
                     ntfy_cfg,
                 )
+            else:
+                # Temp basse et en plage, mais impossible de démarrer
+                if recommendation not in ("poele", "clim"):
+                    reason_key = "no_recommendation"
+                    reason_msg = f"aucun chauffage recommandé (recommandation : {recommendation or 'none'})"
+                elif recommendation == "clim" and not clim_available:
+                    reason_key = "clim_unavailable"
+                    reason_msg = "clim recommandée mais non disponible dans Home Assistant"
+                else:
+                    reason_key = f"blocked_{recommendation}"
+                    reason_msg = f"recommandation {recommendation} impossible à exécuter"
+                state = _maybe_send_no_ignition_notif(
+                    state, reason_key,
+                    "🌡️ Chauffage non démarré",
+                    f"Température basse ({effective_temp:.1f}°C) — {reason_msg}.",
+                    ntfy_cfg,
+                )
+        elif not in_schedule and effective_temp < temp_on:
+            state = _maybe_send_no_ignition_notif(
+                state, "out_of_schedule",
+                "🌙 Chauffage non démarré",
+                f"Température basse ({effective_temp:.1f}°C) — hors plage horaire.",
+                ntfy_cfg,
+            )
     else:  # current == "on"
         if in_schedule:
             # ── Transition : recommandation changée et min_on respecté ──

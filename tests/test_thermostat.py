@@ -356,3 +356,90 @@ class TestCheckAndApply:
                 assert c[0][0].get("state") == "off"
                 break
         assert found_suspend, "Should have set suspended_until after manual off"
+
+
+# ── Régression : timestamp last_turned_on manquant ───────────────
+
+
+class TestMissingTimestampRegression:
+    """Régression : si last_turned_on est None (état migré/corrompu),
+    on_minutes était 0 → ni la cible de température ni la fin de plage
+    ne pouvaient éteindre le système. Doit maintenant utiliser 9999 min.
+    """
+
+    def _make_state_no_timestamp(self, active_system="clim"):
+        """État ON mais sans timestamp last_turned_on."""
+        return {
+            "state": "on",
+            "active_system": active_system,
+            "last_turned_on": None,
+            "last_turned_off": None,
+            "sensor_failures": 0,
+            "last_alert_sent": None,
+            "suspended_until": None,
+            "system_history": {
+                "poele": {"last_turned_on": None, "last_turned_off": None},
+                "clim": {"last_turned_on": None, "last_turned_off": None},
+            },
+        }
+
+    @freeze_time("2025-01-06 10:00:00")  # lundi dans la plage
+    @patch("modules.thermostat.is_on_vacation", return_value=False)
+    @patch("modules.thermostat.is_in_absence_schedule", return_value=False)
+    @patch("modules.thermostat._load_state")
+    @patch("modules.thermostat._save_state")
+    @patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": 23.5, "humidity": 50.0})
+    @patch("modules.homeassistant.get_clim_state", return_value={"state": "heat"})
+    @patch("modules.homeassistant.get_state", return_value={"state": "off"})
+    @patch("modules.homeassistant.turn_off_clim", return_value=True)
+    @patch("modules.ntfy_push.send")
+    def test_clim_on_temp_reached_no_timestamp_turns_off(
+        self, mock_ntfy, mock_turn_off_clim, mock_ha_state, mock_clim_state,
+        mock_indoor, mock_save, mock_load, mock_sched, mock_vac,
+        base_ha_cfg, base_thermostat_cfg
+    ):
+        """Clim allumée sans timestamp, temp atteinte → doit s'éteindre (régression on_minutes=0)."""
+        base_ha_cfg = {**base_ha_cfg, "clim_entity_id": "climate.test_clim"}
+        mock_load.return_value = self._make_state_no_timestamp("clim")
+        check_and_apply(base_ha_cfg, base_thermostat_cfg, "clim")
+        mock_turn_off_clim.assert_called_once()
+
+    @freeze_time("2025-01-06 23:00:00")  # lundi hors plage
+    @patch("modules.thermostat.is_on_vacation", return_value=False)
+    @patch("modules.thermostat.is_in_absence_schedule", return_value=False)
+    @patch("modules.thermostat._load_state")
+    @patch("modules.thermostat._save_state")
+    @patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": 20.0, "humidity": 50.0})
+    @patch("modules.homeassistant.get_clim_state", return_value={"state": "heat"})
+    @patch("modules.homeassistant.get_state", return_value={"state": "off"})
+    @patch("modules.homeassistant.turn_off_clim", return_value=True)
+    @patch("modules.ntfy_push.send")
+    def test_clim_on_out_of_schedule_no_timestamp_turns_off(
+        self, mock_ntfy, mock_turn_off_clim, mock_ha_state, mock_clim_state,
+        mock_indoor, mock_save, mock_load, mock_sched, mock_vac,
+        base_ha_cfg, base_thermostat_cfg
+    ):
+        """Clim allumée sans timestamp, hors plage → doit s'éteindre (régression on_minutes=0)."""
+        base_ha_cfg = {**base_ha_cfg, "clim_entity_id": "climate.test_clim"}
+        mock_load.return_value = self._make_state_no_timestamp("clim")
+        check_and_apply(base_ha_cfg, base_thermostat_cfg, "clim")
+        mock_turn_off_clim.assert_called_once()
+
+    @freeze_time("2025-01-06 23:00:00")  # lundi hors plage
+    @patch("modules.thermostat.is_on_vacation", return_value=False)
+    @patch("modules.thermostat.is_in_absence_schedule", return_value=False)
+    @patch("modules.thermostat._load_state")
+    @patch("modules.thermostat._save_state")
+    @patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": 20.0, "humidity": 50.0})
+    @patch("modules.homeassistant.get_state", return_value={"state": "heat"})
+    @patch("modules.homeassistant.turn_off", return_value=True)
+    @patch("modules.ntfy_push.send")
+    def test_poele_on_out_of_schedule_no_timestamp_turns_off(
+        self, mock_ntfy, mock_ha_off, mock_ha_state,
+        mock_indoor, mock_save, mock_load, mock_sched, mock_vac,
+        base_ha_cfg, base_thermostat_cfg
+    ):
+        """Poêle allumé sans timestamp, hors plage → doit s'éteindre (régression on_minutes=0)."""
+        mock_load.return_value = self._make_state_no_timestamp("poele")
+        check_and_apply(base_ha_cfg, base_thermostat_cfg, "poele")
+        mock_ha_off.assert_called_once_with(base_ha_cfg)
