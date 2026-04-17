@@ -213,55 +213,166 @@ class TestVacationFullCycle:
 def _validate_vacation_dates(start: str, end: str):
     """
     Réplique la validation de api_thermostat_vacation_set.
+    Accepte des datetime ISO complets (YYYY-MM-DDTHH:MM).
     Retourne (True, None) si valide, (False, message) sinon.
     """
     if not start or not end:
-        return False, "Dates invalides (format YYYY-MM-DD attendu)"
+        return False, "Dates invalides (format YYYY-MM-DDTHH:MM attendu)"
     try:
-        s = datetime.fromisoformat(start).date()
-        e = datetime.fromisoformat(end).date()
-        if s > e:
-            return False, "La date de début doit être avant la date de fin"
+        s = datetime.fromisoformat(start)
+        e = datetime.fromisoformat(end)
+        if s >= e:
+            return False, "Le départ doit être avant le retour"
         return True, None
     except Exception:
-        return False, "Dates invalides (format YYYY-MM-DD attendu)"
+        return False, "Dates invalides (format YYYY-MM-DDTHH:MM attendu)"
 
 
 class TestVacationApiValidation:
 
-    def test_valid_dates_pass(self):
-        ok, err = _validate_vacation_dates("2026-07-01", "2026-07-15")
+    def test_valid_datetimes_pass(self):
+        ok, err = _validate_vacation_dates("2026-07-01T08:00", "2026-07-15T18:00")
         assert ok is True
         assert err is None
 
-    def test_start_after_end_rejected(self):
-        ok, err = _validate_vacation_dates("2026-07-20", "2026-07-01")
-        assert ok is False
-        assert "début" in err
-
-    def test_start_equals_end_passes(self):
-        ok, err = _validate_vacation_dates("2026-07-08", "2026-07-08")
+    def test_same_day_different_times_passes(self):
+        """Départ et retour le même jour avec des heures différentes."""
+        ok, err = _validate_vacation_dates("2026-07-08T08:00", "2026-07-08T20:00")
         assert ok is True
+
+    def test_start_after_end_rejected(self):
+        ok, err = _validate_vacation_dates("2026-07-20T08:00", "2026-07-01T18:00")
+        assert ok is False
+        assert "retour" in err or "avant" in err
+
+    def test_start_equals_end_rejected(self):
+        """Même datetime de départ et de retour → durée nulle, rejeté."""
+        ok, err = _validate_vacation_dates("2026-07-08T14:00", "2026-07-08T14:00")
+        assert ok is False
 
     def test_invalid_format_rejected(self):
         ok, err = _validate_vacation_dates("2026/07/01", "2026/07/15")
         assert ok is False
 
     def test_empty_start_rejected(self):
-        ok, err = _validate_vacation_dates("", "2026-07-15")
+        ok, err = _validate_vacation_dates("", "2026-07-15T18:00")
         assert ok is False
 
     def test_empty_end_rejected(self):
-        ok, err = _validate_vacation_dates("2026-07-01", "")
+        ok, err = _validate_vacation_dates("2026-07-01T08:00", "")
         assert ok is False
 
     def test_none_start_rejected(self):
-        ok, err = _validate_vacation_dates(None, "2026-07-15")
+        ok, err = _validate_vacation_dates(None, "2026-07-15T18:00")
         assert ok is False
 
     def test_garbage_values_rejected(self):
         ok, err = _validate_vacation_dates("not-a-date", "also-not")
         assert ok is False
+
+
+# ── is_on_vacation : tests avec horaires (datetime complet) ─────
+
+
+class TestIsOnVacationWithDatetime:
+    """Tests du mode vacances avec heures de départ et de retour.
+
+    Scénario de référence : départ 23/04 à 14h00, retour 25/04 à 18h00.
+    Vérifie les bornes exactes et les cas limites à l'heure près.
+    """
+
+    START = "2026-04-23T14:00"
+    END   = "2026-04-25T18:00"
+
+    @freeze_time("2026-04-23 15:00:00")
+    def test_during_vacation_returns_true(self):
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is True
+
+    @freeze_time("2026-04-23 14:00:00")
+    def test_exactly_at_start_returns_true(self):
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is True
+
+    @freeze_time("2026-04-25 18:00:00")
+    def test_exactly_at_end_returns_true(self):
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is True
+
+    @freeze_time("2026-04-23 13:59:00")
+    def test_one_minute_before_start_returns_false(self):
+        """Le thermostat doit fonctionner jusqu'à l'heure de départ exacte."""
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is False
+
+    @freeze_time("2026-04-25 18:01:00")
+    def test_one_minute_after_end_returns_false(self):
+        """Le thermostat reprend dès l'heure de retour passée."""
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is False
+
+    @freeze_time("2026-04-23 00:00:00")
+    def test_morning_of_departure_day_returns_false(self):
+        """Le matin du jour de départ, avant l'heure, pas encore en vacances."""
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is False
+
+    @freeze_time("2026-04-25 23:59:00")
+    def test_evening_of_return_day_after_end_returns_false(self):
+        """Le soir du jour de retour, après l'heure, vacances terminées."""
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is False
+
+    @freeze_time("2026-04-24 12:00:00")
+    def test_middle_day_returns_true(self):
+        """Journée entière entre départ et retour → vacances actives."""
+        set_vacation(self.START, self.END)
+        assert is_on_vacation() is True
+
+    @freeze_time("2026-04-23 14:30:00")
+    def test_same_day_vacation_active(self):
+        """Vacances départ et retour le même jour."""
+        set_vacation("2026-04-23T14:00", "2026-04-23T20:00")
+        assert is_on_vacation() is True
+
+    @freeze_time("2026-04-23 20:01:00")
+    def test_same_day_vacation_after_end_returns_false(self):
+        set_vacation("2026-04-23T14:00", "2026-04-23T20:00")
+        assert is_on_vacation() is False
+
+
+# ── Rétrocompatibilité : anciennes valeurs sans heure ────────────
+
+
+class TestIsOnVacationBackwardCompat:
+    """Les dates stockées sans heure (ancienne version) restent fonctionnelles.
+
+    Règle de conversion appliquée dans is_on_vacation :
+    - date seule (start) → 00:00 (actif depuis le début du jour)
+    - date seule (end)   → 23:59 (actif jusqu'à la fin du jour)
+    """
+
+    @freeze_time("2026-07-10 12:00:00")
+    def test_date_only_active_during_range(self):
+        set_vacation("2026-07-01", "2026-07-15")
+        assert is_on_vacation() is True
+
+    @freeze_time("2026-07-15 23:00:00")
+    def test_date_only_end_of_last_day_still_active(self):
+        """Fin de journée du dernier jour → toujours actif (end traité à 23:59)."""
+        set_vacation("2026-07-01", "2026-07-15")
+        assert is_on_vacation() is True
+
+    @freeze_time("2026-07-16 00:00:00")
+    def test_date_only_day_after_end_returns_false(self):
+        set_vacation("2026-07-01", "2026-07-15")
+        assert is_on_vacation() is False
+
+    @freeze_time("2026-07-01 00:00:00")
+    def test_date_only_start_of_first_day_active(self):
+        """Début de journée du premier jour → actif (start traité à 00:00)."""
+        set_vacation("2026-07-01", "2026-07-15")
+        assert is_on_vacation() is True
 
 
 # ── check_and_apply : absence future ne bloque pas le thermostat ─
