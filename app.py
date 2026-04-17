@@ -1028,13 +1028,12 @@ def api_thermostat_vacation_set():
     start = str(data.get("start", "")).strip()
     end = str(data.get("end", "")).strip()
     try:
-        from datetime import date as _date
-        s = datetime.fromisoformat(start).date()
-        e = datetime.fromisoformat(end).date()
-        if s > e:
-            return jsonify({"error": "La date de début doit être avant la date de fin"}), 400
+        s = datetime.fromisoformat(start)
+        e = datetime.fromisoformat(end)
+        if s >= e:
+            return jsonify({"error": "Le départ doit être avant le retour"}), 400
     except Exception:
-        return jsonify({"error": "Dates invalides (format YYYY-MM-DD attendu)"}), 400
+        return jsonify({"error": "Dates invalides (format YYYY-MM-DDTHH:MM attendu)"}), 400
     thermostat_module.set_vacation(start, end)
     logger.info("Mode vacances activé : %s → %s", start, end)
     return jsonify({"status": "ok"})
@@ -1127,10 +1126,28 @@ def absence_page():
     on_vacation = thermostat_module.is_on_vacation()
     absence_schedules = thermostat_module.get_absence_schedules()
     in_absence_schedule = thermostat_module.is_in_absence_schedule()
+
+    def _fmt_vacation_dt(val):
+        """Formate 'YYYY-MM-DDTHH:MM' → 'DD/MM/YYYY à HHhMM', ou date seule si pas d'heure."""
+        if not val:
+            return val
+        try:
+            dt = datetime.fromisoformat(val)
+            if "T" in val:
+                return dt.strftime("%d/%m/%Y à %Hh%M")
+            return dt.strftime("%d/%m/%Y")
+        except Exception:
+            return val
+
+    vacation_display = {
+        "start": _fmt_vacation_dt(vacation.get("start")),
+        "end":   _fmt_vacation_dt(vacation.get("end")),
+    }
+
     return render_template(
         "absence.html",
         config=config,
-        vacation=vacation,
+        vacation=vacation_display,
         on_vacation=on_vacation,
         absence_schedules=absence_schedules,
         in_absence_schedule=in_absence_schedule,

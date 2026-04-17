@@ -27,19 +27,25 @@
       </button>
     {% else %}
       <p class="value-sub" style="color:#64748b">Aucune absence programmée — le thermostat fonctionne normalement.</p>
-      <div style="display:flex;gap:0.75rem;align-items:flex-end;margin-top:0.75rem;flex-wrap:wrap">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.75rem">
         <div>
-          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.2rem">Départ</label>
-          <input type="date" id="vacation-start" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
+          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.3rem">✈️ Départ</label>
+          <div style="display:flex;gap:0.4rem">
+            <input type="date" id="vacation-start-date" style="flex:1;min-width:0;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
+            <input type="time" id="vacation-start-time" value="08:00" style="width:6rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.5rem;font-size:0.9rem">
+          </div>
         </div>
         <div>
-          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.2rem">Retour</label>
-          <input type="date" id="vacation-end" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
+          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.3rem">🏠 Retour</label>
+          <div style="display:flex;gap:0.4rem">
+            <input type="date" id="vacation-end-date" style="flex:1;min-width:0;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
+            <input type="time" id="vacation-end-time" value="18:00" style="width:6rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.5rem;font-size:0.9rem">
+          </div>
         </div>
-        <button onclick="setVacation()" style="background:rgba(96,165,250,0.15);border:1px solid #60a5fa;color:#60a5fa;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
-          ✈️ Programmer l'absence
-        </button>
       </div>
+      <button onclick="setVacation()" style="margin-top:0.75rem;background:rgba(96,165,250,0.15);border:1px solid #60a5fa;color:#60a5fa;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
+        ✈️ Programmer l'absence
+      </button>
       <p id="vacation-error" style="color:#ef4444;font-size:0.8rem;margin-top:0.4rem;display:none"></p>
     {% endif %}
   </section>
@@ -111,15 +117,19 @@
 {% block extra_scripts %}
   <script>
   function setVacation() {
-    const start = document.getElementById('vacation-start').value;
-    const end = document.getElementById('vacation-end').value;
+    const startDate = document.getElementById('vacation-start-date').value;
+    const startTime = document.getElementById('vacation-start-time').value || '00:00';
+    const endDate   = document.getElementById('vacation-end-date').value;
+    const endTime   = document.getElementById('vacation-end-time').value || '00:00';
     const errEl = document.getElementById('vacation-error');
     errEl.style.display = 'none';
-    if (!start || !end) {
+    if (!startDate || !endDate) {
       errEl.textContent = 'Veuillez saisir les deux dates.';
       errEl.style.display = 'block';
       return;
     }
+    const start = `${startDate}T${startTime}`;
+    const end   = `${endDate}T${endTime}`;
     fetch('/api/thermostat/vacation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -155,15 +155,18 @@ def clear_vacation() -> None:
 
 
 def is_on_vacation() -> bool:
-    """Retourne True si la date d'aujourd'hui est dans la période de vacances."""
+    """Retourne True si maintenant est dans la période de vacances (datetime-aware)."""
     state = _load_state()
     start = state.get("vacation_start")
     end = state.get("vacation_end")
     if not start or not end:
         return False
     try:
-        today = datetime.now().date()
-        return datetime.fromisoformat(start).date() <= today <= datetime.fromisoformat(end).date()
+        now = datetime.now()
+        # Rétrocompatibilité : valeurs stockées sans heure (YYYY-MM-DD)
+        dt_start = datetime.fromisoformat(start) if "T" in start else datetime.fromisoformat(start).replace(hour=0, minute=0)
+        dt_end   = datetime.fromisoformat(end)   if "T" in end   else datetime.fromisoformat(end).replace(hour=23, minute=59)
+        return dt_start <= now <= dt_end
     except Exception:
         return False
 
