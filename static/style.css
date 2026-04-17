@@ -435,7 +435,9 @@ main {
 }
 
 /* ── Mobile Control FAB + Drawer ──────────────────────────── */
-.mobile-fab {
+.mobile-fab,
+.mobile-control-drawer,
+.mobile-drawer-overlay {
   display: none;
 }
 
