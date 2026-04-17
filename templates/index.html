@@ -197,6 +197,73 @@
   </aside>
   {% endif %}
 
+  {# ── Mobile FAB + Drawer (visible uniquement ≤1024px) ── #}
+  {% if config.HOME_ASSISTANT.enabled %}
+  <div class="mobile-drawer-overlay" id="mobile-drawer-overlay" onclick="toggleControlDrawer()"></div>
+
+  <button class="mobile-fab" id="mobile-fab" onclick="toggleControlDrawer()" title="Contrôles">🎛️</button>
+
+  <div class="mobile-control-drawer" id="mobile-control-drawer">
+    <div class="mobile-drawer-header">
+      <span class="mobile-drawer-title">🎛️ Contrôles</span>
+      <button class="mobile-drawer-close" onclick="toggleControlDrawer()">✕</button>
+    </div>
+
+    <div class="mobile-drawer-grid">
+      {# Poêle #}
+      <div class="control-compact">
+        <div class="control-compact-title">🔥 Poêle</div>
+        <div class="control-compact-buttons">
+          <button class="btn-compact btn-compact-on" onclick="controlPoele('on')" title="Allumer le poêle">ON</button>
+          <button class="btn-compact btn-compact-off" onclick="controlPoele('off')" title="Éteindre le poêle">OFF</button>
+        </div>
+        <div class="control-compact-status">
+          <span id="mob-poele-status-icon">⚫</span>
+        </div>
+      </div>
+
+      {# Clim (si configurée) #}
+      {% if config.HOME_ASSISTANT.get('clim_entity_id') and config.HOME_ASSISTANT.get('clim_entity_id')|length > 0 %}
+      <div class="control-compact">
+        <div class="control-compact-title">❄️ Clim</div>
+        <div class="control-compact-buttons">
+          <button class="btn-compact btn-compact-on" onclick="controlClim('on')" title="Allumer la climatisation">ON</button>
+          <button class="btn-compact btn-compact-off" onclick="controlClim('off')" title="Éteindre la climatisation">OFF</button>
+        </div>
+        <div class="control-compact-status">
+          <span id="mob-clim-status-icon">⚫</span>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Radiateurs #}
+      {% if radiateurs_info %}
+      {% for r in radiateurs_info %}
+      {% if r.enabled %}
+      <div class="control-compact">
+        <div class="control-compact-title">🔥 {{ r.name }}</div>
+        <div class="control-compact-buttons">
+          <button class="btn-compact btn-compact-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')" title="Allumer {{ r.name }}">ON</button>
+          <button class="btn-compact btn-compact-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')" title="Éteindre {{ r.name }}">OFF</button>
+        </div>
+        <div class="control-compact-status" data-mob-entity-id="{{ r.entity_id }}">
+          <span id="mob-radiateur-{{ loop.index0 }}-icon">⚫</span>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+    </div>
+
+    {# Warning si thermostat actif #}
+    {% if config.THERMOSTAT.enabled %}
+    <div class="sidebar-warning" style="margin-top:0.75rem">
+      ⚠️ Actions manuelles = suspension thermostat {{ config.THERMOSTAT.get('manual_off_suspend_hours', 4) }}h
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {# ── Contenu principal ── #}
   <div class="main-content">
 

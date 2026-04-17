@@ -105,31 +105,19 @@ async function updatePoeleStatus() {
     const response = await fetch('/api/ha/state');
     const data = await response.json();
 
-    const icon = document.getElementById('poele-status-icon');
+    const isOn = data.state === 'heat' || data.state === 'on';
+
+    // Sidebar + drawer icons
+    ['poele-status-icon', 'mob-poele-status-icon'].forEach(id => {
+      const icon = document.getElementById(id);
+      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
+    });
+
     const btnOn = document.getElementById('btn-poele-on');
     const btnOff = document.getElementById('btn-poele-off');
 
-    if (!icon) return;
-
-    const isOn = data.state === 'heat' || data.state === 'on';
-
-    icon.textContent = isOn ? '🟢' : '⚫';
-
-    if (btnOn) {
-      if (isOn) {
-        btnOn.classList.add('active');
-      } else {
-        btnOn.classList.remove('active');
-      }
-    }
-
-    if (btnOff) {
-      if (isOn) {
-        btnOff.classList.remove('active');
-      } else {
-        btnOff.classList.add('active');
-      }
-    }
+    if (btnOn) btnOn.classList.toggle('active', isOn);
+    if (btnOff) btnOff.classList.toggle('active', !isOn);
   } catch (e) {
     console.warn('Erreur mise à jour état poêle:', e);
   }
@@ -140,31 +128,19 @@ async function updateClimStatus() {
     const response = await fetch('/api/ha/clim/state');
     const data = await response.json();
 
-    const icon = document.getElementById('clim-status-icon');
+    const isOn = data.state === 'heat' || data.state === 'on';
+
+    // Sidebar + drawer icons
+    ['clim-status-icon', 'mob-clim-status-icon'].forEach(id => {
+      const icon = document.getElementById(id);
+      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
+    });
+
     const btnOn = document.getElementById('btn-clim-on');
     const btnOff = document.getElementById('btn-clim-off');
 
-    if (!icon) return;
-
-    const isOn = data.state === 'heat' || data.state === 'on';
-
-    icon.textContent = isOn ? '🟢' : '⚫';
-
-    if (btnOn) {
-      if (isOn) {
-        btnOn.classList.add('active');
-      } else {
-        btnOn.classList.remove('active');
-      }
-    }
-
-    if (btnOff) {
-      if (isOn) {
-        btnOff.classList.remove('active');
-      } else {
-        btnOff.classList.add('active');
-      }
-    }
+    if (btnOn) btnOn.classList.toggle('active', isOn);
+    if (btnOff) btnOff.classList.toggle('active', !isOn);
   } catch (e) {
     console.warn('Erreur mise à jour état clim:', e);
   }
@@ -175,39 +151,35 @@ async function updateRadiateurStatus(entityId) {
     const response = await fetch('/api/radiateurs/status');
     const data = await response.json();
 
-    const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
-    if (!statusDiv) return;
-
     const entity = data.entities.find(e => e.entity_id === entityId);
     if (!entity) return;
 
-    const radiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-entity-id]'));
-    const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
+    const isOn = entity.state === 'on' || entity.state === 'heat';
 
-    if (index >= 0) {
-      const icon = document.getElementById(`radiateur-${index}-icon`);
-      const compact = statusDiv.closest('.control-compact');
-      const btnOn = compact ? compact.querySelector('.btn-compact-on') : null;
-      const btnOff = compact ? compact.querySelector('.btn-compact-off') : null;
-
-      const isOn = entity.state === 'on' || entity.state === 'heat';
-
-      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-
-      if (btnOn) {
-        if (isOn) {
-          btnOn.classList.add('active');
-        } else {
-          btnOn.classList.remove('active');
-        }
+    // Sidebar
+    const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
+    if (statusDiv) {
+      const radiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-entity-id]'));
+      const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
+      if (index >= 0) {
+        const icon = document.getElementById(`radiateur-${index}-icon`);
+        const compact = statusDiv.closest('.control-compact');
+        const btnOn = compact ? compact.querySelector('.btn-compact-on') : null;
+        const btnOff = compact ? compact.querySelector('.btn-compact-off') : null;
+        if (icon) icon.textContent = isOn ? '🟢' : '⚫';
+        if (btnOn) btnOn.classList.toggle('active', isOn);
+        if (btnOff) btnOff.classList.toggle('active', !isOn);
       }
+    }
 
-      if (btnOff) {
-        if (isOn) {
-          btnOff.classList.remove('active');
-        } else {
-          btnOff.classList.add('active');
-        }
+    // Drawer (mobile)
+    const mobStatusDiv = document.querySelector(`[data-mob-entity-id="${entityId}"]`);
+    if (mobStatusDiv) {
+      const mobRadiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-mob-entity-id]'));
+      const mobIndex = mobRadiateurs.findIndex(r => r.getAttribute('data-mob-entity-id') === entityId);
+      if (mobIndex >= 0) {
+        const mobIcon = document.getElementById(`mob-radiateur-${mobIndex}-icon`);
+        if (mobIcon) mobIcon.textContent = isOn ? '🟢' : '⚫';
       }
     }
   } catch (e) {
@@ -247,30 +219,37 @@ function showToast(message, type = 'info') {
   setTimeout(removeToast, duration);
 }
 
+// Toggle mobile control drawer
+function toggleControlDrawer() {
+  const drawer = document.getElementById('mobile-control-drawer');
+  const overlay = document.getElementById('mobile-drawer-overlay');
+  const fab = document.getElementById('mobile-fab');
+  if (!drawer) return;
+
+  const isOpen = drawer.classList.contains('open');
+  drawer.classList.toggle('open', !isOpen);
+  overlay.classList.toggle('open', !isOpen);
+  fab.classList.toggle('open', !isOpen);
+}
+
 // Initialize control panel
 (function initControlPanel() {
-  if (!document.querySelector('.sidebar-controls')) return;
+  const hasSidebar = document.querySelector('.sidebar-controls');
+  const hasDrawer  = document.getElementById('mobile-control-drawer');
+  if (!hasSidebar && !hasDrawer) return;
 
-  // Initial status update
-  updatePoeleStatus();
-  if (document.getElementById('clim-status')) {
-    updateClimStatus();
-  }
-
-  document.querySelectorAll('.control-compact-status[data-entity-id]').forEach(r => {
-    updateRadiateurStatus(r.getAttribute('data-entity-id'));
-  });
-
-  // Poll every 15s
-  setInterval(() => {
+  function pollAll() {
     updatePoeleStatus();
-    if (document.getElementById('clim-status')) {
+    if (document.getElementById('clim-status') || document.getElementById('mob-clim-status-icon')) {
       updateClimStatus();
     }
     document.querySelectorAll('.control-compact-status[data-entity-id]').forEach(r => {
       updateRadiateurStatus(r.getAttribute('data-entity-id'));
     });
-  }, 15000);
+  }
+
+  pollAll();
+  setInterval(pollAll, 15000);
 })();
 
 // Add CSS animation keyframes if not already present

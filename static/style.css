@@ -433,3 +433,105 @@ main {
     margin: 0 auto;
   }
 }
+
+/* ── Mobile Control FAB + Drawer ──────────────────────────── */
+.mobile-fab {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .mobile-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 1.5rem;
+    left: 1.5rem;
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: 50%;
+    background: var(--accent, #3b82f6);
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    font-size: 1.5rem;
+    z-index: 1100;
+    transition: transform 0.2s ease, background 0.2s ease;
+  }
+
+  .mobile-fab:hover {
+    transform: scale(1.1);
+  }
+
+  .mobile-fab.open {
+    background: #64748b;
+    transform: rotate(45deg);
+  }
+
+  .mobile-control-drawer {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    border-radius: 1rem 1rem 0 0;
+    padding: 1.2rem 1.2rem 2rem;
+    z-index: 1050;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+    max-height: 80vh;
+    overflow-y: auto;
+    animation: drawerSlideUp 0.25s ease-out;
+  }
+
+  .mobile-control-drawer.open {
+    display: block;
+  }
+
+  .mobile-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .mobile-drawer-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .mobile-drawer-close {
+    background: none;
+    border: none;
+    color: var(--text-sub);
+    font-size: 1.4rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.2rem 0.4rem;
+  }
+
+  .mobile-drawer-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .mobile-drawer-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1040;
+  }
+
+  .mobile-drawer-overlay.open {
+    display: block;
+  }
+
+  @keyframes drawerSlideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+}
