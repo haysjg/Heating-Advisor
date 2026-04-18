@@ -1046,6 +1046,20 @@ def api_thermostat_vacation_clear():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/thermostat/absent", methods=["POST"])
+def api_thermostat_absent_set():
+    thermostat_module.set_absent()
+    logger.info("Mode absence immédiate activé")
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/thermostat/absent", methods=["DELETE"])
+def api_thermostat_absent_clear():
+    thermostat_module.clear_absent()
+    logger.info("Mode absence immédiate désactivé")
+    return jsonify({"status": "ok"})
+
+
 VALID_DAY_KEYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 
 
@@ -1124,6 +1138,7 @@ def api_thermostat_toggle():
 def absence_page():
     vacation = thermostat_module.get_vacation()
     on_vacation = thermostat_module.is_on_vacation()
+    absent = thermostat_module.is_absent()
     absence_schedules = thermostat_module.get_absence_schedules()
     in_absence_schedule = thermostat_module.is_in_absence_schedule()
 
@@ -1149,6 +1164,7 @@ def absence_page():
         config=config,
         vacation=vacation_display,
         on_vacation=on_vacation,
+        absent=absent,
         absence_schedules=absence_schedules,
         in_absence_schedule=in_absence_schedule,
     )

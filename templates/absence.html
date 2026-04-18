@@ -6,6 +6,32 @@
 {% block header_title %}Mode Absence{% endblock %}
 
 {% block content %}
+  {# ── Section Absence rapide ───────────────────────────────────── #}
+  <section class="card card-labeled" style="margin-bottom:1.25rem">
+    <div class="today-label">ABSENCE RAPIDE</div>
+    {% if absent %}
+      <p class="value-sub" style="color:#fb923c;margin-bottom:0.75rem">
+        🚶 Vous êtes absent — thermostat suspendu.
+      </p>
+      <button onclick="setPresent()"
+        style="width:100%;padding:0.75rem;font-size:1.1rem;font-weight:600;
+               background:rgba(34,197,94,0.15);border:1px solid #22c55e;color:#22c55e;
+               border-radius:10px;cursor:pointer">
+        🏠 De retour
+      </button>
+    {% else %}
+      <p class="value-sub" style="color:#64748b;margin-bottom:0.75rem">
+        Vous êtes présent — le thermostat fonctionne normalement.
+      </p>
+      <button onclick="setAbsent()"
+        style="width:100%;padding:0.75rem;font-size:1.1rem;font-weight:600;
+               background:rgba(251,146,60,0.15);border:1px solid #fb923c;color:#fb923c;
+               border-radius:10px;cursor:pointer">
+        🚶 Je pars
+      </button>
+    {% endif %}
+  </section>
+
   {# ── Section Vacances ─────────────────────────────────────────── #}
   <section class="card card-labeled">
     <div class="today-label">ABSENCE PONCTUELLE</div>
@@ -116,6 +142,18 @@
 
 {% block extra_scripts %}
   <script>
+  function setAbsent() {
+    fetch('/api/thermostat/absent', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => { if (d.status === 'ok') location.reload(); });
+  }
+
+  function setPresent() {
+    fetch('/api/thermostat/absent', { method: 'DELETE' })
+      .then(r => r.json())
+      .then(d => { if (d.status === 'ok') location.reload(); });
+  }
+
   function setVacation() {
     const startDate = document.getElementById('vacation-start-date').value;
     const startTime = document.getElementById('vacation-start-time').value || '00:00';

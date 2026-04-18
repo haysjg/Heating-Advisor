@@ -154,8 +154,27 @@ def clear_vacation() -> None:
     _save_state({**state, "vacation_start": None, "vacation_end": None})
 
 
+def set_absent() -> None:
+    """Active le mode absence immédiate (sans date de fin)."""
+    state = _load_state()
+    _save_state({**state, "absent": True})
+
+
+def clear_absent() -> None:
+    """Désactive le mode absence immédiate."""
+    state = _load_state()
+    _save_state({**state, "absent": False})
+
+
+def is_absent() -> bool:
+    """Retourne True si le mode absence immédiate est actif."""
+    return bool(_load_state().get("absent"))
+
+
 def is_on_vacation() -> bool:
-    """Retourne True si maintenant est dans la période de vacances (datetime-aware)."""
+    """Retourne True si maintenant est dans la période de vacances (datetime-aware) ou si absent immédiatement."""
+    if is_absent():
+        return True
     state = _load_state()
     start = state.get("vacation_start")
     end = state.get("vacation_end")
