@@ -7,6 +7,7 @@ Fallback         : Open-Meteo API (gratuit, sans clé)
 import json
 import logging
 import re
+import time
 import urllib.request
 from datetime import datetime, timedelta
 
@@ -98,6 +99,7 @@ def get_tomorrow_forecast_openmeteo(lat: float, lon: float, hp_start: int = 6, h
     """
     Récupère les prévisions de demain via Open-Meteo.
     Retourne la température min, max et moyenne sur la plage de chauffage (HP).
+    Retry 3 fois avec backoff (5s, 10s) pour absorber les timeouts au réveil réseau.
     """
     url = (
         f"https://api.open-meteo.com/v1/forecast"
@@ -106,35 +108,39 @@ def get_tomorrow_forecast_openmeteo(lat: float, lon: float, hp_start: int = 6, h
         f"&forecast_days=2"
         f"&timezone=Europe%2FParis"
     )
-    try:
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
+    delays = [5, 10]
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
 
-        times = data["hourly"]["time"]
-        temps = data["hourly"]["temperature_2m"]
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            times = data["hourly"]["time"]
+            temps = data["hourly"]["temperature_2m"]
+            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        # Filtrer les heures de demain dans la plage HP
-        hp_temps = [
-            t for time, t in zip(times, temps)
-            if time.startswith(tomorrow) and hp_start <= int(time[11:13]) < hp_end
-        ]
+            # Filtrer les heures de demain dans la plage HP
+            hp_temps = [
+                t for time_str, t in zip(times, temps)
+                if time_str.startswith(tomorrow) and hp_start <= int(time_str[11:13]) < hp_end
+            ]
 
-        if not hp_temps:
-            return None
+            if not hp_temps:
+                return None
 
-        avg = round(sum(hp_temps) / len(hp_temps), 1)
-        logger.info("Open-Meteo demain (plage %dh-%dh) : min=%.1f max=%.1f moy=%.1f",
-                    hp_start, hp_end, min(hp_temps), max(hp_temps), avg)
-        return {
-            "temperature": avg,
-            "temp_min": round(min(hp_temps), 1),
-            "temp_max": round(max(hp_temps), 1),
-            "source": "Open-Meteo (prévision)",
-        }
-    except Exception as e:
-        logger.warning("Open-Meteo prévision demain échouée : %s", e)
+            avg = round(sum(hp_temps) / len(hp_temps), 1)
+            logger.info("Open-Meteo demain (plage %dh-%dh) : min=%.1f max=%.1f moy=%.1f",
+                        hp_start, hp_end, min(hp_temps), max(hp_temps), avg)
+            return {
+                "temperature": avg,
+                "temp_min": round(min(hp_temps), 1),
+                "temp_max": round(max(hp_temps), 1),
+                "source": "Open-Meteo (prévision)",
+            }
+        except Exception as e:
+            logger.warning("Open-Meteo prévision demain échouée (tentative %d/3) : %s", attempt + 1, e)
+            if attempt < 2:
+                time.sleep(delays[attempt])
     return None
 
 
