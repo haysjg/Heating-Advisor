@@ -675,6 +675,57 @@
 
     <hr class="section-divider">
 
+    {# ── Suivi électricité (Gmail) ── #}
+    <div class="card form-section">
+      <h3>⚡ Suivi électricité <small style="font-weight:400;font-size:0.8em">(Gmail — optionnel)</small></h3>
+
+      <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
+        <input type="checkbox" id="electricity_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.ELECTRICITY.enabled %}checked{% endif %}>
+        <label for="electricity_enabled" style="font-size:0.9rem;cursor:pointer">
+          Activer le suivi de consommation électrique (emails "flash élec" Lite)
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Client ID Google OAuth</label>
+          <input type="text" id="gmail_client_id" value="{{ config.ELECTRICITY.gmail_client_id }}">
+          <span class="hint">Créé dans Google Cloud Console</span>
+        </div>
+        <div class="form-group">
+          <label>Client Secret Google OAuth</label>
+          <input type="password" id="gmail_client_secret"
+                 placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.ELECTRICITY.gmail_client_secret else 'Coller le client secret ici' }}">
+          <span class="hint">Voir README.md pour la procédure de création</span>
+        </div>
+        <div class="form-group">
+          <label>Expéditeur filtré</label>
+          <input type="text" id="electricity_sender" value="{{ config.ELECTRICITY.sender_filter }}">
+        </div>
+        <div class="form-group">
+          <label>Sujet filtré</label>
+          <input type="text" id="electricity_subject" value="{{ config.ELECTRICITY.subject_filter }}">
+        </div>
+        <div class="form-group">
+          <label>Fréquence de vérification (h)</label>
+          <input type="number" id="electricity_interval_hours" value="{{ config.ELECTRICITY.check_interval_hours }}" min="1">
+        </div>
+        <div class="form-group">
+          <label>Fenêtre de recherche (jours)</label>
+          <input type="number" id="electricity_lookback_days" value="{{ config.ELECTRICITY.lookback_days }}" min="1">
+        </div>
+      </div>
+
+      <div style="margin-top:1rem; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap">
+        <span id="electricity-status-badge" style="font-size:0.85rem; color:var(--text-sub)">Statut : …</span>
+        <a href="/api/electricity/gmail/connect" class="btn-back" id="btn-electricity-connect" style="display:none">🔗 Connecter Gmail</a>
+        <button type="button" class="btn-back" onclick="disconnectGmail()" id="btn-electricity-disconnect" style="display:none">🔌 Déconnecter</button>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
     {# ── Radiateurs Tempo Rouge ── #}
     <div class="card form-section">
       <h3>🔴 Radiateurs — Jours Tempo Rouge</h3>
@@ -981,6 +1032,13 @@
       cop_min_power: parseInt(getVal('cop_min_power')),
       cop_max_power: parseInt(getVal('cop_max_power')),
       cop_auto_switch: document.getElementById('cop_auto_switch').checked,
+      electricity_enabled: document.getElementById('electricity_enabled').checked,
+      gmail_client_id: getVal('gmail_client_id'),
+      gmail_client_secret: getVal('gmail_client_secret'),
+      electricity_sender: getVal('electricity_sender'),
+      electricity_subject: getVal('electricity_subject'),
+      electricity_interval_hours: parseInt(getVal('electricity_interval_hours')),
+      electricity_lookback_days: parseInt(getVal('electricity_lookback_days')),
     };
 
     fetch('/api/config', {
@@ -1163,6 +1221,12 @@
       cop_min_power: parseInt(getVal('cop_min_power')),
       cop_max_power: parseInt(getVal('cop_max_power')),
       cop_auto_switch: document.getElementById('cop_auto_switch').checked,
+      electricity_enabled: document.getElementById('electricity_enabled').checked,
+      gmail_client_id: getVal('gmail_client_id'),
+      electricity_sender: getVal('electricity_sender'),
+      electricity_subject: getVal('electricity_subject'),
+      electricity_interval_hours: parseInt(getVal('electricity_interval_hours')),
+      electricity_lookback_days: parseInt(getVal('electricity_lookback_days')),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1327,7 +1391,56 @@
     btn.closest('.radiateur-row').remove();
   }
 
+  function disconnectGmail() {
+    if (!confirm('Déconnecter le compte Gmail ?')) return;
+    fetch('/api/electricity/gmail/disconnect', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        showToast(d.status === 'ok' ? '✓ Gmail déconnecté' : 'Erreur : ' + (d.error || 'inconnue'), d.status === 'ok');
+        refreshElectricityStatus();
+      })
+      .catch(() => showToast('Erreur réseau', false));
+  }
+
+  function refreshElectricityStatus() {
+    fetch('/api/electricity/status')
+      .then(r => r.json())
+      .then(d => {
+        const badge = document.getElementById('electricity-status-badge');
+        const connectBtn = document.getElementById('btn-electricity-connect');
+        const disconnectBtn = document.getElementById('btn-electricity-disconnect');
+        if (d.connected) {
+          badge.textContent = '✅ Connecté';
+          badge.style.color = '#22c55e';
+          connectBtn.style.display = 'none';
+          disconnectBtn.style.display = 'inline-block';
+        } else {
+          badge.textContent = '⚪ Non connecté';
+          badge.style.color = 'var(--text-sub)';
+          connectBtn.style.display = 'inline-block';
+          disconnectBtn.style.display = 'none';
+        }
+      })
+      .catch(() => {
+        document.getElementById('electricity-status-badge').textContent = '⚠️ Statut indisponible';
+      });
+  }
+
+  function handleElectricityQueryParam() {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('electricity');
+    if (!status) return;
+    if (status === 'connected') showToast('✓ Gmail connecté', true);
+    else if (status === 'missing_client') showToast('Renseignez et enregistrez client_id/secret avant de connecter Gmail', false);
+    else if (status === 'error') showToast('Échec de la connexion Gmail', false);
+    params.delete('electricity');
+    const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState({}, '', newUrl);
+  }
+
   // Init
   calcPoele();
+  refreshElectricityStatus();
+  handleElectricityQueryParam();
   </script>
 {% endblock %}

@@ -29,6 +29,9 @@
       <a href="/statistics" class="btn-refresh" style="text-decoration:none">📊 Stats</a>
       <a href="/stock" class="btn-refresh" style="text-decoration:none">🪵 Stock</a>
       <a href="/reports" class="btn-refresh" style="text-decoration:none">📈 Rapports</a>
+      {% if config.ELECTRICITY.enabled %}
+      <a href="/electricity" class="btn-refresh" style="text-decoration:none">⚡ Électricité</a>
+      {% endif %}
       {% if config.COP_LEARNING.enabled %}
       <a href="/cop-learning" class="btn-refresh" style="text-decoration:none">🎓 COP Learning</a>
       {% endif %}

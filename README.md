@@ -13,9 +13,10 @@ Application Flask de recommandation de chauffage. Compare en temps réel le coû
 5. [Détection de présence](#détection-de-présence)
 6. [Mode Absence](#mode-absence)
 7. [Notifications push](#notifications-push)
-8. [API REST](#api-rest)
-9. [Configuration](#configuration)
-10. [Déploiement](#déploiement)
+8. [Suivi électricité (Gmail)](#suivi-électricité-gmail)
+9. [API REST](#api-rest)
+10. [Configuration](#configuration)
+11. [Déploiement](#déploiement)
 
 ---
 
@@ -39,6 +40,8 @@ modules/
   overrides.py           # Chargement/application de config_override.json
   crypto.py              # Chiffrement AES des mots de passe en config
   ntfy_push.py           # Notifications push via Ntfy
+  gmail_client.py        # OAuth2 + appels API Gmail (lecture seule)
+  electricity.py         # Parsing emails "flash élec" + historisation conso électrique
 ```
 
 **Flux de données principal :**
@@ -157,6 +160,26 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 | Fonction | Description |
 |---|---|
 | `send(title, message, ntfy_cfg)` | Envoie une notification push via Ntfy. Silencieux en cas d'erreur réseau. Le token est déchiffré automatiquement avant envoi. |
+
+### `gmail_client.py` — OAuth2 + API Gmail
+
+| Fonction | Description |
+|---|---|
+| `build_auth_url(cfg, redirect_uri, state)` | Construit l'URL de consentement Google OAuth2. |
+| `exchange_code_for_tokens(cfg, code, redirect_uri)` | Échange le code d'autorisation contre `access_token` + `refresh_token`. |
+| `refresh_access_token(cfg)` | Rafraîchit un `access_token` (non persisté) à partir du `refresh_token` stocké. |
+| `is_connected(cfg)` | Retourne `True` si un `refresh_token` est configuré. |
+| `list_messages(access_token, sender, subject, lookback_days)` | Liste les IDs des messages Gmail correspondant au filtre. |
+| `get_message(access_token, message_id)` | Récupère le message complet (payload MIME) via l'API Gmail. |
+
+### `electricity.py` — Parsing et historisation de la consommation
+
+| Fonction | Description |
+|---|---|
+| `parse_message(message)` | Extrait `kwh`, `period_start/end` et `delta_percent/direction` d'un message Gmail "flash élec". |
+| `fetch_new_readings(electricity_cfg)` | Job de synchronisation : liste les emails non traités, les parse, les historise (idempotent par `message_id`). |
+| `get_readings(weeks)` | Retourne l'historique des lectures sur N semaines. |
+| `get_latest_reading()` | Retourne la dernière lecture (carte dashboard). |
 
 ---
 
@@ -319,6 +342,50 @@ Accessible via `/config` → section **🔔 Notifications push** :
 
 ---
 
+## Suivi électricité (Gmail)
+
+Historise automatiquement la consommation électrique hebdomadaire à partir des emails "flash élec" envoyés par **[Lite](https://lite.eco)** (`bonjour@lite.eco`), sans mot de passe en clair : connexion via **OAuth2 Gmail en lecture seule**.
+
+### Sécurité
+
+- Scope OAuth : `https://www.googleapis.com/auth/gmail.readonly` — le scope de lecture le plus étroit proposé par Google (il n'existe pas de scope restreint à un expéditeur). Le token accordé pourrait donc techniquement lire toute la boîte mail, mais **le code applicatif ne traite que les messages correspondant au filtre expéditeur/sujet configuré** — c'est une restriction côté application, pas côté OAuth.
+- `client_secret` et `refresh_token` sont chiffrés au repos (AES via `modules/crypto.py`, comme les autres secrets de l'app).
+- **Aucun `access_token` n'est jamais persisté** — il est régénéré à chaque synchronisation à partir du `refresh_token` puis jeté.
+- L'app utilise **votre propre** client OAuth Google Cloud (créé ci-dessous) — aucun secret partagé n'est embarqué dans le code.
+
+### Configuration Google Cloud (setup manuel, une fois)
+
+1. Créer un projet sur [console.cloud.google.com](https://console.cloud.google.com).
+2. **APIs & Services → Library** → rechercher "Gmail API" → l'activer.
+3. **APIs & Services → OAuth consent screen** :
+   - Type : *External*.
+   - Sous **Test users**, ajouter votre adresse Gmail. **Obligatoire** : le scope `gmail.readonly` est un scope "sensible" — sans utilisateur de test enregistré, Google bloque le flow OAuth pour une app non vérifiée.
+4. **APIs & Services → Credentials → Create Credentials → OAuth client ID** :
+   - Type d'application : **Web application**.
+   - URI de redirection autorisée : `https://<votre-public-url>/api/electricity/gmail/callback` (ex. `https://nas-jg.mywire.org:8443/api/electricity/gmail/callback`, dérivé de `LOCATION.public_url`). Pour tester en local, ajouter aussi `http://localhost:5000/api/electricity/gmail/callback`.
+5. Noter le **Client ID** et le **Client Secret** générés.
+
+### Configuration dans Heating Advisor
+
+Accessible via `/config` → section **⚡ Suivi électricité** :
+
+| Paramètre | Description |
+|---|---|
+| `gmail_client_id` | Client ID Google OAuth (non secret) |
+| `gmail_client_secret` | Client Secret Google OAuth (chiffré) |
+| `sender_filter` | Expéditeur filtré (défaut `bonjour@lite.eco`) |
+| `subject_filter` | Sous-chaîne du sujet filtrée (défaut `flash élec`) |
+| `check_interval_hours` | Fréquence de vérification des nouveaux emails (défaut 24h) |
+| `lookback_days` | Fenêtre de recherche Gmail à chaque synchronisation (défaut 90 jours) |
+
+Une fois `client_id`/`client_secret` renseignés et enregistrés, cliquer sur **🔗 Connecter Gmail** pour lancer le flow OAuth (attendu : avertissement "app non vérifiée" à valider, puisque vous êtes votre propre utilisateur de test).
+
+### Fonctionnement
+
+Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherche les emails correspondant au filtre, extrait la consommation (kWh) et la période (via le header `X-CampaignID: WEEKLY_YYYY-MM-DD_YYYY-MM-DD`), et historise chaque email une seule fois (dédup par ID de message Gmail — le polling peut donc être plus fréquent que la fréquence d'envoi réelle sans créer de doublons). Une page dédiée **`/electricity`** affiche l'historique (graphique + indicateurs).
+
+---
+
 ## API REST
 
 | Endpoint | Description |
@@ -339,6 +406,13 @@ Accessible via `/config` → section **🔔 Notifications push** :
 | `DELETE /api/thermostat/vacation` | Annule l'absence programmée |
 | `POST /api/config` | Sauvegarde la configuration depuis l'interface |
 | `POST /api/notify/test` | Déclenche manuellement l'email de recommandation |
+| `GET /electricity` | Page dédiée suivi électricité |
+| `GET /api/electricity/history?weeks=N` | Historique des lectures des N dernières semaines |
+| `GET /api/electricity/status` | Statut de connexion Gmail + dernière lecture |
+| `POST /api/electricity/sync-now` | Déclenche manuellement la synchronisation Gmail |
+| `GET /api/electricity/gmail/connect` | Démarre le flow OAuth Gmail |
+| `GET /api/electricity/gmail/callback` | Callback OAuth Gmail (URI à enregistrer dans Google Cloud Console) |
+| `POST /api/electricity/gmail/disconnect` | Déconnecte le compte Gmail (efface le refresh token) |
 
 ---
 
@@ -421,6 +495,19 @@ Trois couleurs (`BLUE`, `WHITE`, `RED`), deux périodes chacune (`HP`, `HC`).
 | `url` | URL du serveur Ntfy (ex. `https://ntfy-jg.mywire.org:8088`) |
 | `topic` | Topic Ntfy (ex. `heating-advisor`) |
 | `token` | Token d'accès Ntfy (chiffré en AES) |
+
+**`ELECTRICITY`** — Suivi électricité (Gmail)
+| Clé | Description |
+|---|---|
+| `enabled` | Active le suivi de consommation électrique |
+| `gmail_client_id` | Client ID Google OAuth (non secret) |
+| `gmail_client_secret` | Client Secret Google OAuth (chiffré en AES) |
+| `gmail_refresh_token` | Refresh token OAuth (chiffré en AES, défini via le flow "Connecter Gmail") |
+| `sender_filter` | Expéditeur des emails filtrés |
+| `subject_filter` | Sous-chaîne du sujet filtrée |
+| `check_interval_hours` | Fréquence de vérification des nouveaux emails |
+| `lookback_days` | Fenêtre de recherche Gmail à chaque synchronisation |
+| `oauth_redirect_base` | Override de l'URI de base pour le callback OAuth (dev local) ; vide = dérivé de `LOCATION.public_url` |
 
 ---
 

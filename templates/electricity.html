@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Électricité{% endblock %}
+
+{% block header_icon %}⚡{% endblock %}
+{% block header_title %}Suivi électricité{% endblock %}
+{% block header_sub %}{{ config.LOCATION.city }} — Consommation hebdomadaire (Lite){% endblock %}
+
+{% block extra_head %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    .range-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .range-btn {
+      padding: 0.4rem 1rem; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg2); color: var(--text-sub); cursor: pointer;
+      font-size: 0.88rem; font-weight: 500; transition: all 0.15s;
+    }
+    .range-btn:hover { border-color: var(--blue); color: var(--text); }
+    .range-btn.active { background: rgba(59,130,246,0.15); border-color: var(--blue); color: var(--blue); }
+    .chart-wrapper { position: relative; height: 380px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+    .kpi-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem 1rem; text-align: center; }
+    .kpi-label { font-size: 0.78rem; color: var(--text-sub); margin: 0 0 0.2rem; }
+    .kpi-value { font-size: 1.4rem; font-weight: 700; color: var(--text); margin: 0; }
+    .kpi-positive { color: #22c55e; }
+    .kpi-negative { color: #f87171; }
+    .no-data { text-align: center; padding: 3rem 1rem; color: var(--text-sub); font-size: 0.95rem; }
+    .no-data a { color: var(--blue); }
+  </style>
+{% endblock %}
+
+{% block extra_menu %}
+  <button class="btn-refresh" onclick="syncNow()" id="btn-sync" title="Vérifier les nouveaux emails maintenant">⟳ Synchroniser</button>
+{% endblock %}
+
+{% block content %}
+  <div id="not-connected" class="card no-data" style="display:none;">
+    Gmail n'est pas connecté.<br>
+    <span style="font-size:0.82rem;">Rendez-vous dans <a href="/config">⚙️ Config</a> pour connecter votre compte Gmail.</span>
+  </div>
+
+  <div id="electricity-content">
+    <div class="card">
+      <h2 style="margin:0 0 1rem; font-size:1rem;">Résumé</h2>
+      <div id="kpi-no-data" class="no-data" style="display:none;">
+        Aucune donnée disponible.<br>
+        <span style="font-size:0.82rem;">Cliquez sur « Synchroniser » pour vérifier les nouveaux emails.</span>
+      </div>
+      <div class="kpi-grid" id="kpi-grid" style="display:none;"></div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem;">
+        <h2 style="margin:0; font-size:1rem;">Historique hebdomadaire</h2>
+        <div class="range-bar">
+          <button class="range-btn" onclick="loadData(12)" data-w="12">12 semaines</button>
+          <button class="range-btn active" onclick="loadData(26)" data-w="26">26 semaines</button>
+          <button class="range-btn" onclick="loadData(52)" data-w="52">52 semaines</button>
+        </div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="electricityChart"></canvas>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="/static/script.js"></script>
+  <script>
+  let chart = null;
+
+  function setActiveBtn(weeks) {
+    document.querySelectorAll('[data-w]').forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.w) === weeks);
+    });
+  }
+
+  function fmtKwh(v) {
+    if (v === null || v === undefined) return '—';
+    return v.toLocaleString('fr-FR', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' kWh';
+  }
+
+  function renderKPIs(data) {
+    const grid = document.getElementById('kpi-grid');
+    const noData = document.getElementById('kpi-no-data');
+    if (!data.length) {
+      grid.style.display = 'none';
+      noData.style.display = 'block';
+      return;
+    }
+    const latest = data[data.length - 1];
+    const total = data.reduce((s, d) => s + (d.kwh || 0), 0);
+    const avg = total / data.length;
+    const deltaClass = latest.delta_direction === 'moins' ? 'kpi-positive' : latest.delta_direction === 'plus' ? 'kpi-negative' : '';
+    const deltaText = latest.delta_percent != null
+      ? (latest.delta_direction === 'plus' ? '+' : '-') + latest.delta_percent.toLocaleString('fr-FR') + ' %'
+      : '—';
+
+    grid.innerHTML = `
+      <div class="kpi-card">
+        <p class="kpi-label">Dernière semaine</p>
+        <p class="kpi-value">${fmtKwh(latest.kwh)}</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Variation vs sem. précédente</p>
+        <p class="kpi-value ${deltaClass}">${deltaText}</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Moyenne (${data.length} sem.)</p>
+        <p class="kpi-value">${fmtKwh(avg)}</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Total période</p>
+        <p class="kpi-value">${fmtKwh(total)}</p>
+      </div>
+    `;
+    grid.style.display = 'grid';
+    noData.style.display = 'none';
+  }
+
+  function renderChart(data) {
+    if (chart) { chart.destroy(); chart = null; }
+    if (!data.length) return;
+
+    const points = data.map(d => ({ x: d.period_start || d.fetched_at, y: d.kwh }));
+
+    const ctx = document.getElementById('electricityChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [{
+          label: 'Consommation (kWh)',
+          data: points,
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245,158,11,0.15)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#f59e0b',
+          tension: 0.25,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1d27',
+            borderColor: '#2a2d3e',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#8892a4',
+            padding: 10,
+            callbacks: {
+              label: item => `${item.parsed.y.toFixed(1)} kWh`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'week' },
+            ticks: { color: '#8892a4' },
+            grid: { color: 'rgba(42,45,62,0.8)' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#8892a4', callback: v => v + ' kWh' },
+            grid: { color: 'rgba(42,45,62,0.8)' },
+          },
+        },
+      },
+    });
+  }
+
+  async function loadData(weeks) {
+    setActiveBtn(weeks);
+    let data = [];
+    try {
+      const res = await fetch(`/api/electricity/history?weeks=${weeks}`);
+      data = await res.json();
+      if (!Array.isArray(data)) data = [];
+    } catch (e) {
+      console.error('Erreur chargement historique électricité', e);
+    }
+    renderKPIs(data);
+    renderChart(data);
+  }
+
+  async function syncNow() {
+    const btn = document.getElementById('btn-sync');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/electricity/sync-now', { method: 'POST' });
+      const d = await res.json();
+      if (d.status === 'ok') {
+        showToast(`✓ Synchronisé — ${d.new} nouvelle(s) lecture(s)`, 'success');
+        const activeBtn = document.querySelector('[data-w].active');
+        loadData(activeBtn ? parseInt(activeBtn.dataset.w) : 26);
+      } else {
+        showToast('Erreur : ' + (d.error || d.reason || 'inconnue'), 'error');
+      }
+    } catch (e) {
+      showToast('Erreur réseau', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  (async function init() {
+    try {
+      const res = await fetch('/api/electricity/status');
+      const status = await res.json();
+      if (!status.connected) {
+        document.getElementById('not-connected').style.display = 'block';
+        document.getElementById('electricity-content').style.display = 'none';
+        return;
+      }
+    } catch (e) {
+      // en cas d'erreur réseau, on tente quand même de charger l'historique
+    }
+    loadData(26);
+  })();
+  </script>
+{% endblock %}

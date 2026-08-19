@@ -28,6 +28,8 @@ import modules.cop_learning as cop_learning_module
 import modules.cop_sampling as cop_sampling_module
 import modules.cop_auto_learning as cop_auto_learning_module
 from modules.stock import compute_stock_stats
+import modules.gmail_client as gmail_client
+import modules.electricity as electricity_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -399,9 +401,46 @@ def _reschedule_radiateurs():
         logger.info("Radiateurs Tempo Rouge désactivés — aucun job planifié")
 
 
+def _electricity_redirect_uri() -> str:
+    """URI de callback OAuth Gmail, dérivée de ELECTRICITY.oauth_redirect_base ou LOCATION.public_url."""
+    base = config.ELECTRICITY.get("oauth_redirect_base", "").strip()
+    if not base:
+        base = config.LOCATION.get("public_url", "").strip()
+    if not base:
+        base = f"http://{config.LOCATION.get('nas_ip', 'localhost')}:{config.LOCATION.get('nas_port', 8888)}"
+    return base.rstrip("/") + "/api/electricity/gmail/callback"
+
+
+def _run_electricity_fetch():
+    """Synchronise les nouveaux emails 'flash élec' (appelé par le scheduler)."""
+    result = electricity_module.fetch_new_readings(config.ELECTRICITY)
+    logger.info("Électricité : fetch terminé — %s", result)
+
+
+def _reschedule_electricity_fetch():
+    """(Re)planifie le job de suivi électricité selon la config courante."""
+    try:
+        _scheduler.remove_job("electricity_job")
+    except Exception:
+        pass
+    if config.ELECTRICITY.get("enabled") and config.ELECTRICITY.get("gmail_refresh_token"):
+        hours = int(config.ELECTRICITY.get("check_interval_hours", 24))
+        _scheduler.add_job(
+            _run_electricity_fetch,
+            "interval",
+            hours=hours,
+            id="electricity_job",
+            misfire_grace_time=600,
+        )
+        logger.info("Suivi électricité planifié toutes les %d h", hours)
+    else:
+        logger.info("Suivi électricité désactivé ou non connecté — aucun job planifié")
+
+
 _reschedule_notify()
 _reschedule_thermostat()
 _reschedule_radiateurs()
+_reschedule_electricity_fetch()
 
 # ── Historique des températures ───────────────────────────
 _scheduler.add_job(
@@ -1234,6 +1273,89 @@ def api_diagnose_history():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/electricity")
+def electricity_page():
+    return render_template("electricity.html", config=config)
+
+
+@app.route("/api/electricity/history")
+def api_electricity_history():
+    try:
+        weeks = int(request.args.get("weeks", 52))
+        weeks = min(max(weeks, 1), 260)
+        data = electricity_module.get_readings(weeks=weeks)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/electricity/status")
+def api_electricity_status():
+    return jsonify({
+        "enabled": config.ELECTRICITY.get("enabled", False),
+        "connected": gmail_client.is_connected(config.ELECTRICITY),
+        "latest": electricity_module.get_latest_reading(),
+    })
+
+
+@app.route("/api/electricity/sync-now", methods=["POST"])
+def api_electricity_sync_now():
+    if not config.ELECTRICITY.get("enabled"):
+        return jsonify({"error": "Suivi électricité désactivé"}), 400
+    try:
+        result = electricity_module.fetch_new_readings(config.ELECTRICITY)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("Sync électricité manuelle échouée")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/electricity/gmail/connect")
+def api_electricity_gmail_connect():
+    if not config.ELECTRICITY.get("gmail_client_id") or not is_configured(config.ELECTRICITY.get("gmail_client_secret", "")):
+        return redirect(url_for("config_page", electricity="missing_client"))
+    state = _secrets.token_urlsafe(24)
+    session["electricity_oauth_state"] = state
+    auth_url = gmail_client.build_auth_url(config.ELECTRICITY, _electricity_redirect_uri(), state)
+    return redirect(auth_url)
+
+
+@app.route("/api/electricity/gmail/callback")
+def api_electricity_gmail_callback():
+    expected_state = session.pop("electricity_oauth_state", None)
+    state = request.args.get("state")
+    code = request.args.get("code")
+    if not code or not state or state != expected_state:
+        logger.warning("Électricité : callback OAuth invalide (state mismatch ou code manquant)")
+        return redirect(url_for("config_page", electricity="error"))
+    try:
+        tokens = gmail_client.exchange_code_for_tokens(config.ELECTRICITY, code, _electricity_redirect_uri())
+        refresh_token = tokens.get("refresh_token") if tokens else None
+        if not refresh_token:
+            logger.error("Électricité : aucun refresh_token retourné par Google")
+            return redirect(url_for("config_page", electricity="error"))
+        encrypted = encrypt_password(refresh_token)
+        _patch_override(lambda d: d.setdefault("ELECTRICITY", {}).update({"gmail_refresh_token": encrypted}))
+        config.ELECTRICITY["gmail_refresh_token"] = encrypted
+        _reschedule_electricity_fetch()
+        return redirect(url_for("config_page", electricity="connected"))
+    except Exception as e:
+        logger.exception("Électricité : échange OAuth échoué")
+        return redirect(url_for("config_page", electricity="error"))
+
+
+@app.route("/api/electricity/gmail/disconnect", methods=["POST"])
+def api_electricity_gmail_disconnect():
+    try:
+        _patch_override(lambda d: d.setdefault("ELECTRICITY", {}).update({"gmail_refresh_token": ""}))
+        config.ELECTRICITY["gmail_refresh_token"] = ""
+        _reschedule_electricity_fetch()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.exception("Déconnexion Gmail échouée")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/docs")
 def docs_page():
     return render_template("docs.html", config=config)
@@ -1559,6 +1681,13 @@ def api_config_save():
         else:
             final_ntfy_token = config.NTFY.get("token", "")
 
+        # Client secret Gmail : ne mettre à jour que si un nouveau est fourni, puis chiffrer
+        new_gmail_secret = str(data.get("gmail_client_secret", "")).strip()
+        if new_gmail_secret:
+            final_gmail_secret = encrypt_password(new_gmail_secret)
+        else:
+            final_gmail_secret = config.ELECTRICITY.get("gmail_client_secret", "")
+
         override = {
             "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids, "hours_per_bag": hours_per_bag},
             "TARGET_TEMP": float(data["target_temp"]),
@@ -1660,6 +1789,17 @@ def api_config_save():
                     "enabled": bool(data.get("cop_auto_learning_enabled", config.COP_LEARNING.get("auto_learning", {}).get("enabled", False))),
                 },
             },
+            "ELECTRICITY": {
+                "enabled": bool(data.get("electricity_enabled", False)),
+                "gmail_client_id": str(data.get("gmail_client_id", config.ELECTRICITY.get("gmail_client_id", ""))).strip(),
+                "gmail_client_secret": final_gmail_secret,
+                "gmail_refresh_token": config.ELECTRICITY.get("gmail_refresh_token", ""),
+                "sender_filter": str(data.get("electricity_sender", config.ELECTRICITY.get("sender_filter", "bonjour@lite.eco"))).strip(),
+                "subject_filter": str(data.get("electricity_subject", config.ELECTRICITY.get("subject_filter", "flash élec"))).strip(),
+                "check_interval_hours": int(data.get("electricity_interval_hours", config.ELECTRICITY.get("check_interval_hours", 24))),
+                "lookback_days": int(data.get("electricity_lookback_days", config.ELECTRICITY.get("lookback_days", 90))),
+                "oauth_redirect_base": str(data.get("electricity_redirect_base", config.ELECTRICITY.get("oauth_redirect_base", ""))).strip(),
+            },
         }
         _write_override(override)
         apply_overrides(config, override)
@@ -1667,6 +1807,7 @@ def api_config_save():
         _cache["expires_at"] = None
         _reschedule_notify()
         _reschedule_radiateurs()
+        _reschedule_electricity_fetch()
 
         # Redémarrer le worker auto-learning si la config a changé
         auto_learning_enabled = config.COP_LEARNING.get("auto_learning", {}).get("enabled", False)

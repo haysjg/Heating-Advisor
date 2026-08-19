@@ -121,11 +121,30 @@ def _migrate_003(conn):
             pass  # column already exists
 
 
+def _migrate_004(conn):
+    """Ajoute la table electricity_readings pour le suivi conso Gmail."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS electricity_readings (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id      TEXT    NOT NULL UNIQUE,
+            period_start    TEXT,
+            period_end      TEXT,
+            kwh             REAL    NOT NULL,
+            delta_percent   REAL,
+            delta_direction TEXT,
+            fetched_at      TEXT    NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_electricity_period ON electricity_readings(period_start);
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
     _migrate_002,
     _migrate_003,
+    _migrate_004,
 ]
 
 

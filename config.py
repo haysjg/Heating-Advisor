@@ -129,6 +129,19 @@ NTFY = {
     "token": "",                                 # token d'accès (ntfy token add ...)
 }
 
+# ── Suivi électricité (Gmail "flash élec" Lite) ──────────────
+ELECTRICITY = {
+    "enabled": False,
+    "gmail_client_id": "",            # créé dans Google Cloud Console (non secret)
+    "gmail_client_secret": "",        # chiffré au repos
+    "gmail_refresh_token": "",        # chiffré au repos ; vide = non connecté
+    "sender_filter": "bonjour@lite.eco",
+    "subject_filter": "flash élec",
+    "check_interval_hours": 24,
+    "lookback_days": 90,
+    "oauth_redirect_base": "",        # override dev local, ex. http://localhost:5000 ; vide = dérivé de LOCATION.public_url
+}
+
 # ── Radiateurs Tempo Rouge ───────────────────────────────────
 RADIATEURS_TEMPO_ROUGE = {
     "enabled": False,

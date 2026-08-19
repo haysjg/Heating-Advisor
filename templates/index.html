@@ -675,6 +675,17 @@
     </section>
     {% endif %}
 
+    {# ── Suivi électricité ── #}
+    {% if config.ELECTRICITY.enabled %}
+    <section class="card card-labeled" id="electricity-card" style="display:none">
+      <div class="today-label">SEMAINE</div>
+      <h3>⚡ Consommation électrique</h3>
+      <p class="value-big" id="electricity-kwh">—</p>
+      <p class="value-sub" id="electricity-period"></p>
+      <span class="source-badge source-real" id="electricity-delta"></span>
+    </section>
+    {% endif %}
+
     {# ── Tableau des tarifs Tempo ── #}
     <section class="card">
       <h3>📋 Tarifs EDF Tempo ({{ config.HP_START }}h–{{ config.HP_END }}h = HP)</h3>
@@ -726,6 +737,29 @@
   </script>
   <script src="/static/script.js"></script>
   <script>
+  {% if config.ELECTRICITY.enabled %}
+  fetch('/api/electricity/status')
+    .then(r => r.json())
+    .then(d => {
+      if (!d.latest) return;
+      const card = document.getElementById('electricity-card');
+      document.getElementById('electricity-kwh').textContent = d.latest.kwh.toLocaleString('fr-FR', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' kWh';
+      if (d.latest.period_start && d.latest.period_end) {
+        document.getElementById('electricity-period').textContent = 'Semaine du ' + d.latest.period_start + ' au ' + d.latest.period_end;
+      }
+      const badge = document.getElementById('electricity-delta');
+      if (d.latest.delta_percent != null) {
+        const up = d.latest.delta_direction === 'plus';
+        badge.textContent = (up ? '▲ +' : '▼ -') + d.latest.delta_percent.toLocaleString('fr-FR') + '% vs semaine précédente';
+        badge.className = 'source-badge ' + (up ? 'source-model' : 'source-real');
+      } else {
+        badge.remove();
+      }
+      card.style.display = '';
+    })
+    .catch(() => {});
+  {% endif %}
+
   function resumeThermostat() {
     fetch('/api/thermostat/resume', { method: 'POST' })
       .then(r => r.json())
