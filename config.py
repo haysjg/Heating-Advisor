@@ -138,7 +138,7 @@ ELECTRICITY = {
     "sender_filter": "bonjour@lite.eco",
     "subject_filter": "flash élec",
     "check_interval_hours": 24,
-    "lookback_days": 90,
+    "lookback_days": 2200,  # couvre depuis mars 2021 (1ers mails Lite), avec marge
     "oauth_redirect_base": "",        # override dev local, ex. http://localhost:5000 ; vide = dérivé de LOCATION.public_url
 }
 
