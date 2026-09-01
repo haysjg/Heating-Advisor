@@ -1,13 +1,15 @@
-"""Tests unitaires pour modules/electricity.py — parsing des emails "flash élec" Gmail.
+"""Tests unitaires pour modules/electricity.py — parsing des emails "flash élec" (Lite),
+transférés depuis Gmail vers une boîte tierce et lus en IMAP brut (email.message.Message).
 
 Teste uniquement les fonctions pures (pas de réseau, pas de SQLite) :
 - extraction de la période depuis le header X-CampaignID
-- décodage du corps HTML (base64url + fallback quoted-printable)
+- décodage du corps HTML (multipart MIME, transfer-encoding quelconque)
 - extraction de la valeur kWh et du delta hebdomadaire
-- orchestration parse_message sur un message Gmail API factice
+- orchestration parse_message sur un email.message.Message factice
 """
 
-import base64
+import email
+from email.message import EmailMessage
 
 from modules.electricity import (
     extract_campaign_period,
@@ -23,25 +25,15 @@ SAMPLE_HTML = (
 )
 
 
-def _b64(text: str) -> str:
-    return base64.urlsafe_b64encode(text.encode("utf-8")).decode()
-
-
-def _fake_message(html: str = SAMPLE_HTML, with_campaign: bool = True, message_id: str = "18abc") -> dict:
-    headers = []
+def _fake_message(html: str = SAMPLE_HTML, with_campaign: bool = True, message_id: str = "<18abc@mail.example>") -> EmailMessage:
+    msg = EmailMessage()
+    msg["Message-ID"] = message_id
     if with_campaign:
-        headers.append({"name": "X-CampaignID", "value": "WEEKLY_2026-08-10_2026-08-16"})
-    return {
-        "id": message_id,
-        "payload": {
-            "mimeType": "multipart/alternative",
-            "headers": headers,
-            "parts": [
-                {"mimeType": "text/plain", "body": {"data": _b64("version texte")}},
-                {"mimeType": "text/html", "body": {"data": _b64(html)}},
-            ],
-        },
-    }
+        msg["X-CampaignID"] = "WEEKLY_2026-08-10_2026-08-16"
+    msg.set_content("version texte")
+    msg.add_alternative(html, subtype="html")
+    # Round-trip via bytes pour simuler fidèlement un fetch IMAP (BODY.PEEK[]).
+    return email.message_from_bytes(msg.as_bytes())
 
 
 # ── extract_campaign_period ──────────────────────────────────────
@@ -49,18 +41,14 @@ def _fake_message(html: str = SAMPLE_HTML, with_campaign: bool = True, message_i
 
 class TestExtractCampaignPeriod:
     def test_extracts_period_from_header(self):
-        headers = [{"name": "X-CampaignID", "value": "WEEKLY_2026-08-10_2026-08-16"}]
-        assert extract_campaign_period(headers) == ("2026-08-10", "2026-08-16")
+        msg = _fake_message()
+        assert extract_campaign_period(msg) == ("2026-08-10", "2026-08-16")
 
     def test_header_missing_returns_none(self):
-        assert extract_campaign_period([{"name": "Subject", "value": "hello"}]) is None
+        msg = _fake_message(with_campaign=False)
+        assert extract_campaign_period(msg) is None
 
-    def test_header_malformed_returns_none(self):
-        headers = [{"name": "X-CampaignID", "value": "NOTWEEKLY"}]
-        assert extract_campaign_period(headers) is None
-
-    def test_empty_headers_returns_none(self):
-        assert extract_campaign_period([]) is None
+    def test_none_message_returns_none(self):
         assert extract_campaign_period(None) is None
 
 
@@ -68,33 +56,26 @@ class TestExtractCampaignPeriod:
 
 
 class TestDecodeHtmlPart:
-    def test_decodes_nested_multipart(self):
-        payload = {
-            "mimeType": "multipart/mixed",
-            "parts": [
-                {
-                    "mimeType": "multipart/alternative",
-                    "parts": [
-                        {"mimeType": "text/plain", "body": {"data": _b64("texte")}},
-                        {"mimeType": "text/html", "body": {"data": _b64(SAMPLE_HTML)}},
-                    ],
-                }
-            ],
-        }
-        assert decode_html_part(payload) == SAMPLE_HTML
+    def test_decodes_multipart_alternative(self):
+        msg = _fake_message()
+        assert decode_html_part(msg).rstrip("\n") == SAMPLE_HTML
 
     def test_no_html_part_returns_none(self):
-        payload = {"mimeType": "text/plain", "body": {"data": _b64("texte seul")}}
-        assert decode_html_part(payload) is None
+        msg = EmailMessage()
+        msg.set_content("texte seul")
+        msg = email.message_from_bytes(msg.as_bytes())
+        assert decode_html_part(msg) is None
 
-    def test_quoted_printable_fallback(self):
-        # Corps contenant des séquences quoted-printable non résolues par l'API.
-        qp_body = "172,5 kWh=3C/span=3E"  # =3C = "<", =3E = ">"
-        payload = {"mimeType": "text/html", "body": {"data": _b64(qp_body)}}
-        result = decode_html_part(payload)
-        assert "kWh</span>" not in result or "kWh=3C/span=3E" not in result  # décodé d'une façon ou d'une autre
-        # Le fallback quopri doit avoir résolu =3C/=3E en </>
-        assert "<" in result or "=3C" not in result
+    def test_handles_accented_content(self):
+        html = "<p>Consommé : 10 kWh — période précédente</p>"
+        msg = EmailMessage()
+        msg.set_content("texte")
+        msg.add_alternative(html, subtype="html")
+        msg = email.message_from_bytes(msg.as_bytes())
+        assert decode_html_part(msg).rstrip("\n") == html
+
+    def test_none_message_returns_none(self):
+        assert decode_html_part(None) is None
 
 
 # ── parse_kwh ─────────────────────────────────────────────────────
@@ -141,7 +122,7 @@ class TestParseMessage:
     def test_full_message_parses_correctly(self):
         result = parse_message(_fake_message())
         assert result == {
-            "message_id": "18abc",
+            "message_id": "18abc@mail.example",
             "period_start": "2026-08-10",
             "period_end": "2026-08-16",
             "kwh": 172.5,
@@ -161,4 +142,3 @@ class TestParseMessage:
 
     def test_none_message_returns_none(self):
         assert parse_message(None) is None
-        assert parse_message({}) is None

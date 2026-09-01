@@ -13,7 +13,7 @@ Application Flask de recommandation de chauffage. Compare en temps réel le coû
 5. [Détection de présence](#détection-de-présence)
 6. [Mode Absence](#mode-absence)
 7. [Notifications push](#notifications-push)
-8. [Suivi électricité (Gmail)](#suivi-électricité-gmail)
+8. [Suivi électricité (IMAP)](#suivi-électricité-imap)
 9. [API REST](#api-rest)
 10. [Configuration](#configuration)
 11. [Déploiement](#déploiement)
@@ -40,7 +40,7 @@ modules/
   overrides.py           # Chargement/application de config_override.json
   crypto.py              # Chiffrement AES des mots de passe en config
   ntfy_push.py           # Notifications push via Ntfy
-  gmail_client.py        # OAuth2 + appels API Gmail (lecture seule)
+  imap_client.py         # Client IMAP (lecture seule) — boîte tierce recevant les mails Lite transférés
   electricity.py         # Parsing emails "flash élec" + historisation conso électrique
 ```
 
@@ -161,22 +161,21 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 |---|---|
 | `send(title, message, ntfy_cfg)` | Envoie une notification push via Ntfy. Silencieux en cas d'erreur réseau. Le token est déchiffré automatiquement avant envoi. |
 
-### `gmail_client.py` — OAuth2 + API Gmail
+### `imap_client.py` — Client IMAP (lecture seule)
 
 | Fonction | Description |
 |---|---|
-| `build_auth_url(cfg, redirect_uri, state)` | Construit l'URL de consentement Google OAuth2. |
-| `exchange_code_for_tokens(cfg, code, redirect_uri)` | Échange le code d'autorisation contre `access_token` + `refresh_token`. |
-| `refresh_access_token(cfg)` | Rafraîchit un `access_token` (non persisté) à partir du `refresh_token` stocké. |
-| `is_connected(cfg)` | Retourne `True` si un `refresh_token` est configuré. |
-| `list_messages(access_token, sender, subject, lookback_days)` | Liste les IDs des messages Gmail correspondant au filtre. |
-| `get_message(access_token, message_id)` | Récupère le message complet (payload MIME) via l'API Gmail. |
+| `open_connection(cfg)` / `close_connection(conn)` | Ouvre/ferme une connexion IMAP authentifiée en lecture seule. |
+| `test_connection(cfg)` | Teste la connexion avec les identifiants stockés. Retourne `(succès, message)`. |
+| `is_connected(cfg)` | Retourne `True` si des identifiants IMAP sont configurés. |
+| `list_matching_messages(conn, sender, subject, lookback_days)` | Liste `{uid, message_id}` des messages correspondant au filtre (sujet filtré côté client, après décodage MIME). |
+| `fetch_message(conn, uid)` | Récupère le message complet (headers + corps MIME) pour un UID. |
 
 ### `electricity.py` — Parsing et historisation de la consommation
 
 | Fonction | Description |
 |---|---|
-| `parse_message(message)` | Extrait `kwh`, `period_start/end` et `delta_percent/direction` d'un message Gmail "flash élec". |
+| `parse_message(msg)` | Extrait `kwh`, `period_start/end` et `delta_percent/direction` d'un `email.message.Message` "flash élec". |
 | `fetch_new_readings(electricity_cfg)` | Job de synchronisation : liste les emails non traités, les parse, les historise (idempotent par `message_id`). |
 | `get_readings(weeks)` | Retourne l'historique des lectures sur N semaines. |
 | `get_latest_reading()` | Retourne la dernière lecture (carte dashboard). |
@@ -342,28 +341,25 @@ Accessible via `/config` → section **🔔 Notifications push** :
 
 ---
 
-## Suivi électricité (Gmail)
+## Suivi électricité (IMAP)
 
-Historise automatiquement la consommation électrique hebdomadaire à partir des emails "flash élec" envoyés par **[Lite](https://lite.eco)** (`bonjour@lite.eco`), sans mot de passe en clair : connexion via **OAuth2 Gmail en lecture seule**.
+Historise automatiquement la consommation électrique hebdomadaire à partir des emails "flash élec" envoyés par **[Lite](https://lite.eco)** (`bonjour@lite.eco`).
+
+Le compte Gmail personnel utilisé au quotidien est protégé par la **Protection avancée Google (APP)**, qui bloque tout accès OAuth aux scopes sensibles (dont `gmail.readonly`) pour les apps non vérifiées par Google — y compris ses propres apps OAuth en mode Test, sans possibilité de "continuer quand même". La vérification complète (CASA + domaine + politique de confidentialité) est disproportionnée pour un usage strictement personnel. La solution retenue : un **filtre Gmail transfère les mails Lite vers une boîte tierce** (ex. adresse FAI, non soumise à la Protection avancée), consultée en **IMAP standard** — sans OAuth, sans dépendance externe.
 
 ### Sécurité
 
-- Scope OAuth : `https://www.googleapis.com/auth/gmail.readonly` — le scope de lecture le plus étroit proposé par Google (il n'existe pas de scope restreint à un expéditeur). Le token accordé pourrait donc techniquement lire toute la boîte mail, mais **le code applicatif ne traite que les messages correspondant au filtre expéditeur/sujet configuré** — c'est une restriction côté application, pas côté OAuth.
-- `client_secret` et `refresh_token` sont chiffrés au repos (AES via `modules/crypto.py`, comme les autres secrets de l'app).
-- **Aucun `access_token` n'est jamais persisté** — il est régénéré à chaque synchronisation à partir du `refresh_token` puis jeté.
-- L'app utilise **votre propre** client OAuth Google Cloud (créé ci-dessous) — aucun secret partagé n'est embarqué dans le code.
+- Mot de passe IMAP chiffré au repos (AES via `modules/crypto.py`, comme les autres secrets de l'app).
+- Connexion en lecture seule (`SELECT ... readonly=True`) — aucun mail n'est jamais marqué lu ni modifié.
+- Le filtre expéditeur/sujet est appliqué côté application ; seuls les mails correspondants sont parsés et historisés.
 
-### Configuration Google Cloud (setup manuel, une fois)
+### Configuration côté boîte tierce (setup manuel, une fois)
 
-1. Créer un projet sur [console.cloud.google.com](https://console.cloud.google.com).
-2. **APIs & Services → Library** → rechercher "Gmail API" → l'activer.
-3. **APIs & Services → OAuth consent screen** :
-   - Type : *External*.
-   - Sous **Test users**, ajouter votre adresse Gmail. **Obligatoire** : le scope `gmail.readonly` est un scope "sensible" — sans utilisateur de test enregistré, Google bloque le flow OAuth pour une app non vérifiée.
-4. **APIs & Services → Credentials → Create Credentials → OAuth client ID** :
-   - Type d'application : **Web application**.
-   - URI de redirection autorisée : `https://<votre-public-url>/api/electricity/gmail/callback` (ex. `https://nas-jg.mywire.org:8443/api/electricity/gmail/callback`, dérivé de `LOCATION.public_url`). Pour tester en local, ajouter aussi `http://localhost:5000/api/electricity/gmail/callback`.
-5. Noter le **Client ID** et le **Client Secret** générés.
+1. Créer un filtre Gmail sur le compte principal : `from:bonjour@lite.eco subject:"flash élec"` → action **Transférer à** l'adresse de la boîte tierce (à valider via le code de confirmation envoyé par Gmail).
+2. Sur la boîte tierce, activer l'accès IMAP (souvent désactivé par défaut — ex. chez Orange : Webmail → Paramètres → Gestion du courrier → accès POP/IMAP).
+3. Noter host/port IMAP, l'identifiant (adresse complète) et le mot de passe (ou mot de passe applicatif si la double authentification est activée sur la boîte tierce).
+
+⚠️ Un transfert Gmail réemballe le mail (`Fwd:`, contenu original en blockquote) : le header custom `X-CampaignID` de Lite (utilisé pour labelliser la période) est perdu. La consommation (kWh) reste extraite normalement — seule la période affichée retombe sur la date de réception.
 
 ### Configuration dans Heating Advisor
 
@@ -371,18 +367,20 @@ Accessible via `/config` → section **⚡ Suivi électricité** :
 
 | Paramètre | Description |
 |---|---|
-| `gmail_client_id` | Client ID Google OAuth (non secret) |
-| `gmail_client_secret` | Client Secret Google OAuth (chiffré) |
+| `imap_host` | Serveur IMAP de la boîte tierce (ex. `imap.orange.fr`) |
+| `imap_port` | Port IMAP (défaut 993, SSL/TLS) |
+| `imap_user` | Adresse email complète de la boîte tierce |
+| `imap_password` | Mot de passe (ou mot de passe applicatif), chiffré |
 | `sender_filter` | Expéditeur filtré (défaut `bonjour@lite.eco`) |
 | `subject_filter` | Sous-chaîne du sujet filtrée (défaut `flash élec`) |
 | `check_interval_hours` | Fréquence de vérification des nouveaux emails (défaut 24h) |
-| `lookback_days` | Fenêtre de recherche Gmail à chaque synchronisation (défaut 90 jours) |
+| `lookback_days` | Fenêtre de recherche IMAP à chaque synchronisation (défaut 2200 jours) |
 
-Une fois `client_id`/`client_secret` renseignés et enregistrés, cliquer sur **🔗 Connecter Gmail** pour lancer le flow OAuth (attendu : avertissement "app non vérifiée" à valider, puisque vous êtes votre propre utilisateur de test).
+Une fois les identifiants renseignés et enregistrés, cliquer sur **🔌 Tester la connexion** pour vérifier.
 
 ### Fonctionnement
 
-Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherche les emails correspondant au filtre, extrait la consommation (kWh) et la période (via le header `X-CampaignID: WEEKLY_YYYY-MM-DD_YYYY-MM-DD`), et historise chaque email une seule fois (dédup par ID de message Gmail — le polling peut donc être plus fréquent que la fréquence d'envoi réelle sans créer de doublons). Une page dédiée **`/electricity`** affiche l'historique (graphique + indicateurs).
+Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherche les emails correspondant au filtre, extrait la consommation (kWh) et la période (via le header `X-CampaignID: WEEKLY_YYYY-MM-DD_YYYY-MM-DD`, si préservé), et historise chaque email une seule fois (dédup par `Message-ID` — le polling peut donc être plus fréquent que la fréquence d'envoi réelle sans créer de doublons). Une page dédiée **`/electricity`** affiche l'historique (graphique + indicateurs).
 
 ---
 
@@ -408,11 +406,9 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `POST /api/notify/test` | Déclenche manuellement l'email de recommandation |
 | `GET /electricity` | Page dédiée suivi électricité |
 | `GET /api/electricity/history?weeks=N` | Historique des lectures des N dernières semaines |
-| `GET /api/electricity/status` | Statut de connexion Gmail + dernière lecture |
-| `POST /api/electricity/sync-now` | Déclenche manuellement la synchronisation Gmail |
-| `GET /api/electricity/gmail/connect` | Démarre le flow OAuth Gmail |
-| `GET /api/electricity/gmail/callback` | Callback OAuth Gmail (URI à enregistrer dans Google Cloud Console) |
-| `POST /api/electricity/gmail/disconnect` | Déconnecte le compte Gmail (efface le refresh token) |
+| `GET /api/electricity/status` | Statut de connexion IMAP + dernière lecture |
+| `POST /api/electricity/sync-now` | Déclenche manuellement la synchronisation IMAP |
+| `POST /api/electricity/imap/test` | Teste la connexion IMAP avec les identifiants enregistrés |
 
 ---
 
@@ -496,18 +492,18 @@ Trois couleurs (`BLUE`, `WHITE`, `RED`), deux périodes chacune (`HP`, `HC`).
 | `topic` | Topic Ntfy (ex. `heating-advisor`) |
 | `token` | Token d'accès Ntfy (chiffré en AES) |
 
-**`ELECTRICITY`** — Suivi électricité (Gmail)
+**`ELECTRICITY`** — Suivi électricité (IMAP)
 | Clé | Description |
 |---|---|
 | `enabled` | Active le suivi de consommation électrique |
-| `gmail_client_id` | Client ID Google OAuth (non secret) |
-| `gmail_client_secret` | Client Secret Google OAuth (chiffré en AES) |
-| `gmail_refresh_token` | Refresh token OAuth (chiffré en AES, défini via le flow "Connecter Gmail") |
+| `imap_host` | Serveur IMAP de la boîte tierce |
+| `imap_port` | Port IMAP (défaut 993) |
+| `imap_user` | Adresse email complète de la boîte tierce |
+| `imap_password` | Mot de passe IMAP (chiffré en AES) |
 | `sender_filter` | Expéditeur des emails filtrés |
 | `subject_filter` | Sous-chaîne du sujet filtrée |
 | `check_interval_hours` | Fréquence de vérification des nouveaux emails |
-| `lookback_days` | Fenêtre de recherche Gmail à chaque synchronisation |
-| `oauth_redirect_base` | Override de l'URI de base pour le callback OAuth (dev local) ; vide = dérivé de `LOCATION.public_url` |
+| `lookback_days` | Fenêtre de recherche IMAP à chaque synchronisation |
 
 ---
 

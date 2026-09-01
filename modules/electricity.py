@@ -1,67 +1,63 @@
 """
-Suivi de la consommation électrique via parsing des emails "flash élec" Gmail (Lite).
+Suivi de la consommation électrique via parsing des emails "flash élec" (Lite),
+transférés depuis Gmail vers une boîte tierce consultée en IMAP (cf. modules/imap_client.py).
 
 Deux familles de fonctions :
-- parsing (pures, sans I/O) : extraction kWh / période / delta depuis un message Gmail
+- parsing (pures, sans I/O) : extraction kWh / période / delta depuis un email.message.Message
 - historisation + orchestration : SQLite (table electricity_readings, réutilise data/history.db)
   et fetch_new_readings() appelé par le scheduler / le bouton "Synchroniser maintenant"
 """
 
-import base64
-import binascii
 import logging
-import quopri
 import re
 from datetime import datetime, timedelta
+from email.message import Message
 
-from modules import gmail_client
+from modules import imap_client
 from modules.history import _connect
 
 logger = logging.getLogger(__name__)
 
 _CAMPAIGN_RE = re.compile(r"WEEKLY_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})")
-_KWH_RE = re.compile(r"([\d.,\s ]+)\s*kWh</span>", re.IGNORECASE)
+_KWH_RE = re.compile(r"([\d.,\s ]+)\s*kWh</span>", re.IGNORECASE)
 _DELTA_RE = re.compile(r"([\d.,]+)\s*%\s+de\s+(plus|moins)", re.IGNORECASE)
-_QP_SNIFF_RE = re.compile(r"=[0-9A-Fa-f]{2}")
 
 
-def extract_campaign_period(headers: list) -> tuple | None:
-    """Extrait (period_start, period_end) depuis le header X-CampaignID: WEEKLY_YYYY-MM-DD_YYYY-MM-DD."""
-    for h in headers or []:
-        if h.get("name", "").lower() == "x-campaignid":
-            m = _CAMPAIGN_RE.search(h.get("value", ""))
-            if m:
-                return m.group(1), m.group(2)
+def extract_campaign_period(msg: Message) -> tuple | None:
+    """Extrait (period_start, period_end) depuis le header X-CampaignID: WEEKLY_YYYY-MM-DD_YYYY-MM-DD.
+
+    Souvent absent : un transfert Gmail (filtre "Transférer à") ne préserve pas les headers
+    custom du mail d'origine. La lecture reste historisée, juste sans période labellisée.
+    """
+    if not msg:
+        return None
+    value = msg.get("X-CampaignID", "")
+    m = _CAMPAIGN_RE.search(value)
+    if m:
+        return m.group(1), m.group(2)
     return None
 
 
-def _decode_part_data(data: str) -> str | None:
-    try:
-        raw = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
-    except (binascii.Error, ValueError):
+def decode_html_part(msg: Message) -> str | None:
+    """Parcourt le message MIME et retourne le corps text/html décodé (gère le multipart imbriqué
+    créé par le transfert Gmail : le HTML d'origine reste présent en clair dans le blockquote)."""
+    if not msg:
         return None
-    text = raw.decode("utf-8", errors="replace")
-    # Défensif : l'API Gmail décode généralement déjà le quoted-printable, mais pas garanti.
-    if _QP_SNIFF_RE.search(text):
+    parts = msg.walk() if msg.is_multipart() else [msg]
+    for part in parts:
+        if part.get_content_type() != "text/html":
+            continue
         try:
-            text = quopri.decodestring(text.encode("utf-8", errors="replace")).decode("utf-8", errors="replace")
+            payload = part.get_payload(decode=True)
         except Exception:
-            pass
-    return text
-
-
-def decode_html_part(payload: dict) -> str | None:
-    """Parcourt récursivement le payload MIME et retourne le corps text/html décodé."""
-    if not payload:
-        return None
-    if payload.get("mimeType") == "text/html":
-        data = payload.get("body", {}).get("data")
-        if data:
-            return _decode_part_data(data)
-    for part in payload.get("parts", []) or []:
-        html = decode_html_part(part)
-        if html:
-            return html
+            continue
+        if payload is None:
+            continue
+        charset = part.get_content_charset() or "utf-8"
+        try:
+            return payload.decode(charset, errors="replace")
+        except LookupError:
+            return payload.decode("utf-8", errors="replace")
     return None
 
 
@@ -72,7 +68,7 @@ def parse_kwh(html: str) -> float | None:
     m = _KWH_RE.search(html)
     if not m:
         return None
-    raw = m.group(1).strip().replace(" ", "").replace(" ", "").replace(",", ".")
+    raw = m.group(1).strip().replace(" ", "").replace(" ", "").replace(",", ".")
     try:
         return float(raw)
     except ValueError:
@@ -93,19 +89,19 @@ def parse_delta(html: str) -> tuple | None:
     return percent, m.group(2).lower()
 
 
-def parse_message(message: dict) -> dict | None:
-    """Parse un message Gmail API complet. None si aucune valeur kWh trouvée."""
-    if not message:
+def parse_message(msg: Message) -> dict | None:
+    """Parse un email.message.Message complet. None si aucune valeur kWh trouvée."""
+    if not msg:
         return None
-    payload = message.get("payload", {})
-    html = decode_html_part(payload)
+    html = decode_html_part(msg)
     kwh = parse_kwh(html) if html else None
     if kwh is None:
         return None
-    period = extract_campaign_period(payload.get("headers", []))
+    period = extract_campaign_period(msg)
     delta = parse_delta(html)
+    message_id = (msg.get("Message-ID") or "").strip().strip("<>") or None
     return {
-        "message_id": message.get("id"),
+        "message_id": message_id,
         "period_start": period[0] if period else None,
         "period_end": period[1] if period else None,
         "kwh": kwh,
@@ -190,32 +186,33 @@ def get_latest_reading() -> dict | None:
 
 def fetch_new_readings(electricity_cfg: dict) -> dict:
     """Job de synchronisation : liste les emails Lite non traités et les historise."""
-    if not electricity_cfg.get("enabled") or not electricity_cfg.get("gmail_refresh_token"):
+    if not electricity_cfg.get("enabled") or not imap_client.is_connected(electricity_cfg):
         return {"status": "skipped"}
+    conn = imap_client.open_connection(electricity_cfg)
+    if not conn:
+        logger.error("Électricité : échec connexion IMAP")
+        return {"status": "error", "reason": "auth"}
     try:
-        access_token = gmail_client.refresh_access_token(electricity_cfg)
-        if not access_token:
-            logger.error("Électricité : échec rafraîchissement du token Gmail")
-            return {"status": "error", "reason": "auth"}
-
-        message_ids = gmail_client.list_messages(
-            access_token,
+        matches = imap_client.list_matching_messages(
+            conn,
             electricity_cfg.get("sender_filter", "bonjour@lite.eco"),
             electricity_cfg.get("subject_filter", "flash élec"),
             electricity_cfg.get("lookback_days", 90),
         )
 
         new_count = 0
-        for message_id in message_ids:
-            if is_message_processed(message_id):
+        for match in matches:
+            if is_message_processed(match["message_id"]):
                 continue
-            message = gmail_client.get_message(access_token, message_id)
+            message = imap_client.fetch_message(conn, match["uid"])
             parsed = parse_message(message)
             if parsed and record_reading(**parsed):
                 new_count += 1
 
-        logger.info("Électricité : synchronisation terminée — %d vérifiés, %d nouveaux", len(message_ids), new_count)
-        return {"status": "ok", "checked": len(message_ids), "new": new_count}
+        logger.info("Électricité : synchronisation terminée — %d vérifiés, %d nouveaux", len(matches), new_count)
+        return {"status": "ok", "checked": len(matches), "new": new_count}
     except Exception as e:
         logger.error("Électricité : erreur synchronisation : %s", e)
         return {"status": "error", "reason": str(e)}
+    finally:
+        imap_client.close_connection(conn)

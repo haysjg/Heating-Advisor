@@ -15,31 +15,31 @@ class _FakeConfig:
         self.NTFY = {"enabled": False, "url": "", "topic": "heating-advisor", "token": ""}
         self.ELECTRICITY = {
             "enabled": False,
-            "gmail_client_id": "",
-            "gmail_client_secret": "",
-            "gmail_refresh_token": "",
+            "imap_host": "imap.orange.fr",
+            "imap_port": 993,
+            "imap_user": "",
+            "imap_password": "",
             "sender_filter": "bonjour@lite.eco",
             "subject_filter": "flash élec",
             "check_interval_hours": 24,
             "lookback_days": 90,
-            "oauth_redirect_base": "",
         }
 
 
 class TestApplyElectricity:
     def test_electricity_block_is_merged(self):
         cfg = _FakeConfig()
-        overrides.apply(cfg, {"ELECTRICITY": {"enabled": True, "gmail_client_id": "abc123"}})
+        overrides.apply(cfg, {"ELECTRICITY": {"enabled": True, "imap_user": "abc@orange.fr"}})
         assert cfg.ELECTRICITY["enabled"] is True
-        assert cfg.ELECTRICITY["gmail_client_id"] == "abc123"
+        assert cfg.ELECTRICITY["imap_user"] == "abc@orange.fr"
         # Les autres clés du bloc restent inchangées (merge shallow, pas un remplacement complet)
         assert cfg.ELECTRICITY["sender_filter"] == "bonjour@lite.eco"
 
-    def test_electricity_refresh_token_preserved_when_not_in_override(self):
+    def test_electricity_password_preserved_when_not_in_override(self):
         cfg = _FakeConfig()
-        cfg.ELECTRICITY["gmail_refresh_token"] = "enc:v1:secret"
+        cfg.ELECTRICITY["imap_password"] = "enc:v1:secret"
         overrides.apply(cfg, {"ELECTRICITY": {"enabled": True}})
-        assert cfg.ELECTRICITY["gmail_refresh_token"] == "enc:v1:secret"
+        assert cfg.ELECTRICITY["imap_password"] == "enc:v1:secret"
 
     def test_unrelated_block_untouched(self):
         cfg = _FakeConfig()

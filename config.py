@@ -129,17 +129,19 @@ NTFY = {
     "token": "",                                 # token d'accès (ntfy token add ...)
 }
 
-# ── Suivi électricité (Gmail "flash élec" Lite) ──────────────
+# ── Suivi électricité (emails "flash élec" Lite, via IMAP tiers) ─
+# Gmail (compte protégé par la Protection avancée Google) transfère les mails Lite vers
+# une boîte tierce (ex. FAI) consultée ici en IMAP standard — cf. modules/imap_client.py.
 ELECTRICITY = {
     "enabled": False,
-    "gmail_client_id": "",            # créé dans Google Cloud Console (non secret)
-    "gmail_client_secret": "",        # chiffré au repos
-    "gmail_refresh_token": "",        # chiffré au repos ; vide = non connecté
+    "imap_host": "imap.orange.fr",
+    "imap_port": 993,
+    "imap_user": "",                  # adresse complète de la boîte de réception
+    "imap_password": "",              # chiffré au repos ; vide = non connecté
     "sender_filter": "bonjour@lite.eco",
     "subject_filter": "flash élec",
     "check_interval_hours": 24,
     "lookback_days": 2200,  # couvre depuis mars 2021 (1ers mails Lite), avec marge
-    "oauth_redirect_base": "",        # override dev local, ex. http://localhost:5000 ; vide = dérivé de LOCATION.public_url
 }
 
 # ── Radiateurs Tempo Rouge ───────────────────────────────────
