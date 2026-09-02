@@ -41,7 +41,6 @@ header {
 h1 { font-size: 1.4rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header-sub { color: var(--text-sub); font-size: 0.85rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn-refresh {
-  margin-left: auto;
   background: var(--border);
   color: var(--text);
   border: 1px solid var(--border);
@@ -52,6 +51,21 @@ h1 { font-size: 1.4rem; font-weight: 700; white-space: nowrap; overflow: hidden;
   transition: background 0.2s;
 }
 .btn-refresh:hover { background: #3a3d54; }
+.nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
+}
+.nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border);
+}
 
 /* ── Layout ───────────────────────────────────────────────── */
 main {
@@ -183,7 +197,8 @@ main {
   .grid-2 { grid-template-columns: 1fr; }
   .grid-3 { grid-template-columns: 1fr; }
   .header-inner { flex-wrap: wrap; }
-  .btn-refresh { margin-left: 0; }
+  .nav-links { margin-left: 0; }
+  .nav-actions { border-left: none; padding-left: 0; }
   .header-title-block { width: auto; }
 }
 
