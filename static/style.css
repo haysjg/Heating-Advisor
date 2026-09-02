@@ -36,9 +36,10 @@ header {
   align-items: center;
   gap: 1rem;
 }
-.header-icon { font-size: 2rem; }
-h1 { font-size: 1.4rem; font-weight: 700; }
-.header-sub { color: var(--text-sub); font-size: 0.85rem; margin-top: 2px; }
+.header-icon { font-size: 2rem; flex-shrink: 0; }
+.header-title-block { width: 260px; flex-shrink: 0; overflow: hidden; }
+h1 { font-size: 1.4rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-sub { color: var(--text-sub); font-size: 0.85rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn-refresh {
   margin-left: auto;
   background: var(--border);
@@ -183,6 +184,7 @@ main {
   .grid-3 { grid-template-columns: 1fr; }
   .header-inner { flex-wrap: wrap; }
   .btn-refresh { margin-left: 0; }
+  .header-title-block { width: auto; }
 }
 
 /* ── Values ───────────────────────────────────────────────── */
