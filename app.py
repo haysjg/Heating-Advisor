@@ -19,7 +19,7 @@ import config
 from modules.weather import get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze, analyze_tomorrow
-from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override, write_override as _write_override
+from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
 from modules.crypto import encrypt_password
 import modules.homeassistant as ha_client
 import modules.thermostat as thermostat_module
@@ -1756,7 +1756,7 @@ def api_config_save():
                 "lookback_days": int(data.get("electricity_lookback_days", config.ELECTRICITY.get("lookback_days", 90))),
             },
         }
-        _write_override(override)
+        _patch_override(lambda d: d.update(override))
         apply_overrides(config, override)
         _cache["data"] = None
         _cache["expires_at"] = None
