@@ -139,12 +139,31 @@ def _migrate_004(conn):
     """)
 
 
+def _migrate_005(conn):
+    """Ajoute electricity_import_log : trace chaque tentative de sync email (succès/échec),
+    indépendamment de electricity_readings qui ne garde que les lectures réussies."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS electricity_import_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id  TEXT,
+            email_date  TEXT,
+            imported_at TEXT    NOT NULL,
+            kwh         REAL,
+            status      TEXT    NOT NULL,
+            reason      TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_electricity_import_log_imported_at ON electricity_import_log(imported_at);
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
     _migrate_002,
     _migrate_003,
     _migrate_004,
+    _migrate_005,
 ]
 
 

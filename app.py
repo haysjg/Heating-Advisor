@@ -1303,6 +1303,17 @@ def api_electricity_sync_now():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/electricity/import-log")
+def api_electricity_import_log():
+    try:
+        limit = int(request.args.get("limit", 50))
+        limit = min(max(limit, 1), 200)
+        data = electricity_module.get_import_log(limit=limit)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/electricity/imap/test", methods=["POST"])
 def api_electricity_imap_test():
     """Teste la connexion IMAP avec les identifiants actuellement enregistrés."""

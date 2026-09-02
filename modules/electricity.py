@@ -12,6 +12,7 @@ import logging
 import re
 from datetime import datetime, timedelta
 from email.message import Message
+from email.utils import parsedate_to_datetime
 
 from modules import imap_client
 from modules.history import _connect
@@ -110,6 +111,19 @@ def parse_message(msg: Message) -> dict | None:
     }
 
 
+def extract_email_date(msg: Message) -> str | None:
+    """Extrait la date d'envoi de l'email (header Date, format RFC 2822) en ISO 8601."""
+    if not msg:
+        return None
+    raw = msg.get("Date")
+    if not raw:
+        return None
+    try:
+        return parsedate_to_datetime(raw).isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
 def is_message_processed(message_id: str) -> bool:
     try:
         with _connect() as conn:
@@ -172,6 +186,43 @@ def get_readings(weeks: int | None = 52) -> list:
         return []
 
 
+def record_import_log(message_id: str | None, email_date: str | None, kwh: float | None, status: str, reason: str | None = None) -> None:
+    """Trace une tentative de sync email (succès ou échec), pour le widget de statut d'import."""
+    try:
+        with _connect() as conn:
+            conn.execute(
+                """INSERT INTO electricity_import_log
+                   (message_id, email_date, imported_at, kwh, status, reason)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (message_id, email_date, datetime.now().isoformat(timespec="seconds"), kwh, status, reason),
+            )
+    except Exception as e:
+        logger.error("Électricité : erreur enregistrement log import : %s", e)
+
+
+def get_import_log(limit: int = 50) -> list:
+    """Retourne les N dernières tentatives de sync email, plus récentes en premier."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """SELECT message_id, email_date, imported_at, kwh, status, reason
+                   FROM electricity_import_log
+                   ORDER BY imported_at DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "message_id": r[0], "email_date": r[1], "imported_at": r[2],
+                "kwh": r[3], "status": r[4], "reason": r[5],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error("Électricité : erreur lecture log import : %s", e)
+        return []
+
+
 def get_latest_reading() -> dict | None:
     """Retourne la lecture la plus récente (pour la carte dashboard)."""
     try:
@@ -214,9 +265,21 @@ def fetch_new_readings(electricity_cfg: dict) -> dict:
             if is_message_processed(match["message_id"]):
                 continue
             message = imap_client.fetch_message(conn, match["uid"])
+            if message is None:
+                record_import_log(match["message_id"], None, None, "error", "fetch_failed")
+                continue
+
+            email_date = extract_email_date(message)
             parsed = parse_message(message)
-            if parsed and record_reading(**parsed):
+            if not parsed:
+                record_import_log(match["message_id"], email_date, None, "error", "kwh_introuvable")
+                continue
+
+            if record_reading(**parsed):
                 new_count += 1
+                record_import_log(parsed["message_id"], email_date, parsed["kwh"], "success")
+            else:
+                record_import_log(parsed["message_id"], email_date, parsed["kwh"], "error", "insertion_echouee")
 
         logger.info("Électricité : synchronisation terminée — %d vérifiés, %d nouveaux", len(matches), new_count)
         return {"status": "ok", "checked": len(matches), "new": new_count}

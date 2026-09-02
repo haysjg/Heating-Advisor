@@ -34,6 +34,9 @@
     .raw-table td { text-align: right; padding: 0.4rem 0.6rem; border-bottom: 1px solid rgba(42,45,62,0.6); color: var(--text); }
     .raw-table td:first-child { text-align: left; font-weight: 600; position: sticky; left: 0; background: var(--bg1, var(--bg2)); }
     .raw-table tr:last-child td { border-bottom: none; }
+    .status-badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 6px; font-size: 0.78rem; font-weight: 700; }
+    .status-success { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; }
+    .status-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
   </style>
 {% endblock %}
 
@@ -92,6 +95,14 @@
       <div id="raw-table-no-data" class="no-data" style="display:none;">Aucune donnée disponible.</div>
       <div class="raw-table-wrapper">
         <table class="raw-table" id="raw-table"></table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <h2 style="margin:0 0 1rem; font-size:1rem;">Statut des imports</h2>
+      <div id="import-log-no-data" class="no-data" style="display:none;">Aucune tentative de synchronisation enregistrée.</div>
+      <div class="raw-table-wrapper">
+        <table class="raw-table" id="import-log-table"></table>
       </div>
     </div>
   </div>
@@ -373,6 +384,56 @@
     URL.revokeObjectURL(a.href);
   }
 
+  function fmtDateTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d)) return '—';
+    return d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  const IMPORT_REASON_LABELS = {
+    fetch_failed: 'Échec récupération du message',
+    kwh_introuvable: 'kWh introuvable dans le mail',
+    insertion_echouee: "Échec d'insertion en base",
+  };
+
+  function renderImportLog(log) {
+    const table = document.getElementById('import-log-table');
+    const noData = document.getElementById('import-log-no-data');
+    if (!log.length) {
+      table.innerHTML = '';
+      noData.style.display = 'block';
+      return;
+    }
+    noData.style.display = 'none';
+
+    let html = '<thead><tr><th style="text-align:left">Date email</th><th style="text-align:left">Importé le</th><th>kWh</th><th style="text-align:left">Statut</th></tr></thead><tbody>';
+    log.forEach(row => {
+      const badge = row.status === 'success'
+        ? '<span class="status-badge status-success">✓ Succès</span>'
+        : `<span class="status-badge status-error" title="${IMPORT_REASON_LABELS[row.reason] || row.reason || ''}">✗ Échec</span>`;
+      html += `<tr>
+        <td style="text-align:left">${fmtDateTime(row.email_date)}</td>
+        <td style="text-align:left">${fmtDateTime(row.imported_at)}</td>
+        <td>${row.kwh != null ? fmtKwh(row.kwh) : '—'}</td>
+        <td style="text-align:left">${badge}</td>
+      </tr>`;
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+  }
+
+  async function loadImportLog() {
+    try {
+      const res = await fetch('/api/electricity/import-log?limit=50');
+      const log = await res.json();
+      renderImportLog(Array.isArray(log) ? log : []);
+    } catch (e) {
+      console.error('Erreur chargement log import', e);
+      renderImportLog([]);
+    }
+  }
+
   function setActiveBtn(weeks) {
     document.querySelectorAll('[data-w]').forEach(b => {
       b.classList.toggle('active', parseInt(b.dataset.w) === weeks);
@@ -510,6 +571,7 @@
         }
         await ensureAllData();
         renderRawTable();
+        loadImportLog();
       } else {
         showToast('Erreur : ' + (d.error || d.reason || 'inconnue'), 'error');
       }
@@ -535,6 +597,7 @@
     loadData(26);
     await ensureAllData();
     renderRawTable();
+    loadImportLog();
   })();
   </script>
 {% endblock %}
