@@ -72,6 +72,9 @@
     <div class="card" id="compare-kpi-card" style="margin-top:1rem; display:none;">
       <h2 style="margin:0 0 1rem; font-size:1rem;">Comparaison annuelle</h2>
       <div class="kpi-grid" id="compare-kpi-grid"></div>
+
+      <h2 id="compare-kpi-ytd-title" style="margin:1.5rem 0 1rem; font-size:1rem;">Comparaison à date</h2>
+      <div class="kpi-grid" id="compare-kpi-ytd-grid"></div>
     </div>
   </div>
 {% endblock %}
@@ -215,13 +218,38 @@
     });
   }
 
+  function currentIsoWeek() {
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return isoWeekInfo(dateStr).week;
+  }
+
+  function _deltaCard(label, first, last) {
+    const deltaPct = first.total ? ((last.total - first.total) / first.total * 100) : null;
+    const deltaClass = deltaPct == null ? '' : (deltaPct < 0 ? 'kpi-positive' : 'kpi-negative');
+    const deltaText = deltaPct == null ? '—' : (deltaPct >= 0 ? '+' : '') + deltaPct.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %';
+    return `
+      <div class="kpi-card">
+        <p class="kpi-label">${label}</p>
+        <p class="kpi-value ${deltaClass}">${deltaText}</p>
+      </div>
+    `;
+  }
+
   function renderComparisonKPIs() {
     const grid = document.getElementById('compare-kpi-grid');
+    const ytdGrid = document.getElementById('compare-kpi-ytd-grid');
+    const ytdTitle = document.getElementById('compare-kpi-ytd-title');
     const years = Array.from(selectedYears).sort((a, b) => a - b);
     if (!years.length) {
       grid.innerHTML = '<p class="no-data" style="grid-column:1/-1;">Sélectionnez au moins une année.</p>';
+      ytdGrid.innerHTML = '';
+      ytdTitle.style.display = 'none';
       return;
     }
+    ytdTitle.style.display = 'block';
+
+    // ── Total annuel complet ──
     const stats = years.map(y => {
       const values = Object.values(dataByYear[y] || {}).filter(v => v != null);
       const total = values.reduce((s, v) => s + v, 0);
@@ -237,20 +265,33 @@
         <p class="kpi-value" style="font-size:1.1rem;">${fmtKwh(s.avg)}</p>
       </div>
     `).join('');
-
     if (stats.length >= 2) {
-      const first = stats[0], last = stats[stats.length - 1];
-      const deltaPct = first.total ? ((last.total - first.total) / first.total * 100) : null;
-      const deltaClass = deltaPct == null ? '' : (deltaPct < 0 ? 'kpi-positive' : 'kpi-negative');
-      const deltaText = deltaPct == null ? '—' : (deltaPct >= 0 ? '+' : '') + deltaPct.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %';
-      cards += `
-        <div class="kpi-card">
-          <p class="kpi-label">${last.year} vs ${first.year}</p>
-          <p class="kpi-value ${deltaClass}">${deltaText}</p>
-        </div>
-      `;
+      cards += _deltaCard(`${stats[stats.length - 1].year} vs ${stats[0].year} (total)`, stats[0], stats[stats.length - 1]);
     }
     grid.innerHTML = cards;
+
+    // ── Cumul "à date" : semaines 1 à la semaine ISO courante, pour comparer équitablement
+    // une année en cours (incomplète) aux mêmes semaines des années précédentes ──
+    const currentWeek = currentIsoWeek();
+    const ytdStats = years.map(y => {
+      const weekData = dataByYear[y] || {};
+      let total = 0, count = 0;
+      for (let w = 1; w <= currentWeek; w++) {
+        if (weekData[w] != null) { total += weekData[w]; count++; }
+      }
+      return { year: y, total, count };
+    });
+
+    let ytdCards = ytdStats.map(s => `
+      <div class="kpi-card">
+        <p class="kpi-label">${s.year} — Sem. 1 à ${currentWeek} (${s.count}/${currentWeek} dispo.)</p>
+        <p class="kpi-value">${fmtKwh(s.total)}</p>
+      </div>
+    `).join('');
+    if (ytdStats.length >= 2) {
+      ytdCards += _deltaCard(`${ytdStats[ytdStats.length - 1].year} vs ${ytdStats[0].year} (à date)`, ytdStats[0], ytdStats[ytdStats.length - 1]);
+    }
+    ytdGrid.innerHTML = ytdCards;
   }
 
   function setActiveBtn(weeks) {
