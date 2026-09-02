@@ -27,6 +27,13 @@
     .kpi-negative { color: #f87171; }
     .no-data { text-align: center; padding: 3rem 1rem; color: var(--text-sub); font-size: 0.95rem; }
     .no-data a { color: var(--blue); }
+    .raw-table-wrapper { overflow-x: auto; }
+    .raw-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; white-space: nowrap; }
+    .raw-table th { text-align: right; color: var(--text-sub); font-weight: 500; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+    .raw-table th:first-child { text-align: left; position: sticky; left: 0; background: var(--bg1, var(--bg2)); }
+    .raw-table td { text-align: right; padding: 0.4rem 0.6rem; border-bottom: 1px solid rgba(42,45,62,0.6); color: var(--text); }
+    .raw-table td:first-child { text-align: left; font-weight: 600; position: sticky; left: 0; background: var(--bg1, var(--bg2)); }
+    .raw-table tr:last-child td { border-bottom: none; }
   </style>
 {% endblock %}
 
@@ -75,6 +82,17 @@
 
       <h2 id="compare-kpi-ytd-title" style="margin:1.5rem 0 1rem; font-size:1rem;">Comparaison à date</h2>
       <div class="kpi-grid" id="compare-kpi-ytd-grid"></div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+        <h2 style="margin:0; font-size:1rem;">Données brutes</h2>
+        <button class="range-btn" onclick="exportCsv()">⬇️ Exporter en CSV</button>
+      </div>
+      <div id="raw-table-no-data" class="no-data" style="display:none;">Aucune donnée disponible.</div>
+      <div class="raw-table-wrapper">
+        <table class="raw-table" id="raw-table"></table>
+      </div>
     </div>
   </div>
 {% endblock %}
@@ -127,21 +145,24 @@
     }
   }
 
-  async function loadComparison() {
-    if (!allData) {
-      try {
-        const res = await fetch('/api/electricity/history?weeks=all');
-        allData = await res.json();
-        if (!Array.isArray(allData)) allData = [];
-      } catch (e) {
-        console.error('Erreur chargement historique complet', e);
-        allData = [];
-      }
-      dataByYear = groupByIsoYear(allData);
-      const years = Object.keys(dataByYear).map(Number).sort((a, b) => a - b);
-      selectedYears = new Set(years.slice(-2));
-      renderYearCheckboxes(years);
+  async function ensureAllData() {
+    if (allData) return;
+    try {
+      const res = await fetch('/api/electricity/history?weeks=all');
+      allData = await res.json();
+      if (!Array.isArray(allData)) allData = [];
+    } catch (e) {
+      console.error('Erreur chargement historique complet', e);
+      allData = [];
     }
+    dataByYear = groupByIsoYear(allData);
+    const years = Object.keys(dataByYear).map(Number).sort((a, b) => a - b);
+    selectedYears = new Set(years.slice(-2));
+    renderYearCheckboxes(years);
+  }
+
+  async function loadComparison() {
+    await ensureAllData();
     renderComparisonChart();
     renderComparisonKPIs();
   }
@@ -294,6 +315,64 @@
     ytdGrid.innerHTML = ytdCards;
   }
 
+  function renderRawTable() {
+    const table = document.getElementById('raw-table');
+    const noData = document.getElementById('raw-table-no-data');
+    const years = Object.keys(dataByYear || {}).map(Number).sort((a, b) => a - b);
+    if (!years.length) {
+      table.innerHTML = '';
+      noData.style.display = 'block';
+      return;
+    }
+    noData.style.display = 'none';
+
+    let maxWeek = 1;
+    years.forEach(y => {
+      Object.keys(dataByYear[y]).forEach(w => { maxWeek = Math.max(maxWeek, parseInt(w, 10)); });
+    });
+
+    let html = '<thead><tr><th>Année</th>';
+    for (let w = 1; w <= maxWeek; w++) html += `<th>S${w}</th>`;
+    html += '</tr></thead><tbody>';
+    years.forEach(y => {
+      html += `<tr><td>${y}</td>`;
+      for (let w = 1; w <= maxWeek; w++) {
+        const v = dataByYear[y][w];
+        html += `<td>${v != null ? v.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</td>`;
+      }
+      html += '</tr>';
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+  }
+
+  function exportCsv() {
+    const years = Object.keys(dataByYear || {}).map(Number).sort((a, b) => a - b);
+    if (!years.length) return;
+    let maxWeek = 1;
+    years.forEach(y => {
+      Object.keys(dataByYear[y]).forEach(w => { maxWeek = Math.max(maxWeek, parseInt(w, 10)); });
+    });
+
+    const rows = [['Année', ...Array.from({ length: maxWeek }, (_, i) => `Semaine ${i + 1}`)]];
+    years.forEach(y => {
+      const row = [String(y)];
+      for (let w = 1; w <= maxWeek; w++) {
+        const v = dataByYear[y][w];
+        row.push(v != null ? String(v) : '');
+      }
+      rows.push(row);
+    });
+
+    const csv = rows.map(r => r.join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `electricite-conso-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   function setActiveBtn(weeks) {
     document.querySelectorAll('[data-w]').forEach(b => {
       b.classList.toggle('active', parseInt(b.dataset.w) === weeks);
@@ -429,6 +508,8 @@
           const activeBtn = document.querySelector('#chrono-controls [data-w].active');
           loadData(activeBtn ? parseInt(activeBtn.dataset.w) : 26);
         }
+        await ensureAllData();
+        renderRawTable();
       } else {
         showToast('Erreur : ' + (d.error || d.reason || 'inconnue'), 'error');
       }
@@ -452,6 +533,8 @@
       // en cas d'erreur réseau, on tente quand même de charger l'historique
     }
     loadData(26);
+    await ensureAllData();
+    renderRawTable();
   })();
   </script>
 {% endblock %}
