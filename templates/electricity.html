@@ -51,17 +51,27 @@
     </div>
 
     <div class="card" style="margin-top:1rem;">
-      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem;">
-        <h2 style="margin:0; font-size:1rem;">Historique hebdomadaire</h2>
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+        <h2 style="margin:0; font-size:1rem;">Historique</h2>
         <div class="range-bar">
-          <button class="range-btn" onclick="loadData(12)" data-w="12">12 semaines</button>
-          <button class="range-btn active" onclick="loadData(26)" data-w="26">26 semaines</button>
-          <button class="range-btn" onclick="loadData(52)" data-w="52">52 semaines</button>
+          <button class="range-btn active" data-mode="chrono" onclick="setMode('chrono')">Chronologique</button>
+          <button class="range-btn" data-mode="compare" onclick="setMode('compare')">📊 Comparer les années</button>
         </div>
       </div>
+      <div id="chrono-controls" class="range-bar" style="margin-bottom:1rem;">
+        <button class="range-btn" onclick="loadData(12)" data-w="12">12 semaines</button>
+        <button class="range-btn active" onclick="loadData(26)" data-w="26">26 semaines</button>
+        <button class="range-btn" onclick="loadData(52)" data-w="52">52 semaines</button>
+      </div>
+      <div id="year-controls" class="range-bar" style="margin-bottom:1rem; display:none;"></div>
       <div class="chart-wrapper">
         <canvas id="electricityChart"></canvas>
       </div>
+    </div>
+
+    <div class="card" id="compare-kpi-card" style="margin-top:1rem; display:none;">
+      <h2 style="margin:0 0 1rem; font-size:1rem;">Comparaison annuelle</h2>
+      <div class="kpi-grid" id="compare-kpi-grid"></div>
     </div>
   </div>
 {% endblock %}
@@ -70,6 +80,178 @@
   <script src="/static/script.js"></script>
   <script>
   let chart = null;
+  let mode = 'chrono';
+  let allData = null;
+  let dataByYear = null;
+  let selectedYears = new Set();
+
+  const YEAR_COLORS = ['#f59e0b', '#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#06b6d4', '#eab308', '#ec4899'];
+  const ISO_MAX_WEEK = 53;
+  const weekLabels = Array.from({ length: ISO_MAX_WEEK }, (_, i) => i + 1);
+
+  function isoWeekInfo(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+    const yearStart = new Date(d.getFullYear(), 0, 1);
+    const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return { year: d.getFullYear(), week };
+  }
+
+  function groupByIsoYear(data) {
+    const byYear = {};
+    for (const d of data) {
+      const dateStr = d.period_start || d.fetched_at;
+      if (!dateStr || d.kwh == null) continue;
+      const { year, week } = isoWeekInfo(dateStr.slice(0, 10));
+      if (!byYear[year]) byYear[year] = {};
+      byYear[year][week] = d.kwh;
+    }
+    return byYear;
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    document.getElementById('chrono-controls').style.display = m === 'chrono' ? 'flex' : 'none';
+    document.getElementById('year-controls').style.display = m === 'compare' ? 'flex' : 'none';
+    document.getElementById('compare-kpi-card').style.display = m === 'compare' ? 'block' : 'none';
+    document.getElementById('kpi-grid').closest('.card').style.display = m === 'chrono' ? 'block' : 'none';
+    if (m === 'chrono') {
+      const activeBtn = document.querySelector('#chrono-controls [data-w].active');
+      loadData(activeBtn ? parseInt(activeBtn.dataset.w) : 26);
+    } else {
+      loadComparison();
+    }
+  }
+
+  async function loadComparison() {
+    if (!allData) {
+      try {
+        const res = await fetch('/api/electricity/history?weeks=all');
+        allData = await res.json();
+        if (!Array.isArray(allData)) allData = [];
+      } catch (e) {
+        console.error('Erreur chargement historique complet', e);
+        allData = [];
+      }
+      dataByYear = groupByIsoYear(allData);
+      const years = Object.keys(dataByYear).map(Number).sort((a, b) => a - b);
+      selectedYears = new Set(years.slice(-2));
+      renderYearCheckboxes(years);
+    }
+    renderComparisonChart();
+    renderComparisonKPIs();
+  }
+
+  function renderYearCheckboxes(years) {
+    const container = document.getElementById('year-controls');
+    container.innerHTML = years.map((y, i) => `
+      <label style="display:flex; align-items:center; gap:0.4rem; padding:0.4rem 0.75rem; border-radius:8px; border:1px solid var(--border); cursor:pointer; font-size:0.88rem;">
+        <input type="checkbox" value="${y}" onchange="toggleYear(${y}, this.checked)" ${selectedYears.has(y) ? 'checked' : ''}
+               style="accent-color:${YEAR_COLORS[i % YEAR_COLORS.length]}">
+        ${y}
+      </label>
+    `).join('');
+  }
+
+  function toggleYear(year, checked) {
+    if (checked) selectedYears.add(year); else selectedYears.delete(year);
+    renderComparisonChart();
+    renderComparisonKPIs();
+  }
+
+  function renderComparisonChart() {
+    if (chart) { chart.destroy(); chart = null; }
+    const years = Object.keys(dataByYear).map(Number).sort((a, b) => a - b);
+    const datasets = years.filter(y => selectedYears.has(y)).map(y => {
+      const color = YEAR_COLORS[years.indexOf(y) % YEAR_COLORS.length];
+      return {
+        label: String(y),
+        data: weekLabels.map(w => (dataByYear[y][w] ?? null)),
+        borderColor: color,
+        backgroundColor: color + '26',
+        borderWidth: 2,
+        pointRadius: 2,
+        pointBackgroundColor: color,
+        tension: 0.25,
+        spanGaps: true,
+      };
+    });
+
+    const ctx = document.getElementById('electricityChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: weekLabels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: '#8892a4' } },
+          tooltip: {
+            backgroundColor: '#1a1d27',
+            borderColor: '#2a2d3e',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#8892a4',
+            padding: 10,
+            callbacks: {
+              label: item => `${item.dataset.label} — ${item.parsed.y.toFixed(1)} kWh`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Semaine', color: '#8892a4' },
+            ticks: { color: '#8892a4' },
+            grid: { color: 'rgba(42,45,62,0.8)' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#8892a4', callback: v => v + ' kWh' },
+            grid: { color: 'rgba(42,45,62,0.8)' },
+          },
+        },
+      },
+    });
+  }
+
+  function renderComparisonKPIs() {
+    const grid = document.getElementById('compare-kpi-grid');
+    const years = Array.from(selectedYears).sort((a, b) => a - b);
+    if (!years.length) {
+      grid.innerHTML = '<p class="no-data" style="grid-column:1/-1;">Sélectionnez au moins une année.</p>';
+      return;
+    }
+    const stats = years.map(y => {
+      const values = Object.values(dataByYear[y] || {}).filter(v => v != null);
+      const total = values.reduce((s, v) => s + v, 0);
+      const avg = values.length ? total / values.length : 0;
+      return { year: y, total, avg, count: values.length };
+    });
+
+    let cards = stats.map(s => `
+      <div class="kpi-card">
+        <p class="kpi-label">${s.year} — Total (${s.count} sem.)</p>
+        <p class="kpi-value">${fmtKwh(s.total)}</p>
+        <p class="kpi-label" style="margin-top:0.3rem;">Moyenne/semaine</p>
+        <p class="kpi-value" style="font-size:1.1rem;">${fmtKwh(s.avg)}</p>
+      </div>
+    `).join('');
+
+    if (stats.length >= 2) {
+      const first = stats[0], last = stats[stats.length - 1];
+      const deltaPct = first.total ? ((last.total - first.total) / first.total * 100) : null;
+      const deltaClass = deltaPct == null ? '' : (deltaPct < 0 ? 'kpi-positive' : 'kpi-negative');
+      const deltaText = deltaPct == null ? '—' : (deltaPct >= 0 ? '+' : '') + deltaPct.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %';
+      cards += `
+        <div class="kpi-card">
+          <p class="kpi-label">${last.year} vs ${first.year}</p>
+          <p class="kpi-value ${deltaClass}">${deltaText}</p>
+        </div>
+      `;
+    }
+    grid.innerHTML = cards;
+  }
 
   function setActiveBtn(weeks) {
     document.querySelectorAll('[data-w]').forEach(b => {
@@ -198,8 +380,14 @@
       const d = await res.json();
       if (d.status === 'ok') {
         showToast(`✓ Synchronisé — ${d.new} nouvelle(s) lecture(s)`, 'success');
-        const activeBtn = document.querySelector('[data-w].active');
-        loadData(activeBtn ? parseInt(activeBtn.dataset.w) : 26);
+        allData = null;
+        dataByYear = null;
+        if (mode === 'compare') {
+          loadComparison();
+        } else {
+          const activeBtn = document.querySelector('#chrono-controls [data-w].active');
+          loadData(activeBtn ? parseInt(activeBtn.dataset.w) : 26);
+        }
       } else {
         showToast('Erreur : ' + (d.error || d.reason || 'inconnue'), 'error');
       }

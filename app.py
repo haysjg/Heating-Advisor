@@ -1271,9 +1271,12 @@ def electricity_page():
 @app.route("/api/electricity/history")
 def api_electricity_history():
     try:
-        weeks = int(request.args.get("weeks", 52))
-        weeks = min(max(weeks, 1), 260)
-        data = electricity_module.get_readings(weeks=weeks)
+        weeks_param = request.args.get("weeks", "52")
+        if weeks_param == "all":
+            data = electricity_module.get_readings(weeks=None)
+        else:
+            weeks = min(max(int(weeks_param), 1), 260)
+            data = electricity_module.get_readings(weeks=weeks)
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

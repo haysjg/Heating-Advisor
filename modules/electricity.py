@@ -139,18 +139,27 @@ def record_reading(message_id, period_start, period_end, kwh, delta_percent, del
         return False
 
 
-def get_readings(weeks: int = 52) -> list:
-    """Retourne les lectures des N dernières semaines, triées par période."""
-    since = (datetime.now() - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+def get_readings(weeks: int | None = 52) -> list:
+    """Retourne les lectures des N dernières semaines, triées par période.
+    weeks=None (ou <= 0) retourne l'historique complet, sans filtre de date
+    (utilisé par la comparaison annuelle sur /electricity)."""
     try:
         with _connect() as conn:
-            rows = conn.execute(
-                """SELECT message_id, period_start, period_end, kwh, delta_percent, delta_direction, fetched_at
-                   FROM electricity_readings
-                   WHERE period_start >= ? OR period_start IS NULL
-                   ORDER BY COALESCE(period_start, fetched_at)""",
-                (since,),
-            ).fetchall()
+            if weeks is not None and weeks > 0:
+                since = (datetime.now() - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+                rows = conn.execute(
+                    """SELECT message_id, period_start, period_end, kwh, delta_percent, delta_direction, fetched_at
+                       FROM electricity_readings
+                       WHERE period_start >= ? OR period_start IS NULL
+                       ORDER BY COALESCE(period_start, fetched_at)""",
+                    (since,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT message_id, period_start, period_end, kwh, delta_percent, delta_direction, fetched_at
+                       FROM electricity_readings
+                       ORDER BY COALESCE(period_start, fetched_at)"""
+                ).fetchall()
         return [
             {
                 "message_id": r[0], "period_start": r[1], "period_end": r[2],
