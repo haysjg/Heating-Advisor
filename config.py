@@ -17,12 +17,12 @@ LOCATION = {
     "public_url": "",
 }
 
-# ── Tarifs EDF Tempo (€/kWh) – saison 2024-2025 ─────────────
+# ── Tarifs EDF Tempo (€/kWh) – en vigueur au 1er février 2026 ─
 TEMPO_PRICES = {
-    "BLUE":    {"HP": 0.1369, "HC": 0.1056},
-    "WHITE":   {"HP": 0.1894, "HC": 0.1259},
-    "RED":     {"HP": 0.7561, "HC": 0.1369},
-    "UNKNOWN": {"HP": 0.1894, "HC": 0.1259},  # fallback = Blanc
+    "BLUE":    {"HP": 0.1654, "HC": 0.1356},
+    "WHITE":   {"HP": 0.1921, "HC": 0.1536},
+    "RED":     {"HP": 0.7295, "HC": 0.1615},
+    "UNKNOWN": {"HP": 0.1921, "HC": 0.1536},  # fallback = Blanc
 }
 
 # Heures Pleines : 6h → 22h (les autres sont Heures Creuses)
