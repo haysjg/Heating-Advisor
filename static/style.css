@@ -376,47 +376,42 @@ main {
   font-family: inherit;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  /* Neutre par défaut : la couleur ne doit apparaître que si l'état est réellement actif (.active), pas juste au survol de l'action ON/OFF. */
+  background: rgba(148,163,184,0.08);
+  border-color: rgba(148,163,184,0.3);
+  color: var(--text-sub);
 }
 
 .btn-compact:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  border-color: rgba(148,163,184,0.5);
 }
 
 .btn-compact:active {
   transform: translateY(0);
 }
 
-.btn-compact-on {
-  background: rgba(34,197,94,0.15);
+.btn-compact-on.active {
+  background: rgba(34,197,94,0.2);
   border-color: #22c55e;
   color: #22c55e;
-}
-
-.btn-compact-on:hover {
-  background: rgba(34,197,94,0.25);
-}
-
-.btn-compact-on.active {
-  background: rgba(34,197,94,0.35);
-  border-color: #22c55e;
   box-shadow: 0 0 0 2px rgba(34,197,94,0.2);
 }
 
-.btn-compact-off {
-  background: rgba(100,116,139,0.15);
-  border-color: #64748b;
-  color: #64748b;
-}
-
-.btn-compact-off:hover {
-  background: rgba(100,116,139,0.25);
+.btn-compact-on.active:hover {
+  background: rgba(34,197,94,0.3);
 }
 
 .btn-compact-off.active {
+  background: rgba(100,116,139,0.25);
+  border-color: #94a3b8;
+  color: #e2e8f0;
+  box-shadow: 0 0 0 2px rgba(148,163,184,0.15);
+}
+
+.btn-compact-off.active:hover {
   background: rgba(100,116,139,0.35);
-  border-color: #64748b;
-  box-shadow: 0 0 0 2px rgba(100,116,139,0.2);
 }
 
 .btn-compact:disabled {
