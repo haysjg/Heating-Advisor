@@ -79,11 +79,9 @@
     {% endif %}
 
     <form method="POST" action="{{ url_for('login', next=request.args.get('next', '/')) }}">
-      <input type="text" name="username" id="username" value="heating-advisor"
-             autocomplete="username" style="display:none">
       <label class="login-label" for="password">Mot de passe</label>
       <input class="login-input" type="password" id="password" name="password"
-             autofocus autocomplete="current-password">
+             autofocus autocomplete="current-password" required>
       <button class="login-btn" type="submit">Se connecter</button>
     </form>
   </div>
