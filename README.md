@@ -14,9 +14,10 @@ Application Flask de recommandation de chauffage. Compare en temps réel le coû
 6. [Mode Absence](#mode-absence)
 7. [Notifications push](#notifications-push)
 8. [Suivi électricité (IMAP)](#suivi-électricité-imap)
-9. [API REST](#api-rest)
-10. [Configuration](#configuration)
-11. [Déploiement](#déploiement)
+9. [Apprentissage du COP réel](#apprentissage-du-cop-réel)
+10. [API REST](#api-rest)
+11. [Configuration](#configuration)
+12. [Déploiement](#déploiement)
 
 ---
 
@@ -42,6 +43,9 @@ modules/
   ntfy_push.py           # Notifications push via Ntfy
   imap_client.py         # Client IMAP (lecture seule) — boîte tierce recevant les mails Lite transférés
   electricity.py         # Parsing emails "flash élec" + historisation conso électrique
+  cop_learning.py        # Apprentissage COP réel : tags, profil de base, courbe apprise, confiance
+  cop_sampling.py        # Échantillonnage asynchrone des capteurs Shelly (thread, 2 min)
+  cop_auto_learning.py   # Worker de détection auto des démarrages clim + validation statistique
 ```
 
 **Flux de données principal :**
@@ -384,6 +388,87 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 
 ---
 
+## Apprentissage du COP réel
+
+Mesure le COP réel de la clim en conditions d'utilisation pour remplacer progressivement la courbe constructeur (`CLIM.cop_curve`) utilisée par `advisor.py`. Désactivé par défaut (`COP_LEARNING.enabled = False`). Interface : page **`/cop-learning`** (🎓 COP Learning).
+
+> Documentation utilisateur détaillée : [`COP_LEARNING_README.md`](COP_LEARNING_README.md) (tagging manuel) et [`docs/AUTO_LEARNING_COP.md`](docs/AUTO_LEARNING_COP.md) (apprentissage automatique).
+
+### Prérequis
+
+- **Shelly EM** remonté dans Home Assistant : canal 1 = consommation totale maison, canal 2 = ballon d'eau chaude (W).
+- Pour l'apprentissage automatique : entité climate de la clim (`HOME_ASSISTANT.clim_entity_id`).
+
+### Principe de calcul
+
+```
+P_clim = P_totale − P_ballon − P_base(heure)
+COP    = nominal_thermal_kw × 1000 / P_clim
+```
+
+- **Profil de base** (`cop_base_profile`) : consommation de la maison hors clim et hors ballon, une valeur par heure (0–23). Mis à jour en moyenne cumulée à chaque tag OFF ; calibrable manuellement (une heure ou toutes). Défaut 200 W si aucune donnée.
+- **Validation** : `P_clim` doit être positive et comprise entre `min_ac_power` et `max_ac_power`, sinon le tag est enregistré comme invalide sans mesure.
+- **Courbe apprise** (`cop_curve_learned`) : mesures regroupées par tranches de `temp_bin_size` °C (centre = arrondi au multiple le plus proche) ; une tranche n'est retenue qu'à partir de `min_samples_per_bin` mesures (moyenne + écart-type).
+
+### Tagging manuel
+
+1. Allumer la clim, attendre la stabilisation (2–3 min), cliquer **Clim ON** → échantillonnage asynchrone (`cop_sampling.py`) : 12 relevés Shelly sur 2 min (toutes les 10 s), au moins 8 valides requis, abandon après 3 erreurs consécutives. La moyenne est enregistrée comme tag ON.
+2. Éteindre la clim, attendre 1–2 min, cliquer **Clim OFF** → met à jour le profil de base de l'heure courante.
+
+Tag ON refusé si le ballon consomme plus de 50 W (chauffe en cours).
+
+### Apprentissage automatique (`cop_auto_learning.py`)
+
+Thread démarré au lancement de l'app si `COP_LEARNING.enabled`, `auto_learning.enabled` et clim configurée dans HA. Activable/désactivable à chaud depuis `/cop-learning`.
+
+```
+Polling état clim (45 s)
+  → transition off → heat détectée
+  → pré-checks : intervalle ≥ 2 h depuis dernier échantillon, hors blackout_hours,
+                 dans le planning thermostat, Shelly dispo, ballon < 50 W
+  → attente stabilisation (5 min) puis re-vérification des pré-checks
+  → échantillonnage 2 min (idem tag manuel)
+  → validation statistique, sinon tag supprimé + rejet journalisé
+```
+
+| Contrôle | Seuil par défaut |
+|---|---|
+| Écart-type des relevés | ≤ 200 W (`max_variance_watts`) |
+| Saut entre deux relevés | ≤ 500 W (`max_power_jump_watts`) |
+| Écart au COP théorique | ≤ 50 % (`max_deviation_from_theoretical`) |
+| Écart au COP déjà appris | ≤ 30 % (`max_deviation_from_history`) |
+| Puissance clim déduite | `min_ac_power` – `max_ac_power` |
+
+Statistiques et historique des rejets (50 derniers) sont **en mémoire** : remis à zéro au redémarrage du conteneur.
+
+### Score de confiance et usage par l'advisor
+
+Score 0–1 pondéré :
+
+| Composante | Poids | Plein score |
+|---|---|---|
+| Nombre de mesures | 30 % | 50 mesures |
+| Couverture température | 30 % | 7 tranches (−10 à +20 °C) |
+| Cohérence (écart-type moyen des tranches) | 20 % | écart-type 0 (nul à ≥ 1) |
+| Durée de collecte | 20 % | 30 jours |
+
+`advisor.get_effective_cop_curve()` choisit la courbe utilisée pour le calcul du coût clim :
+
+| Situation | Courbe |
+|---|---|
+| Apprentissage désactivé, confiance < 0,3 ou aucune courbe apprise | Théorique |
+| Confiance ≥ `confidence_threshold` **et** `auto_switch_to_learned` | Apprise |
+| Sinon | Mélange : `facteur = (confiance − 0,3) / 0,7`, appliqué aux points théoriques ayant une tranche apprise à ±5 °C |
+
+### Stockage et maintenance
+
+- Tables SQLite dans `data/history.db` (créées par `modules/migrate.py`) : `cop_tags`, `cop_measurements`, `cop_base_profile`, `cop_curve_learned`, `cop_config`.
+- Purge des tags et mesures > 90 jours chaque lundi à 3h20 ; profil de base et courbe apprise conservés.
+- Nettoyage des tâches d'échantillonnage terminées toutes les 5 min (rétention 10 min).
+- Effacement manuel depuis l'interface : données seules (profil de base conservé) ou remise à zéro complète.
+
+---
+
 ## API REST
 
 | Endpoint | Description |
@@ -399,6 +484,7 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `GET /api/thermostat/diagnose` | Diagnostic complet (temp, sonde, présence, scheduler) |
 | `POST /api/thermostat/toggle` | Active/désactive le thermostat |
 | `POST /api/thermostat/resume` | Annule la suspension du thermostat |
+| `POST /api/thermostat/thresholds` | Modifie les seuils `{ "temp_on": 19.5, "temp_off": 21 }` (widget « Température de confort » du dashboard) |
 | `GET /api/thermostat/vacation` | Dates d'absence programmées |
 | `POST /api/thermostat/vacation` | Programme une absence |
 | `DELETE /api/thermostat/vacation` | Annule l'absence programmée |
@@ -409,6 +495,19 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `GET /api/electricity/status` | Statut de connexion IMAP + dernière lecture |
 | `POST /api/electricity/sync-now` | Déclenche manuellement la synchronisation IMAP |
 | `POST /api/electricity/imap/test` | Teste la connexion IMAP avec les identifiants enregistrés |
+| `GET /cop-learning` | Page apprentissage du COP réel |
+| `GET /api/cop/data` | Statistiques, tags récents, courbes théorique/apprise, profil de base, capteurs temps réel |
+| `POST /api/cop/tag` | Tag immédiat `{ "tag": "on" \| "off", "notes": "..." }` (relevé unique) |
+| `POST /api/cop/start-sampling` | Lance un échantillonnage de 2 min pour un tag ON, retourne `task_id` |
+| `GET /api/cop/sampling-status/<task_id>` | Progression et résultat d'un échantillonnage |
+| `POST /api/cop/cancel-sampling/<task_id>` | Annule un échantillonnage en cours |
+| `POST /api/cop/calibrate` | Calibre le profil de base `{ "base_watts": 250, "hour": 14 }` (`hour` omis = toutes les heures) |
+| `DELETE /api/cop/clear?keep_config=true` | Efface les données d'apprentissage (`false` = tout effacer) |
+| `DELETE /api/cop/tag/<id>` | Supprime un tag (et sa mesure) |
+| `GET /api/cop/tag/last-on` | Dernier tag ON enregistré |
+| `GET /api/cop/auto-learning/status` | État du worker d'apprentissage automatique et compteurs |
+| `POST /api/cop/auto-learning/toggle` | Active/désactive le worker `{ "enable": true }` |
+| `GET /api/cop/auto-learning/history?limit=N` | Derniers rejets avec leur motif |
 
 ---
 
@@ -474,6 +573,7 @@ Trois couleurs (`BLUE`, `WHITE`, `RED`), deux périodes chacune (`HP`, `HC`).
 | `auto_control` | Pilotage automatique ON/OFF selon la recommandation J+1 |
 | `shelly_temp_entity_id` | Entité capteur de température intérieure (Shelly) |
 | `shelly_humidity_entity_id` | Entité capteur d'humidité intérieure (Shelly) |
+| `clim_entity_id` | Entité climate de la clim (requise pour l'apprentissage automatique du COP) |
 
 **`EMAIL`**
 | Clé | Description |
@@ -504,6 +604,21 @@ Trois couleurs (`BLUE`, `WHITE`, `RED`), deux périodes chacune (`HP`, `HC`).
 | `subject_filter` | Sous-chaîne du sujet filtrée |
 | `check_interval_hours` | Fréquence de vérification des nouveaux emails |
 | `lookback_days` | Fenêtre de recherche IMAP à chaque synchronisation |
+
+**`COP_LEARNING`** — Apprentissage du COP réel
+| Clé | Description |
+|---|---|
+| `enabled` | Active la fonctionnalité (et l'usage de la courbe apprise par l'advisor) |
+| `shelly_total_power_entity_id` | Entité puissance totale maison (W) |
+| `shelly_heater_power_entity_id` | Entité puissance ballon d'eau chaude (W) |
+| `nominal_thermal_kw` | Puissance thermique nominale de la clim, base du calcul COP |
+| `min_samples_per_bin` | Mesures minimum pour retenir une tranche de température |
+| `temp_bin_size` | Largeur des tranches de température (°C) |
+| `confidence_threshold` | Confiance minimale pour basculer sur la courbe apprise |
+| `auto_switch_to_learned` | Autorise l'usage de la courbe apprise pure au-delà du seuil |
+| `min_ac_power` / `max_ac_power` | Bornes de puissance clim déduite acceptée (W) |
+| `sampling` | Échantillonnage : `duration_seconds`, `interval_seconds`, `min_samples_required`, `max_errors`, `task_cleanup_minutes` |
+| `auto_learning` | Apprentissage automatique : `enabled`, `polling_interval_seconds`, `cooldown_after_startup_minutes`, `min_interval_between_samples_hours`, `heater_power_threshold`, `only_during_thermostat_schedule`, `blackout_hours`, `validation` |
 
 ---
 
