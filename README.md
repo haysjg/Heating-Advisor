@@ -216,6 +216,8 @@ Le thermostat automatique pilote le poêle selon la température intérieure mes
 | `manual_off_suspend_hours` | Suspension du thermostat après extinction manuelle |
 | `use_felt_temperature` | Utilise la température ressentie (corrigée par l'humidité) |
 
+**Consigne de la clim** : quand l'appli allume la clim (thermostat ou bouton ON du dashboard), elle lui envoie `temp_off` comme consigne. Si `temp_off` est modifié (dashboard ou `/config`) pendant que cette clim chauffe, la nouvelle consigne lui est renvoyée aussitôt. Une clim allumée hors de l'appli (télécommande, appli Sensibo, HA) garde toujours sa propre consigne.
+
 ### Température ressentie
 
 `ressenti = temp_réelle + (humidité - humidité_référence) × facteur_correction`

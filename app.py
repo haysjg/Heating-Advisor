@@ -939,6 +939,8 @@ def api_ha_clim_turn_on():
         return jsonify({"error": "Clim non configurée"}), 400
     target_temp = config.THERMOSTAT.get("temp_off", 22.9)
     success = ha_client.turn_on_clim(config.HOME_ASSISTANT, target_temp)
+    if success:
+        thermostat_module.mark_clim_setpoint_managed()
 
     # Si action manuelle, annuler suspension thermostat
     if success and request.args.get("manual") == "true":

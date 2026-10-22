@@ -363,10 +363,18 @@ def validate_thresholds(temp_on, temp_off) -> tuple[float, float]:
     return temp_on, temp_off
 
 
+def mark_clim_setpoint_managed() -> None:
+    """Signale que la clim vient d'être allumée par l'appli avec temp_off comme consigne."""
+    _save_state({**_load_state(), "clim_setpoint_managed": True})
+
+
 def sync_clim_setpoint(ha_client, ha_cfg: dict, temp_off: float) -> bool | None:
-    """Renvoie temp_off comme consigne à la clim si elle chauffe déjà (sa consigne n'est sinon envoyée qu'à l'allumage).
-    Retourne True si envoyée, False si l'envoi a échoué, None si la clim n'est pas en chauffe ou pas configurée."""
+    """Renvoie temp_off comme consigne à la clim si elle chauffe déjà ET a été allumée par l'appli
+    (sa consigne n'est sinon envoyée qu'à l'allumage). Une clim allumée hors de l'appli garde sa propre consigne.
+    Retourne True si envoyée, False si l'envoi a échoué, None si non applicable."""
     if not ha_client.is_clim_configured(ha_cfg):
+        return None
+    if not _load_state().get("clim_setpoint_managed"):
         return None
     clim_state = ha_client.get_clim_state(ha_cfg)
     if not clim_state or clim_state.get("state") != "heat":
@@ -570,6 +578,10 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
         clim_state = ha_client.get_clim_state(ha_cfg)
         clim_ha_unavailable = clim_state is None or clim_state.get("state") in ("unavailable", "unknown")
         clim_real_on = not clim_ha_unavailable and clim_state.get("state") not in ("off", None)
+
+    if clim_available and not clim_ha_unavailable and not clim_real_on and state.get("clim_setpoint_managed"):
+        state = {**state, "clim_setpoint_managed": False}
+        _save_state(state)
 
     current = state.get("state", "off")
     active_system = state.get("active_system")
@@ -845,6 +857,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "state": "on",
                     "active_system": "clim",
                     "off_reason": None,
+                    "clim_setpoint_managed": True,
                 }
                 _update_system_timestamp(new_state, "clim", "on")
                 _save_state(new_state)
@@ -950,6 +963,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                             "state": "on",
                             "active_system": recommendation,
                         }
+                        if recommendation == "clim":
+                            new_state["clim_setpoint_managed"] = True
                         _update_system_timestamp(new_state, recommendation, "on")
                         _save_state(new_state)
                         ntfy_send(

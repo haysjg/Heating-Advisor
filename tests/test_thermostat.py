@@ -213,6 +213,40 @@ class TestCheckAndApply:
         saved = mock_save.call_args[0][0]
         assert saved["state"] == "off"
 
+    @freeze_time("2025-01-06 10:00:00")  # lundi dans la plage
+    @patch("modules.thermostat.is_on_vacation", return_value=False)
+    @patch("modules.thermostat._load_state")
+    @patch("modules.thermostat._save_state")
+    @patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": 18.0, "humidity": 50.0})
+    @patch("modules.homeassistant.get_state", return_value={"state": "off"})
+    @patch("modules.homeassistant.get_clim_state", return_value={"state": "off"})
+    @patch("modules.homeassistant.is_clim_configured", return_value=True)
+    @patch("modules.homeassistant.turn_on_clim", return_value=True)
+    @patch("modules.ntfy_push.send")
+    def test_clim_turned_on_by_thermostat_marks_setpoint_managed(self, mock_ntfy, mock_clim_on, _cfg, _clim_state,
+                                                                 _ha_state, _indoor, mock_save, mock_load,
+                                                                 _mock_vac, base_ha_cfg, base_thermostat_cfg):
+        mock_load.return_value = self._make_state(state="off")
+        check_and_apply(base_ha_cfg, base_thermostat_cfg, "clim")
+        mock_clim_on.assert_called_once()
+        assert mock_save.call_args[0][0]["clim_setpoint_managed"] is True
+
+    @freeze_time("2025-01-06 10:00:00")  # lundi dans la plage
+    @patch("modules.thermostat.is_on_vacation", return_value=False)
+    @patch("modules.thermostat._load_state")
+    @patch("modules.thermostat._save_state")
+    @patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": 21.0, "humidity": 50.0})
+    @patch("modules.homeassistant.get_state", return_value={"state": "off"})
+    @patch("modules.homeassistant.get_clim_state", return_value={"state": "off"})
+    @patch("modules.homeassistant.is_clim_configured", return_value=True)
+    @patch("modules.ntfy_push.send")
+    def test_clim_seen_off_clears_setpoint_managed(self, mock_ntfy, _cfg, _clim_state, _ha_state, _indoor,
+                                                   mock_save, mock_load, _mock_vac,
+                                                   base_ha_cfg, base_thermostat_cfg):
+        mock_load.return_value = {**self._make_state(state="off"), "clim_setpoint_managed": True}
+        check_and_apply(base_ha_cfg, base_thermostat_cfg, "clim")
+        assert mock_save.call_args[0][0]["clim_setpoint_managed"] is False
+
     @freeze_time("2025-01-06 10:00:00")  # lundi
     @patch("modules.thermostat.is_on_vacation", return_value=False)
     @patch("modules.thermostat._load_state")
@@ -469,6 +503,18 @@ class TestValidateThresholds:
 
 class TestSyncClimSetpoint:
     """sync_clim_setpoint : renvoi de la consigne à la clim après modification de temp_off."""
+
+    @pytest.fixture(autouse=True)
+    def managed_by_app(self):
+        with patch("modules.thermostat._load_state", return_value={"clim_setpoint_managed": True}) as m:
+            yield m
+
+    def test_no_push_when_clim_started_outside_app(self, managed_by_app):
+        from modules.thermostat import sync_clim_setpoint
+        managed_by_app.return_value = {"clim_setpoint_managed": False}
+        ha = self._ha()
+        assert sync_clim_setpoint(ha, {}, 21.5) is None
+        ha.set_clim_temperature.assert_not_called()
 
     def _ha(self, configured=True, state="heat", set_ok=True):
         ha = MagicMock()
