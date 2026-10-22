@@ -243,7 +243,7 @@ def _delayed_sampling(config, detection_time: datetime, delay_minutes: int):
     # Récupérer la température extérieure
     outdoor_temp = None
     try:
-        outdoor_temp = weather.get_current_temperature()
+        outdoor_temp = weather.get_current_temperature(config.LOCATION).get("temperature")
     except Exception as e:
         logger.warning(f"Température extérieure indisponible : {e}")
 
