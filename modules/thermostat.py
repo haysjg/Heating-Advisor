@@ -343,6 +343,37 @@ def _handle_sensor_recovery(state: dict, email_cfg: dict) -> dict:
     return state
 
 
+TEMP_ON_RANGE = (10.0, 25.0)
+TEMP_OFF_RANGE = (10.0, 30.0)
+
+
+def validate_thresholds(temp_on, temp_off) -> tuple[float, float]:
+    """Valide les seuils d'allumage/extinction. Retourne (temp_on, temp_off) arrondis au dixième, lève ValueError sinon."""
+    try:
+        temp_on = round(float(temp_on), 1)
+        temp_off = round(float(temp_off), 1)
+    except (TypeError, ValueError):
+        raise ValueError("Seuils invalides (nombres attendus)")
+    if not TEMP_ON_RANGE[0] <= temp_on <= TEMP_ON_RANGE[1]:
+        raise ValueError(f"Seuil d'allumage hors plage ({TEMP_ON_RANGE[0]:g}–{TEMP_ON_RANGE[1]:g} °C)")
+    if not TEMP_OFF_RANGE[0] <= temp_off <= TEMP_OFF_RANGE[1]:
+        raise ValueError(f"Seuil d'extinction hors plage ({TEMP_OFF_RANGE[0]:g}–{TEMP_OFF_RANGE[1]:g} °C)")
+    if temp_on >= temp_off:
+        raise ValueError("Le seuil d'allumage doit être inférieur au seuil d'extinction")
+    return temp_on, temp_off
+
+
+def sync_clim_setpoint(ha_client, ha_cfg: dict, temp_off: float) -> bool | None:
+    """Renvoie temp_off comme consigne à la clim si elle chauffe déjà (sa consigne n'est sinon envoyée qu'à l'allumage).
+    Retourne True si envoyée, False si l'envoi a échoué, None si la clim n'est pas en chauffe ou pas configurée."""
+    if not ha_client.is_clim_configured(ha_cfg):
+        return None
+    clim_state = ha_client.get_clim_state(ha_cfg)
+    if not clim_state or clim_state.get("state") != "heat":
+        return None
+    return ha_client.set_clim_temperature(ha_cfg, temp_off)
+
+
 def felt_temperature(temp: float, humidity: float, cfg: dict) -> float:
     """Calcule la température ressentie en tenant compte de l'humidité."""
     if not cfg.get("use_felt_temperature") or humidity is None:

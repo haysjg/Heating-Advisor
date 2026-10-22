@@ -363,6 +363,46 @@
     {% endif %}
     {% endif %}
 
+    {# ── Seuils du thermostat (réglage rapide) ── #}
+    {% if config.HOME_ASSISTANT.enabled %}
+    <section class="card thresholds-card" id="thresholds-card"
+             data-temp-on="{{ config.THERMOSTAT.temp_on }}" data-temp-off="{{ config.THERMOSTAT.temp_off }}">
+      <h3>🎯 Température de confort</h3>
+      <p class="thresholds-help">
+        Le thermostat allume le chauffage recommandé (poêle ou clim) quand la température ressentie
+        passe sous le seuil d'allumage, et l'éteint quand elle atteint le seuil d'extinction
+        — qui sert aussi de consigne à la clim.
+      </p>
+      <div class="thresholds-grid">
+        <div class="threshold">
+          <label for="threshold-on">Allumage sous</label>
+          <div class="stepper">
+            <button type="button" class="stepper-btn" onclick="stepThreshold('on', -0.5)" aria-label="Baisser le seuil d'allumage">−</button>
+            <input type="number" id="threshold-on" min="10" max="25" step="0.1" inputmode="decimal"
+                   value="{{ config.THERMOSTAT.temp_on }}" oninput="onThresholdInput()">
+            <span class="stepper-unit">°C</span>
+            <button type="button" class="stepper-btn" onclick="stepThreshold('on', 0.5)" aria-label="Monter le seuil d'allumage">+</button>
+          </div>
+        </div>
+        <div class="threshold">
+          <label for="threshold-off">Extinction à</label>
+          <div class="stepper">
+            <button type="button" class="stepper-btn" onclick="stepThreshold('off', -0.5)" aria-label="Baisser le seuil d'extinction">−</button>
+            <input type="number" id="threshold-off" min="10" max="30" step="0.1" inputmode="decimal"
+                   value="{{ config.THERMOSTAT.temp_off }}" oninput="onThresholdInput()">
+            <span class="stepper-unit">°C</span>
+            <button type="button" class="stepper-btn" onclick="stepThreshold('off', 0.5)" aria-label="Monter le seuil d'extinction">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="thresholds-actions">
+        <span class="thresholds-msg" id="thresholds-msg" role="status"></span>
+        <button type="button" class="btn-thresholds" id="thresholds-cancel" onclick="resetThresholds()" hidden>Annuler</button>
+        <button type="button" class="btn-thresholds btn-thresholds-save" id="thresholds-save" onclick="saveThresholds()" disabled>Enregistrer</button>
+      </div>
+    </section>
+    {% endif %}
+
     {# ── Thermostat ── #}
     {% if config.HOME_ASSISTANT.enabled %}
     <section class="card card-labeled" data-refresh="thermostat">
@@ -383,8 +423,8 @@
             </span>
           </p>
           <p class="value-sub">
-            Seuils : allumage &lt; <strong>{{ config.THERMOSTAT.temp_on }}°C</strong>
-            — extinction &gt;= <strong>{{ config.THERMOSTAT.temp_off }}°C</strong>
+            Seuils : allumage &lt; <strong data-value="temp-on">{{ config.THERMOSTAT.temp_on }}°C</strong>
+            — extinction &gt;= <strong data-value="temp-off">{{ config.THERMOSTAT.temp_off }}°C</strong>
           </p>
           <p class="value-sub">Durée min ON : poêle <strong>{{ config.THERMOSTAT.min_on_minutes }} min</strong>
             / clim <strong>{{ config.THERMOSTAT.get('min_on_minutes_clim', 15) }} min</strong>

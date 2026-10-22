@@ -272,6 +272,25 @@ def turn_on_clim(cfg: dict, target_temp: float) -> bool:
         return False
 
 
+def set_clim_temperature(cfg: dict, target_temp: float) -> bool:
+    """Change la consigne de la clim sans toucher à son mode (marche/arrêt)."""
+    if not is_clim_configured(cfg):
+        return False
+    try:
+        entity_id = cfg["clim_entity_id"]
+        _request(
+            f"{cfg['url'].rstrip('/')}/api/services/climate/set_temperature",
+            cfg["token"],
+            method="POST",
+            body={"entity_id": entity_id, "temperature": target_temp},
+        )
+        logger.info("HA : consigne clim → %.1f°C (%s)", target_temp, entity_id)
+        return True
+    except Exception as e:
+        logger.error("HA set_clim_temperature échoué : %s", e)
+        return False
+
+
 def turn_off_clim(cfg: dict) -> bool:
     """Éteint la clim via HA."""
     if not is_clim_configured(cfg):

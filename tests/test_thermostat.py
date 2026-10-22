@@ -443,3 +443,53 @@ class TestMissingTimestampRegression:
         mock_load.return_value = self._make_state_no_timestamp("poele")
         check_and_apply(base_ha_cfg, base_thermostat_cfg, "poele")
         mock_ha_off.assert_called_once_with(base_ha_cfg)
+
+
+class TestValidateThresholds:
+    """validate_thresholds : contrôle des seuils saisis depuis le widget de la page principale."""
+
+    def test_valid_values_rounded(self):
+        from modules.thermostat import validate_thresholds
+        assert validate_thresholds("19.54", 21) == (19.5, 21.0)
+
+    @pytest.mark.parametrize("temp_on,temp_off", [
+        (21, 21),      # égalité
+        (22, 21),      # inversion
+        (9.9, 21),     # allumage trop bas
+        (25.5, 26),    # allumage trop haut
+        (20, 30.5),    # extinction trop haute
+        ("abc", 21),   # non numérique
+        (None, 21),    # manquant
+    ])
+    def test_invalid_values_rejected(self, temp_on, temp_off):
+        from modules.thermostat import validate_thresholds
+        with pytest.raises(ValueError):
+            validate_thresholds(temp_on, temp_off)
+
+
+class TestSyncClimSetpoint:
+    """sync_clim_setpoint : renvoi de la consigne à la clim après modification de temp_off."""
+
+    def _ha(self, configured=True, state="heat", set_ok=True):
+        ha = MagicMock()
+        ha.is_clim_configured.return_value = configured
+        ha.get_clim_state.return_value = {"state": state} if state else None
+        ha.set_clim_temperature.return_value = set_ok
+        return ha
+
+    def test_pushes_setpoint_when_clim_heating(self):
+        from modules.thermostat import sync_clim_setpoint
+        ha = self._ha()
+        assert sync_clim_setpoint(ha, {"cfg": 1}, 21.5) is True
+        ha.set_clim_temperature.assert_called_once_with({"cfg": 1}, 21.5)
+
+    @pytest.mark.parametrize("configured,state", [(False, "heat"), (True, "off"), (True, "cool"), (True, None)])
+    def test_no_push_when_clim_not_heating(self, configured, state):
+        from modules.thermostat import sync_clim_setpoint
+        ha = self._ha(configured=configured, state=state)
+        assert sync_clim_setpoint(ha, {}, 21.5) is None
+        ha.set_clim_temperature.assert_not_called()
+
+    def test_reports_failure(self):
+        from modules.thermostat import sync_clim_setpoint
+        assert sync_clim_setpoint(self._ha(set_ok=False), {}, 21.5) is False

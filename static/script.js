@@ -616,3 +616,93 @@ const DashboardRefresh = {
     setTimeout(() => window.location.reload(), 30 * 60 * 1000);
   }
 })();
+
+// ── Seuils du thermostat (widget page principale) ────────────────
+const THRESHOLD_LIMITS = { on: [10, 25], off: [10, 30] };
+
+function _thresholdInput(kind) {
+  return document.getElementById(`threshold-${kind}`);
+}
+
+function _savedThresholds() {
+  const card = document.getElementById('thresholds-card');
+  return { on: parseFloat(card.dataset.tempOn), off: parseFloat(card.dataset.tempOff) };
+}
+
+function _thresholdError(on, off) {
+  if (isNaN(on) || isNaN(off)) return 'Valeur invalide';
+  if (on < THRESHOLD_LIMITS.on[0] || on > THRESHOLD_LIMITS.on[1]) return `Allumage entre ${THRESHOLD_LIMITS.on[0]} et ${THRESHOLD_LIMITS.on[1]} °C`;
+  if (off < THRESHOLD_LIMITS.off[0] || off > THRESHOLD_LIMITS.off[1]) return `Extinction entre ${THRESHOLD_LIMITS.off[0]} et ${THRESHOLD_LIMITS.off[1]} °C`;
+  if (on >= off) return 'L\'allumage doit être sous l\'extinction';
+  return null;
+}
+
+function onThresholdInput() {
+  const on = parseFloat(_thresholdInput('on').value);
+  const off = parseFloat(_thresholdInput('off').value);
+  const saved = _savedThresholds();
+  const dirty = on !== saved.on || off !== saved.off;
+  const error = _thresholdError(on, off);
+
+  const msg = document.getElementById('thresholds-msg');
+  msg.textContent = error || '';
+  msg.className = 'thresholds-msg' + (error ? ' thresholds-msg-error' : '');
+  document.getElementById('thresholds-save').disabled = !dirty || !!error;
+  document.getElementById('thresholds-cancel').hidden = !dirty;
+}
+
+function stepThreshold(kind, delta) {
+  const input = _thresholdInput(kind);
+  const [min, max] = THRESHOLD_LIMITS[kind];
+  const current = parseFloat(input.value) || _savedThresholds()[kind];
+  input.value = Math.min(max, Math.max(min, Math.round((current + delta) * 10) / 10));
+  onThresholdInput();
+}
+
+function resetThresholds() {
+  const saved = _savedThresholds();
+  _thresholdInput('on').value = saved.on;
+  _thresholdInput('off').value = saved.off;
+  onThresholdInput();
+}
+
+async function saveThresholds() {
+  const btn = document.getElementById('thresholds-save');
+  const on = parseFloat(_thresholdInput('on').value);
+  const off = parseFloat(_thresholdInput('off').value);
+  btn.disabled = true;
+  btn.textContent = 'Enregistrement…';
+
+  try {
+    const response = await fetch('/api/thermostat/thresholds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ temp_on: on, temp_off: off }),
+    });
+    const data = await response.json();
+
+    if (response.ok && data.status === 'ok') {
+      const card = document.getElementById('thresholds-card');
+      card.dataset.tempOn = data.temp_on;
+      card.dataset.tempOff = data.temp_off;
+      _thresholdInput('on').value = data.temp_on;
+      _thresholdInput('off').value = data.temp_off;
+      document.querySelectorAll('[data-value="temp-on"]').forEach(el => el.textContent = `${data.temp_on}°C`);
+      document.querySelectorAll('[data-value="temp-off"]').forEach(el => el.textContent = `${data.temp_off}°C`);
+      if (data.clim_setpoint === false) {
+        showToast(`Seuils enregistrés, mais consigne clim non transmise (${data.temp_off} °C au prochain allumage)`, 'error');
+      } else {
+        const climNote = data.clim_setpoint ? ' — consigne clim mise à jour' : '';
+        showToast(`Seuils enregistrés : ${data.temp_on} → ${data.temp_off} °C${climNote}`, 'success');
+      }
+    } else {
+      showToast(data.error || 'Erreur', 'error');
+    }
+  } catch (error) {
+    console.error('Erreur sauvegarde seuils:', error);
+    showToast('Erreur réseau', 'error');
+  } finally {
+    btn.textContent = 'Enregistrer';
+    onThresholdInput();
+  }
+}

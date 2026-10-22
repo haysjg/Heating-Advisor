@@ -1149,6 +1149,26 @@ def api_thermostat_resume():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/thermostat/thresholds", methods=["POST"])
+def api_thermostat_thresholds():
+    """Modifie les seuils d'allumage/extinction du thermostat (widget page principale)."""
+    data = request.get_json(force=True)
+    try:
+        temp_on, temp_off = thermostat_module.validate_thresholds(data.get("temp_on"), data.get("temp_off"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    config.THERMOSTAT["temp_on"] = temp_on
+    config.THERMOSTAT["temp_off"] = temp_off
+    try:
+        _patch_override(lambda d: d.setdefault("THERMOSTAT", {}).update({"temp_on": temp_on, "temp_off": temp_off}))
+    except Exception as e:
+        logger.error("Sauvegarde seuils thermostat échouée : %s", e)
+        return jsonify({"error": "Sauvegarde impossible"}), 500
+    logger.info("Thermostat : seuils → allumage < %.1f°C, extinction ≥ %.1f°C", temp_on, temp_off)
+    clim_setpoint = thermostat_module.sync_clim_setpoint(ha_client, config.HOME_ASSISTANT, temp_off)
+    return jsonify({"status": "ok", "temp_on": temp_on, "temp_off": temp_off, "clim_setpoint": clim_setpoint})
+
+
 @app.route("/api/thermostat/toggle", methods=["POST"])
 def api_thermostat_toggle():
     data = request.get_json(force=True)

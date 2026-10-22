@@ -137,6 +137,87 @@ main {
 .card-tempo-red   { border-color: var(--red); background: #1f0f0f; }
 .card-tempo-unknown { border-color: var(--border); }
 
+/* ── Seuils thermostat (widget) ───────────────────────────── */
+.thresholds-help {
+  color: var(--text-sub);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 1rem;
+  max-width: 65ch;
+}
+.thresholds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.threshold label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-sub);
+  margin-bottom: 0.4rem;
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.stepper input {
+  width: 4.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 0.3rem 0.25rem;
+  -moz-appearance: textfield;
+}
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.stepper-unit { color: var(--text-sub); font-size: 0.9rem; }
+.stepper-btn {
+  width: 2.75rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(148,163,184,0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.stepper-btn:hover { background: rgba(148,163,184,0.16); border-color: rgba(148,163,184,0.5); }
+.stepper-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.thresholds-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.thresholds-msg { margin-right: auto; font-size: 0.8rem; color: var(--text-sub); }
+.thresholds-msg-error { color: var(--red); }
+.btn-thresholds {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-sub);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.btn-thresholds-save { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+.btn-thresholds-save:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-thresholds:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
 /* ── Recommendation block ─────────────────────────────────── */
 #recommendation {
   display: flex;
