@@ -1790,6 +1790,11 @@ def api_config_save():
                 "lookback_days": int(data.get("electricity_lookback_days", config.ELECTRICITY.get("lookback_days", 90))),
             },
         }
+        thermostat_override = override["THERMOSTAT"]
+        thermostat_override["temp_on"], thermostat_override["temp_off"] = thermostat_module.validate_thresholds(
+            thermostat_override["temp_on"], thermostat_override["temp_off"]
+        )
+        previous_temp_off = config.THERMOSTAT.get("temp_off")
         _patch_override(lambda d: d.update(override))
         apply_overrides(config, override)
         _cache["data"] = None
@@ -1806,7 +1811,12 @@ def api_config_save():
         else:
             cop_auto_learning_module.stop_worker()
 
-        return jsonify({"status": "ok"})
+        # Consigne clim alignée sur temp_off si elle chauffe déjà (sinon envoyée au prochain allumage)
+        clim_setpoint = None
+        if config.THERMOSTAT["temp_off"] != previous_temp_off:
+            clim_setpoint = thermostat_module.sync_clim_setpoint(ha_client, config.HOME_ASSISTANT, config.THERMOSTAT["temp_off"])
+
+        return jsonify({"status": "ok", "clim_setpoint": clim_setpoint})
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
 

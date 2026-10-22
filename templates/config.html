@@ -1058,8 +1058,10 @@
     })
     .then(r => r.json())
     .then(d => {
-      if (d.status === 'ok') {
-        showToast('✓ Configuration enregistrée', true);
+      if (d.status === 'ok' && d.clim_setpoint === false) {
+        showToast('Configuration enregistrée, mais consigne clim non transmise', false);
+      } else if (d.status === 'ok') {
+        showToast(d.clim_setpoint ? '✓ Configuration enregistrée — consigne clim mise à jour' : '✓ Configuration enregistrée', true);
       } else {
         showToast('Erreur : ' + (d.error || 'inconnue'), false);
       }
