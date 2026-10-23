@@ -6,6 +6,8 @@ Déployable via Docker sur NAS Synology
 import logging
 import os
 import secrets as _secrets
+import threading
+import time
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -493,56 +495,84 @@ def _fetch_indoor() -> None:
     """Rafraîchit uniquement la température intérieure dans le cache (HA local, pas d'API externe)."""
     if not _cache["data"]:
         return
-    indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
+    indoor = _indoor_with_felt()
     if indoor:
-        if (config.THERMOSTAT.get("use_felt_temperature")
-                and indoor.get("temperature") is not None
-                and indoor.get("humidity") is not None):
-            indoor["felt_temperature"] = thermostat_module.felt_temperature(
-                indoor["temperature"], indoor["humidity"], config.THERMOSTAT
-            )
         _cache["data"]["indoor"] = indoor
 
 
-def get_analysis(force_refresh: bool = False) -> dict:
-    """Retourne l'analyse en cache ou en recharge une fraîche."""
-    import time
-
-    now = time.time()
-    ttl = config.REFRESH_INTERVAL_MINUTES * 60
-
-    if not force_refresh and _cache["data"] and _cache["expires_at"] and now < _cache["expires_at"]:
-        logger.info("Retour depuis le cache — rafraîchissement température intérieure")
-        _fetch_indoor()
-        return _cache["data"]
-
-    logger.info("Rafraîchissement des données…")
-    cfg = _build_config_dict()
-
-    weather = get_current_temperature(config.LOCATION)
-    tomorrow_weather = get_tomorrow_weather({
-        **config.LOCATION,
-        "hp_start": config.HP_START,
-        "hp_end": config.HP_END,
-    })
-    tempo = get_tempo_info(config.HP_START, config.HP_END)
-    result = analyze(weather, tempo, cfg)
-    result["tomorrow"] = analyze_tomorrow(tomorrow_weather, tempo, cfg)
-    result["hourly_forecast"] = get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48)
-
+def _indoor_with_felt() -> dict | None:
+    """Climat intérieur depuis HA, enrichi de la température ressentie si activée."""
     indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
-    if indoor:
-        if (config.THERMOSTAT.get("use_felt_temperature")
-                and indoor.get("temperature") is not None
-                and indoor.get("humidity") is not None):
-            indoor["felt_temperature"] = thermostat_module.felt_temperature(
-                indoor["temperature"], indoor["humidity"], config.THERMOSTAT
-            )
-        result["indoor"] = indoor
+    if indoor and (config.THERMOSTAT.get("use_felt_temperature")
+                   and indoor.get("temperature") is not None
+                   and indoor.get("humidity") is not None):
+        indoor["felt_temperature"] = thermostat_module.felt_temperature(
+            indoor["temperature"], indoor["humidity"], config.THERMOSTAT
+        )
+    return indoor
 
-    _cache["data"] = result
-    _cache["expires_at"] = now + ttl
-    return result
+
+_refresh_lock = threading.Lock()
+
+
+def _refresh_analysis(force: bool = False) -> dict:
+    """Recharge météo, Tempo et prévisions puis recalcule l'analyse (un seul rafraîchissement à la fois)."""
+    with _refresh_lock:
+        # Un autre thread vient peut-être de rafraîchir pendant l'attente du verrou
+        if not force and _cache["data"] and _cache["expires_at"] and time.time() < _cache["expires_at"]:
+            return _cache["data"]
+
+        logger.info("Rafraîchissement des données…")
+        cfg = _build_config_dict()
+
+        weather = get_current_temperature(config.LOCATION)
+        tomorrow_weather = get_tomorrow_weather({
+            **config.LOCATION,
+            "hp_start": config.HP_START,
+            "hp_end": config.HP_END,
+        })
+        tempo = get_tempo_info(config.HP_START, config.HP_END)
+        result = analyze(weather, tempo, cfg)
+        result["tomorrow"] = analyze_tomorrow(tomorrow_weather, tempo, cfg)
+        result["hourly_forecast"] = get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48)
+
+        indoor = _indoor_with_felt()
+        if indoor:
+            result["indoor"] = indoor
+
+        _cache["data"] = result
+        _cache["expires_at"] = time.time() + config.REFRESH_INTERVAL_MINUTES * 60
+        return result
+
+
+def _refresh_in_background() -> None:
+    """Lance un rafraîchissement en tâche de fond, sauf s'il y en a déjà un en cours."""
+    if _refresh_lock.locked():
+        return
+
+    def _run():
+        try:
+            _refresh_analysis()
+        except Exception as e:
+            logger.error("Rafraîchissement en arrière-plan échoué : %s", e)
+
+    threading.Thread(target=_run, name="analysis-refresh", daemon=True).start()
+
+
+def get_analysis(force_refresh: bool = False) -> dict:
+    """Retourne l'analyse en cache.
+
+    Données expirées : le dernier résultat est servi immédiatement et le rafraîchissement
+    (météo, Tempo : jusqu'à plusieurs dizaines de secondes si une API est lente) part en
+    arrière-plan. Le calcul n'est bloquant qu'au premier appel ou sur demande explicite.
+    """
+    if force_refresh or not _cache["data"]:
+        return _refresh_analysis(force=force_refresh)
+
+    if not _cache["expires_at"] or time.time() >= _cache["expires_at"]:
+        _refresh_in_background()
+    _fetch_indoor()
+    return _cache["data"]
 
 
 @app.route("/")
@@ -1619,6 +1649,7 @@ def api_stock_delivery_delete(idx: int):
 
 
 _migrate_deliveries_from_override()
+_refresh_in_background()  # premier calcul dès le démarrage, sans attendre une requête
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
