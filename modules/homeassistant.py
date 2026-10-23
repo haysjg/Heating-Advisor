@@ -4,28 +4,65 @@ N'est utilisé que si HOME_ASSISTANT.enabled = True dans la config.
 """
 
 import logging
-import urllib.request
-import urllib.error
-import json
+import threading
+import time
+
+import requests
 
 from modules.crypto import decrypt_password
 
 logger = logging.getLogger(__name__)
 
 
+# Session HTTP partagée : connexions persistantes vers HA au lieu d'une connexion TCP par appel
+_session = requests.Session()
+
+READ_TIMEOUT = 5         # lecture d'état (HA local)
+SERVICE_TIMEOUT = 15     # appel de service (peut transiter par le cloud du fabricant)
+STATES_TTL_SECONDS = 5   # durée de validité de l'instantané de tous les états
+
+_states_lock = threading.Lock()
+_states_cache = {"url": None, "at": 0.0, "states": {}}
+
+
 def _request(url: str, token: str, method: str = "GET", body: dict = None) -> dict:
-    data = json.dumps(body).encode() if body else None
-    req = urllib.request.Request(
+    resp = _session.request(
+        method,
         url,
-        data=data,
-        headers={
-            "Authorization": f"Bearer {decrypt_password(token)}",
-            "Content-Type": "application/json",
-        },
-        method=method,
+        json=body,
+        headers={"Authorization": f"Bearer {decrypt_password(token)}"},
+        timeout=SERVICE_TIMEOUT if method != "GET" else READ_TIMEOUT,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    resp.raise_for_status()
+    if method != "GET":
+        invalidate_states()
+    return resp.json()
+
+
+def invalidate_states() -> None:
+    """Oublie l'instantané des états (après une commande, la lecture suivante interroge HA)."""
+    with _states_lock:
+        _states_cache["at"] = 0.0
+
+
+def _all_states(cfg: dict) -> dict:
+    """Instantané de tous les états HA (un seul GET /api/states), partagé quelques secondes
+    entre les routes et les jobs au lieu d'un appel par entité."""
+    base = cfg["url"].rstrip("/")
+    with _states_lock:
+        if _states_cache["url"] == base and time.monotonic() - _states_cache["at"] < STATES_TTL_SECONDS:
+            return _states_cache["states"]
+        states = {s["entity_id"]: s for s in _request(f"{base}/api/states", cfg["token"])}
+        _states_cache.update(url=base, at=time.monotonic(), states=states)
+        return states
+
+
+def _get_entity(cfg: dict, entity_id: str) -> dict:
+    """État d'une entité. Lève LookupError si l'entité n'existe pas dans HA."""
+    state = _all_states(cfg).get(entity_id)
+    if state is None:
+        raise LookupError(f"entité {entity_id} introuvable dans Home Assistant")
+    return state
 
 
 def is_configured(cfg: dict) -> bool:
@@ -82,10 +119,7 @@ def get_state(cfg: dict) -> dict | None:
         return None
     try:
         entity_id = cfg["poele_entity_id"]
-        return _request(
-            f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
-            cfg["token"],
-        )
+        return _get_entity(cfg, entity_id)
     except Exception as e:
         logger.error("HA get_state échoué : %s", e)
         return None
@@ -102,17 +136,11 @@ def get_indoor_climate(cfg: dict) -> dict | None:
     result = {}
     try:
         if temp_entity:
-            state = _request(
-                f"{cfg['url'].rstrip('/')}/api/states/{temp_entity}",
-                cfg["token"],
-            )
+            state = _get_entity(cfg, temp_entity)
             raw = state.get("state")
             result["temperature"] = float(raw) if raw not in (None, "unavailable", "unknown") else None
         if humidity_entity:
-            state = _request(
-                f"{cfg['url'].rstrip('/')}/api/states/{humidity_entity}",
-                cfg["token"],
-            )
+            state = _get_entity(cfg, humidity_entity)
             raw = state.get("state")
             result["humidity"] = float(raw) if raw not in (None, "unavailable", "unknown") else None
     except Exception as e:
@@ -136,10 +164,7 @@ def get_presence_extended(cfg: dict, person_entities: list, nearby_zone_name: st
     try:
         states = []
         for entity_id in person_entities:
-            state = _request(
-                f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
-                cfg["token"],
-            )
+            state = _get_entity(cfg, entity_id)
             person_state = state.get("state", "not_home")
             states.append(person_state)
             logger.info("HA présence — %s: %s", entity_id, person_state)
@@ -173,10 +198,7 @@ def get_presence(cfg: dict, person_entities: list) -> bool | None:
         return None
     try:
         for entity_id in person_entities:
-            state = _request(
-                f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
-                cfg["token"],
-            )
+            state = _get_entity(cfg, entity_id)
             if state.get("state") == "home":
                 return True
         return False
@@ -190,10 +212,7 @@ def get_entity_state(cfg: dict, entity_id: str) -> dict | None:
     if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
         return None
     try:
-        return _request(
-            f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
-            cfg["token"],
-        )
+        return _get_entity(cfg, entity_id)
     except Exception as e:
         logger.error("HA get_entity_state(%s) échoué : %s", entity_id, e)
         return None
@@ -316,10 +335,7 @@ def get_clim_state(cfg: dict) -> dict | None:
         return None
     try:
         entity_id = cfg["clim_entity_id"]
-        return _request(
-            f"{cfg['url'].rstrip('/')}/api/states/{entity_id}",
-            cfg["token"],
-        )
+        return _get_entity(cfg, entity_id)
     except Exception as e:
         logger.error("HA get_clim_state échoué : %s", e)
         return None
