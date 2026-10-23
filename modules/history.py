@@ -38,11 +38,18 @@ def poele_state_for_history(real_state: str | None, thermostat_state: dict) -> s
 
 def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None) -> None:
     """Insère une lecture. Appelé par le scheduler toutes les ~10 min."""
+    now = datetime.now()
     try:
         with _connect() as conn:
             conn.execute(
                 "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state, tempo_color) VALUES (?, ?, ?, ?, ?)",
-                (datetime.now().isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color),
+                (now.isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color),
+            )
+            # Cumul journalier non purgé (stock de granulés) : une lecture = 10 min
+            conn.execute(
+                "INSERT INTO pellet_daily (day, on_minutes) VALUES (?, ?) "
+                "ON CONFLICT(day) DO UPDATE SET on_minutes = on_minutes + excluded.on_minutes",
+                (now.strftime("%Y-%m-%d"), 10 if poele_state in ("on", "poele") else 0),
             )
         logger.debug("History : enregistrement outdoor=%.1f indoor=%s poele=%s tempo=%s",
                      outdoor_temp or 0, indoor_temp, poele_state, tempo_color)
@@ -129,18 +136,12 @@ def get_pellet_consumption_since(since_date: str) -> dict:
     Calcule la consommation réelle de granulés depuis une date donnée.
     since_date : format YYYY-MM-DD
     Retourne : {total_on_minutes, daily_breakdown: [{date, on_minutes}]}
+    Source : pellet_daily (non purgée), alimentée à chaque lecture par record().
     """
     try:
         with _connect() as conn:
             rows = conn.execute(
-                """
-                SELECT substr(ts, 1, 10) AS day,
-                       SUM(CASE WHEN poele_state IN ('on', 'poele') THEN 1 ELSE 0 END) * 10 AS on_minutes
-                FROM readings
-                WHERE ts >= ?
-                GROUP BY day
-                ORDER BY day
-                """,
+                "SELECT day, on_minutes FROM pellet_daily WHERE day >= ? ORDER BY day",
                 (since_date,),
             ).fetchall()
         total_on_minutes = sum(r[1] for r in rows)
@@ -233,9 +234,17 @@ def purge_diagnose_old(days: int = 7) -> None:
         logger.error("History : erreur purge diagnose : %s", e)
 
 
+def purge_cutoff(now: datetime, days: int = 30) -> str:
+    """Date limite de purge des lectures : N jours, sans jamais entamer le mois précédent,
+    que l'agrégation mensuelle recalcule chaque jour (sinon le rapport du mois serait tronqué)."""
+    first_of_prev_month = (now.replace(day=1) - timedelta(days=1)).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0)
+    return min(now - timedelta(days=days), first_of_prev_month).isoformat(timespec="seconds")
+
+
 def purge_old(days: int = 30) -> None:
-    """Supprime les données plus vieilles que N jours."""
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+    """Supprime les lectures plus vieilles que N jours (en conservant le mois précédent entier)."""
+    cutoff = purge_cutoff(datetime.now(), days)
     try:
         with _connect() as conn:
             conn.execute("DELETE FROM readings WHERE ts < ?", (cutoff,))

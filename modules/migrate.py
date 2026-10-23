@@ -157,6 +157,23 @@ def _migrate_005(conn):
     """)
 
 
+def _migrate_006(conn):
+    """Ajoute pellet_daily : minutes de fonctionnement du poêle par jour, jamais purgées
+    (readings est purgé à 30 jours, ce qui faussait le stock de granulés). Reprise des jours existants."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS pellet_daily (
+            day        TEXT    PRIMARY KEY,
+            on_minutes INTEGER NOT NULL DEFAULT 0
+        );
+
+        INSERT OR IGNORE INTO pellet_daily (day, on_minutes)
+            SELECT substr(ts, 1, 10),
+                   SUM(CASE WHEN poele_state IN ('on', 'poele') THEN 1 ELSE 0 END) * 10
+            FROM readings
+            GROUP BY substr(ts, 1, 10);
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -164,6 +181,7 @@ MIGRATIONS = [
     _migrate_003,
     _migrate_004,
     _migrate_005,
+    _migrate_006,
 ]
 
 
