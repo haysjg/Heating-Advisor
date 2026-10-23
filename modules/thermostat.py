@@ -1,10 +1,11 @@
 """
 Thermostat automatique — pilotage du poêle basé sur la température intérieure.
 """
-import json
 import logging
 import os
 from datetime import datetime, timedelta
+
+from modules import jsonstore
 
 logger = logging.getLogger(__name__)
 
@@ -19,42 +20,42 @@ ALERT_RESEND_HOURS = 4          # délai min entre deux alertes (heures)
 COMMAND_ALERT_THRESHOLD = 3     # commandes HA consécutives en échec avant alerte ntfy
 
 
+# Clés modifiées uniquement par l'utilisateur (page /absence). Le thermostat travaille sur une copie
+# de l'état lue en début de check : ses sauvegardes ne doivent jamais écraser ces clés.
+USER_KEYS = ("vacation_start", "vacation_end", "absent", "absence_schedules")
+
+
 def _load_state() -> dict:
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE) as f:
-                state = json.load(f)
+    state = jsonstore.load(STATE_FILE, None)
+    if isinstance(state, dict):
+        # Migration automatique : anciens fichiers sans system_history
+        if "system_history" not in state:
+            logger.info("Migration : création de system_history depuis les champs legacy")
+            system_history = {
+                "poele": {"last_turned_on": None, "last_turned_off": None},
+                "clim": {"last_turned_on": None, "last_turned_off": None}
+            }
 
-                # Migration automatique : anciens fichiers sans system_history
-                if "system_history" not in state:
-                    logger.info("Migration : création de system_history depuis les champs legacy")
-                    system_history = {
-                        "poele": {"last_turned_on": None, "last_turned_off": None},
-                        "clim": {"last_turned_on": None, "last_turned_off": None}
-                    }
+            # Migrer les timestamps legacy selon active_system
+            active = state.get("active_system")
+            last_on = state.get("last_turned_on")
+            last_off = state.get("last_turned_off")
 
-                    # Migrer les timestamps legacy selon active_system
-                    active = state.get("active_system")
-                    last_on = state.get("last_turned_on")
-                    last_off = state.get("last_turned_off")
+            if active in ("poele", "clim") and last_on:
+                system_history[active]["last_turned_on"] = last_on
 
-                    if active in ("poele", "clim") and last_on:
-                        system_history[active]["last_turned_on"] = last_on
+            # Si éteint, on met last_off dans le système qui était actif, ou les deux si inconnu
+            if last_off:
+                if active in ("poele", "clim"):
+                    system_history[active]["last_turned_off"] = last_off
+                else:
+                    # Active system inconnu : mettre dans les deux pour ne pas perdre l'info
+                    system_history["poele"]["last_turned_off"] = last_off
+                    system_history["clim"]["last_turned_off"] = last_off
 
-                    # Si éteint, on met last_off dans le système qui était actif, ou les deux si inconnu
-                    if last_off:
-                        if active in ("poele", "clim"):
-                            system_history[active]["last_turned_off"] = last_off
-                        else:
-                            # Active system inconnu : mettre dans les deux pour ne pas perdre l'info
-                            system_history["poele"]["last_turned_off"] = last_off
-                            system_history["clim"]["last_turned_off"] = last_off
+            state["system_history"] = system_history
 
-                    state["system_history"] = system_history
-
-                return state
-        except Exception:
-            pass
+        return state
     return {
         "state": "off",
         "active_system": None,
@@ -71,9 +72,18 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+    """Sauvegarde l'état du thermostat en conservant les clés utilisateur présentes sur disque."""
+    with jsonstore.lock_for(STATE_FILE):
+        on_disk = jsonstore.load(STATE_FILE, {})
+        if not isinstance(on_disk, dict):
+            on_disk = {}
+        jsonstore.save(STATE_FILE, {**state, **{k: on_disk[k] for k in USER_KEYS if k in on_disk}})
+
+
+def _update_user_state(**changes) -> None:
+    """Modifie des clés utilisateur (USER_KEYS) sous verrou."""
+    with jsonstore.lock_for(STATE_FILE):
+        jsonstore.save(STATE_FILE, {**_load_state(), **changes})
 
 
 def _update_system_timestamp(state: dict, system: str, event_type: str) -> None:
@@ -148,26 +158,22 @@ def get_vacation() -> dict:
 
 def set_vacation(start: str, end: str) -> None:
     """Active le mode vacances du date start au date end (YYYY-MM-DD inclus)."""
-    state = _load_state()
-    _save_state({**state, "vacation_start": start, "vacation_end": end})
+    _update_user_state(vacation_start=start, vacation_end=end)
 
 
 def clear_vacation() -> None:
     """Annule le mode vacances."""
-    state = _load_state()
-    _save_state({**state, "vacation_start": None, "vacation_end": None})
+    _update_user_state(vacation_start=None, vacation_end=None)
 
 
 def set_absent() -> None:
     """Active le mode absence immédiate (sans date de fin)."""
-    state = _load_state()
-    _save_state({**state, "absent": True})
+    _update_user_state(absent=True)
 
 
 def clear_absent() -> None:
     """Désactive le mode absence immédiate."""
-    state = _load_state()
-    _save_state({**state, "absent": False})
+    _update_user_state(absent=False)
 
 
 def is_absent() -> bool:
@@ -205,20 +211,20 @@ def get_absence_schedules() -> list:
 
 def add_absence_schedule(days: list, start: str, end: str) -> None:
     """Ajoute un horaire d'absence récurrent (jours ex. ['mon','fri'], heures HH:MM)."""
-    state = _load_state()
-    schedules = state.get("absence_schedules", [])
-    ordered_days = sorted(days, key=lambda d: DAY_KEYS.index(d) if d in DAY_KEYS else 99)
-    schedules.append({"days": ordered_days, "start": start, "end": end})
-    _save_state({**state, "absence_schedules": schedules})
+    with jsonstore.lock_for(STATE_FILE):
+        schedules = _load_state().get("absence_schedules", [])
+        ordered_days = sorted(days, key=lambda d: DAY_KEYS.index(d) if d in DAY_KEYS else 99)
+        schedules.append({"days": ordered_days, "start": start, "end": end})
+        _update_user_state(absence_schedules=schedules)
 
 
 def remove_absence_schedule(idx: int) -> None:
     """Supprime un horaire d'absence par son index. Silencieux si hors-bornes."""
-    state = _load_state()
-    schedules = state.get("absence_schedules", [])
-    if 0 <= idx < len(schedules):
-        schedules.pop(idx)
-    _save_state({**state, "absence_schedules": schedules})
+    with jsonstore.lock_for(STATE_FILE):
+        schedules = _load_state().get("absence_schedules", [])
+        if 0 <= idx < len(schedules):
+            schedules.pop(idx)
+        _update_user_state(absence_schedules=schedules)
 
 
 def is_in_absence_schedule() -> bool:

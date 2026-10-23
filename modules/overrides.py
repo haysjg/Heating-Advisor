@@ -3,38 +3,27 @@ Chargement et application des surcharges de configuration (config_override.json)
 Partagé entre app.py et notify.py.
 """
 
-import json
 import logging
 import os
-import threading
+
+from modules import jsonstore
 
 logger = logging.getLogger(__name__)
 
-_override_lock = threading.Lock()
-
 
 def patch_override(updater) -> None:
-    """Read-modify-write thread-safe sur OVERRIDE_FILE. updater(dict) applique les modifications."""
-    with _override_lock:
-        data = {}
-        if os.path.exists(OVERRIDE_FILE):
-            try:
-                with open(OVERRIDE_FILE) as f:
-                    data = json.load(f)
-            except Exception:
-                pass
+    """Read-modify-write thread-safe et atomique sur OVERRIDE_FILE. updater(dict) applique les modifications."""
+    def _apply(data):
+        if not isinstance(data, dict):
+            data = {}
         updater(data)
-        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        return data
+    jsonstore.update(OVERRIDE_FILE, _apply, {})
 
 
 def write_override(data: dict) -> None:
-    """Écrase OVERRIDE_FILE avec data (thread-safe)."""
-    with _override_lock:
-        os.makedirs(os.path.dirname(OVERRIDE_FILE), exist_ok=True)
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+    """Écrase OVERRIDE_FILE avec data (thread-safe, atomique)."""
+    jsonstore.save(OVERRIDE_FILE, data)
 
 OVERRIDE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "config_override.json")
 
@@ -55,10 +44,10 @@ def apply(cfg, data: dict) -> None:
 
 def load(cfg) -> None:
     """Charge config_override.json et l'applique si le fichier existe."""
-    if os.path.exists(OVERRIDE_FILE):
+    data = jsonstore.load(OVERRIDE_FILE, None)
+    if isinstance(data, dict):
         try:
-            with open(OVERRIDE_FILE) as f:
-                apply(cfg, json.load(f))
+            apply(cfg, data)
             logger.info("Overrides chargés depuis %s", OVERRIDE_FILE)
         except Exception as e:
             logger.warning("Impossible de charger les overrides : %s", e)

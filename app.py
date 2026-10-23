@@ -4,7 +4,6 @@ Déployable via Docker sur NAS Synology
 """
 
 import logging
-import json
 import os
 import secrets as _secrets
 from datetime import datetime, timedelta
@@ -22,6 +21,7 @@ from modules.advisor import analyze, analyze_tomorrow
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
 from modules.crypto import encrypt_password
 import modules.homeassistant as ha_client
+from modules import jsonstore
 import modules.thermostat as thermostat_module
 import modules.history as history_module
 import modules.cop_learning as cop_learning_module
@@ -38,20 +38,19 @@ RADIATEURS_MANAGED_OFF_FILE = os.path.join(os.path.dirname(__file__), "data", "r
 DELIVERIES_FILE = os.path.join(os.path.dirname(__file__), "data", "deliveries.json")
 
 def _load_managed_off() -> list:
-    try:
-        if os.path.exists(RADIATEURS_MANAGED_OFF_FILE):
-            with open(RADIATEURS_MANAGED_OFF_FILE) as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return []
+    data = jsonstore.load(RADIATEURS_MANAGED_OFF_FILE, [])
+    return data if isinstance(data, list) else []
 
 
-def _save_managed_off(entities: list) -> None:
+def _update_managed_off(add: list = (), remove: list = ()) -> None:
+    """Ajoute/retire des radiateurs de la liste « éteints par l'appli » (lecture-écriture sous verrou)."""
+    def _apply(managed):
+        managed = managed if isinstance(managed, list) else []
+        managed = [e for e in managed if e not in remove]
+        managed += [e for e in add if e not in managed]
+        return managed
     try:
-        os.makedirs(os.path.dirname(RADIATEURS_MANAGED_OFF_FILE), exist_ok=True)
-        with open(RADIATEURS_MANAGED_OFF_FILE, "w") as f:
-            json.dump(entities, f)
+        jsonstore.update(RADIATEURS_MANAGED_OFF_FILE, _apply, [])
     except Exception as e:
         logger.error("Sauvegarde managed_off échouée : %s", e)
 
@@ -354,29 +353,24 @@ def _run_radiateurs_tempo_rouge():
 
     if today_color == "RED":
         turned_off = []
-        managed = _load_managed_off()
         for entity_id in entity_ids:
             state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
             if state and state.get("state") not in ("off", "unavailable", "unknown"):
                 if ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id):
                     turned_off.append(entity_id)
-                    if entity_id not in managed:
-                        managed.append(entity_id)
         if turned_off:
-            _save_managed_off(managed)
+            _update_managed_off(add=turned_off)
             names = ", ".join(label_map.get(e, e) for e in turned_off)
             ntfy_send("🔴 Jour Rouge — Radiateurs éteints", f"Extinction automatique : {names}", config.NTFY)
             logger.info("Radiateurs éteints (jour rouge) : %s", turned_off)
     else:
-        managed = _load_managed_off()
         turned_on = []
-        for entity_id in list(managed):
+        for entity_id in _load_managed_off():
             if entity_id in entity_ids:
                 if ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id):
                     turned_on.append(entity_id)
-                    managed.remove(entity_id)
         if turned_on:
-            _save_managed_off(managed)
+            _update_managed_off(remove=turned_on)
             names = ", ".join(label_map.get(e, e) for e in turned_on)
             ntfy_send("🟢 Radiateurs rallumés", f"Jour non-rouge : {names}", config.NTFY)
             logger.info("Radiateurs rallumés (jour non-rouge) : %s", turned_on)
@@ -843,10 +837,7 @@ def api_radiateurs_turn_on(entity_id):
         return jsonify({"error": "Radiateur non configuré"}), 404
 
     # Retirer de managed_off si présent
-    managed = _load_managed_off()
-    if entity_id in managed:
-        managed.remove(entity_id)
-        _save_managed_off(managed)
+    _update_managed_off(remove=[entity_id])
 
     success = ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id)
     return jsonify({"status": "ok" if success else "error"})
@@ -868,10 +859,7 @@ def api_radiateurs_turn_off(entity_id):
         return jsonify({"error": "Radiateur non configuré"}), 404
 
     # Ajouter à managed_off si pas présent
-    managed = _load_managed_off()
-    if entity_id not in managed:
-        managed.append(entity_id)
-        _save_managed_off(managed)
+    _update_managed_off(add=[entity_id])
 
     success = ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id)
     return jsonify({"status": "ok" if success else "error"})
@@ -1359,13 +1347,8 @@ def cop_learning_page():
 
 @app.route("/config")
 def config_page():
-    purchase = {}
-    if os.path.exists(OVERRIDE_FILE):
-        try:
-            with open(OVERRIDE_FILE) as f:
-                purchase = json.load(f).get("_poele_purchase", {})
-        except Exception:
-            pass
+    override = jsonstore.load(OVERRIDE_FILE, {})
+    purchase = override.get("_poele_purchase", {}) if isinstance(override, dict) else {}
     return render_template("config.html", config=config, purchase=purchase)
 
 
@@ -1832,16 +1815,12 @@ def _migrate_deliveries_from_override() -> None:
     try:
         if not os.path.exists(OVERRIDE_FILE):
             return
-        with open(OVERRIDE_FILE) as f:
-            override = json.load(f)
+        override = jsonstore.load(OVERRIDE_FILE, {})
         if "_deliveries" not in override:
             return
-        deliveries = override.pop("_deliveries")
-        os.makedirs(os.path.dirname(DELIVERIES_FILE), exist_ok=True)
-        with open(DELIVERIES_FILE, "w") as f:
-            json.dump(deliveries, f, indent=2, ensure_ascii=False)
-        with open(OVERRIDE_FILE, "w") as f:
-            json.dump(override, f, indent=2, ensure_ascii=False)
+        deliveries = override["_deliveries"]
+        jsonstore.save(DELIVERIES_FILE, deliveries)
+        _patch_override(lambda d: d.pop("_deliveries", None))
         logger.info("Migration : %d livraison(s) déplacée(s) vers deliveries.json", len(deliveries))
     except Exception as e:
         logger.error("Migration livraisons échouée : %s", e)
@@ -1849,23 +1828,13 @@ def _migrate_deliveries_from_override() -> None:
 
 def _load_deliveries() -> list:
     """Charge l'historique des livraisons depuis deliveries.json."""
-    try:
-        if os.path.exists(DELIVERIES_FILE):
-            with open(DELIVERIES_FILE) as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return []
+    data = jsonstore.load(DELIVERIES_FILE, [])
+    return data if isinstance(data, list) else []
 
 
 def _save_deliveries(deliveries: list) -> None:
-    """Persiste la liste des livraisons dans deliveries.json."""
-    try:
-        os.makedirs(os.path.dirname(DELIVERIES_FILE), exist_ok=True)
-        with open(DELIVERIES_FILE, "w") as f:
-            json.dump(deliveries, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        logger.error("Stock : sauvegarde livraisons échouée : %s", e)
+    """Persiste la liste des livraisons dans deliveries.json (atomique)."""
+    jsonstore.save(DELIVERIES_FILE, deliveries)
 
 
 def _compute_stock() -> dict:
@@ -1910,10 +1879,11 @@ def api_stock_delivery_add():
             prix = float(prix_raw)
             if prix > 0:
                 delivery["prix_total"] = round(prix, 2)
-        deliveries = _load_deliveries()
-        deliveries.append(delivery)
-        deliveries.sort(key=lambda d: d["date"])
-        _save_deliveries(deliveries)
+        with jsonstore.lock_for(DELIVERIES_FILE):
+            deliveries = _load_deliveries()
+            deliveries.append(delivery)
+            deliveries.sort(key=lambda d: d["date"])
+            _save_deliveries(deliveries)
         logger.info("Stock : livraison ajoutée %s — %d sacs × %.1f kg", delivery["date"], delivery["nb_sacs"], delivery["poids_sac"])
         return jsonify({"status": "ok"})
     except (KeyError, ValueError) as e:
@@ -1936,12 +1906,13 @@ def api_stock_delivery_update(idx: int):
             prix = float(prix_raw)
             if prix > 0:
                 delivery["prix_total"] = round(prix, 2)
-        deliveries = _load_deliveries()
-        if idx < 0 or idx >= len(deliveries):
-            return jsonify({"error": "Index invalide"}), 400
-        deliveries[idx] = delivery
-        deliveries.sort(key=lambda d: d["date"])
-        _save_deliveries(deliveries)
+        with jsonstore.lock_for(DELIVERIES_FILE):
+            deliveries = _load_deliveries()
+            if idx < 0 or idx >= len(deliveries):
+                return jsonify({"error": "Index invalide"}), 400
+            deliveries[idx] = delivery
+            deliveries.sort(key=lambda d: d["date"])
+            _save_deliveries(deliveries)
         logger.info("Stock : livraison modifiée index %d → %s", idx, delivery["date"])
         return jsonify({"status": "ok"})
     except (KeyError, ValueError) as e:
@@ -1950,11 +1921,12 @@ def api_stock_delivery_update(idx: int):
 
 @app.route("/api/stock/delivery/<int:idx>", methods=["DELETE"])
 def api_stock_delivery_delete(idx: int):
-    deliveries = _load_deliveries()
-    if idx < 0 or idx >= len(deliveries):
-        return jsonify({"error": "Index invalide"}), 400
-    removed = deliveries.pop(idx)
-    _save_deliveries(deliveries)
+    with jsonstore.lock_for(DELIVERIES_FILE):
+        deliveries = _load_deliveries()
+        if idx < 0 or idx >= len(deliveries):
+            return jsonify({"error": "Index invalide"}), 400
+        removed = deliveries.pop(idx)
+        _save_deliveries(deliveries)
     logger.info("Stock : livraison supprimée index %d (%s)", idx, removed.get("date"))
     return jsonify({"status": "ok"})
 
