@@ -3,6 +3,7 @@ Application Flask – Conseiller Chauffage
 Déployable via Docker sur NAS Synology
 """
 
+import hmac
 import logging
 import os
 import secrets as _secrets
@@ -119,10 +120,14 @@ load_overrides(config)
 
 # ── Authentification ─────────────────────────────────────────
 
+def _uses_default_password() -> bool:
+    return not config.AUTH.get("password_hash")
+
+
 def _check_password(password: str) -> bool:
     stored = config.AUTH.get("password_hash", "")
     if not stored:
-        return password == config.AUTH.get("default_password", "heating")
+        return hmac.compare_digest(password.encode(), config.AUTH.get("default_password", "heating").encode())
     return check_password_hash(stored, password)
 
 
@@ -132,6 +137,14 @@ def require_login():
         return
     if request.endpoint in ("login", "logout"):
         return
+    # Mot de passe par défaut : il doit être changé avant toute autre action
+    if session.get("must_change_password"):
+        if not _uses_default_password():
+            session.pop("must_change_password")
+        elif request.endpoint not in ("change_password_page", "api_change_password"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Changez d'abord le mot de passe par défaut"}), 403
+            return redirect(url_for("change_password_page"))
     if not session.get("authenticated"):
         if request.path.startswith("/api/"):
             return jsonify({"error": "Non authentifié"}), 401
@@ -152,6 +165,10 @@ def login():
         if _check_password(password):
             session.permanent = True
             session["authenticated"] = True
+            if _uses_default_password():
+                session["must_change_password"] = True
+                logger.warning("Connexion avec le mot de passe par défaut — changement exigé")
+                return redirect(url_for("change_password_page"))
             next_url = request.args.get("next") or "/"
             if not next_url.startswith("/"):
                 next_url = "/"
@@ -167,6 +184,11 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/changer-mot-de-passe")
+def change_password_page():
+    return render_template("change_password.html", forced=_uses_default_password())
+
+
 @app.route("/api/auth/change-password", methods=["POST"])
 def api_change_password():
     data = request.get_json(force=True)
@@ -180,6 +202,7 @@ def api_change_password():
     try:
         _patch_override(lambda d: d.setdefault("AUTH", {}).__setitem__("password_hash", new_hash))
         config.AUTH["password_hash"] = new_hash
+        session.pop("must_change_password", None)
         logger.info("Mot de passe modifié")
     except Exception as e:
         logger.error("Erreur sauvegarde mot de passe : %s", e)
