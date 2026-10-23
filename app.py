@@ -108,6 +108,9 @@ def _get_secret_key() -> str:
 
 app.secret_key = _get_secret_key()
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=24)
+# Cookie de session non envoyé sur les requêtes POST/PUT/DELETE venant d'un autre site
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 # ── Rate limiter (protection brute-force login) ───────────────
 limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
@@ -133,6 +136,11 @@ def require_login():
         if request.path.startswith("/api/"):
             return jsonify({"error": "Non authentifié"}), 401
         return redirect(url_for("login", next=request.path))
+    # Protection CSRF : toute requête qui modifie quelque chose doit venir du front de l'appli,
+    # qui ajoute cet en-tête (base.html). Un site tiers ne peut pas l'envoyer sans pré-vol CORS.
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.headers.get("X-Requested-With") != "fetch":
+        logger.warning("Requête %s %s refusée : en-tête anti-CSRF absent (%s)", request.method, request.path, request.remote_addr)
+        return jsonify({"error": "Requête refusée : rechargez la page puis réessayez"}), 403
 
 
 @app.route("/login", methods=["GET", "POST"])

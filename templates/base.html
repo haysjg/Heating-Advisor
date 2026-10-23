@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Heating Advisor{% endblock %} – {{ config.LOCATION.city }}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // Protection CSRF : en-tête ajouté à toute requête fetch vers l'appli, exigé par le serveur
+    // pour les requêtes qui modifient quelque chose (un site tiers ne peut pas l'ajouter).
+    (function () {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = function (input, init = {}) {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        if (url.origin === location.origin) {
+          const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+          headers.set('X-Requested-With', 'fetch');
+          init = { ...init, headers };
+        }
+        return nativeFetch(input, init);
+      };
+    })();
+  </script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
