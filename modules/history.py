@@ -24,6 +24,18 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def poele_state_for_history(real_state: str | None, thermostat_state: dict) -> str:
+    """État du poêle à historiser ("on"/"off").
+
+    Priorité à l'état réel Home Assistant (compte aussi les allumages manuels et les périodes où
+    le thermostat est désactivé). Repli sur l'état du thermostat si HA ne répond pas.
+    """
+    if real_state not in (None, "unavailable", "unknown"):
+        return "off" if real_state == "off" else "on"
+    active = thermostat_state.get("active_system")
+    return "on" if thermostat_state.get("state") == "on" and active in (None, "poele") else "off"
+
+
 def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None) -> None:
     """Insère une lecture. Appelé par le scheduler toutes les ~10 min."""
     try:

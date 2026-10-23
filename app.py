@@ -225,8 +225,8 @@ def _record_history():
         outdoor_temp = data.get("weather", {}).get("temperature")
         indoor_temp = data.get("indoor", {}).get("temperature") if data.get("indoor") else None
         th_state = thermostat_module.get_state()
-        _active = th_state.get("active_system")
-        heating_state = "on" if (th_state.get("state") == "on" and _active in (None, "poele")) else "off"
+        poele_ha = ha_client.get_state(config.HOME_ASSISTANT)
+        heating_state = history_module.poele_state_for_history(poele_ha.get("state") if poele_ha else None, th_state)
         tempo_color = data.get("tempo", {}).get("today", {}).get("color")
         history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color)
     except Exception as e:
