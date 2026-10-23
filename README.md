@@ -30,6 +30,8 @@ data/
   config_override.json   # Surcharges persistées via l'interface /config
   history.db             # Historique SQLite des températures et état poêle
   thermostat_state.json  # État persisté du thermostat automatique
+  tempo_cache.json       # Couleurs Tempo publiées, par date (30 jours)
+  *.bak                  # Version précédente de chaque fichier JSON (restaurée si le fichier est illisible)
 modules/
   advisor.py             # Moteur de décision (comparaison des coûts)
   weather.py             # Récupération météo (météociel.fr + Open-Meteo)
@@ -38,6 +40,7 @@ modules/
   homeassistant.py       # Client API REST Home Assistant
   history.py             # Historisation SQLite
   overrides.py           # Chargement/application de config_override.json
+  jsonstore.py           # Écriture JSON atomique et verrouillée (fichiers de data/)
   crypto.py              # Chiffrement AES des mots de passe en config
   ntfy_push.py           # Notifications push via Ntfy
   imap_client.py         # Client IMAP (lecture seule) — boîte tierce recevant les mails Lite transférés
@@ -121,7 +124,7 @@ Le système le moins cher est recommandé.
 
 | Fonction | Description |
 |---|---|
-| `get_tempo_info(hp_start, hp_end)` | Retourne la couleur Tempo d'aujourd'hui et de demain, la période courante (HP/HC) et l'heure. Utilise l'API communautaire `api-couleur-tempo.fr`. |
+| `get_tempo_info(hp_start, hp_end)` | Retourne la couleur Tempo d'aujourd'hui et de demain, la période courante (HP/HC) et l'heure. Utilise l'API communautaire `api-couleur-tempo.fr` ; une couleur publiée est mémorisée dans `data/tempo_cache.json` (elle ne change plus), ce qui protège d'une panne de l'API dans la journée. Couleur inconnue → `UNKNOWN` (les radiateurs ne sont alors ni éteints ni rallumés). |
 | `is_hp(hour, hp_start, hp_end)` | Retourne `True` si l'heure est en Heure Pleine. |
 | `get_current_period(hp_start, hp_end)` | Retourne `"HP"` ou `"HC"` selon l'heure actuelle. |
 
@@ -146,7 +149,9 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 | `record(outdoor_temp, indoor_temp, poele_state, tempo_color)` | Insère une lecture. Appelé par le scheduler de `app.py`. |
 | `get_history(hours)` | Retourne les enregistrements des N dernières heures (utilisé par `/api/statistics`). |
 | `get_daily_summary(days)` | Agrège par journée : minutes allumé/éteint, température moyenne ext/int, couleur Tempo majoritaire. |
-| `purge_old(days)` | Supprime les données de plus de N jours. Lancé chaque lundi à 3h. |
+| `purge_old(days)` | Supprime les lectures de plus de N jours, en conservant tout le mois précédent (recalculé chaque jour par l'agrégation mensuelle). Lancé chaque lundi à 3h. |
+| `get_pellet_consumption_since(date)` | Minutes de poêle par jour depuis une date, lues dans `pellet_daily` (jamais purgée) — base du suivi de stock. |
+| `poele_state_for_history(real_state, thermostat_state)` | État historisé : état réel HA du poêle, repli sur l'état du thermostat si HA ne répond pas. |
 
 ### `overrides.py` — Surcharges de configuration
 
