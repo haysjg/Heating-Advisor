@@ -344,9 +344,13 @@ def _run_radiateurs_tempo_rouge():
 
     try:
         tempo = get_tempo_info(config.HP_START, config.HP_END)
-        today_color = tempo.get("today", {}).get("color", "BLUE")
+        today_color = tempo.get("today", {}).get("color", "UNKNOWN")
     except Exception as e:
         logger.error("Radiateurs tempo rouge : erreur récupération tempo : %s", e)
+        return
+    if today_color not in ("BLUE", "WHITE", "RED"):
+        # Couleur inconnue (API indisponible) : ni extinction ni rallumage, on attend une couleur fiable
+        logger.warning("Radiateurs tempo rouge : couleur du jour inconnue — aucune action")
         return
 
     from modules.ntfy_push import send as ntfy_send
