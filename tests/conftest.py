@@ -38,7 +38,6 @@ def base_config():
         "HP_END": 22,
         "NO_HEATING_AT_NIGHT": True,
         "TARGET_TEMP": 21,
-        "COP_LEARNING": {"enabled": False},
     }
 
 

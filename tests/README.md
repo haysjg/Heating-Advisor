@@ -22,7 +22,6 @@ tests/
   - `compute_clim_cost()` : calcul coût horaire climatisation
   - `compute_poele_cost()` : calcul coût horaire poêle
   - `make_recommendation()` : arbre de décision (jour rouge, confort, coûts)
-  - `get_effective_cop_curve()` : blend courbe théorique/apprise
   - `analyze()` : analyse complète aujourd'hui
   - `analyze_tomorrow()` : analyse demain
 
@@ -35,7 +34,6 @@ tests/
 ### ❌ Modules non testés (hors périmètre)
 
 - `modules/weather.py`, `modules/tempo.py`, `modules/homeassistant.py` — Dépendent d'APIs externes
-- `modules/cop_learning.py`, `modules/cop_sampling.py` — Nécessitent une base SQLite
 - `app.py` — Routes Flask (tests d'intégration à venir)
 
 ## Lancer les tests

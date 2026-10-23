@@ -24,9 +24,6 @@ import modules.homeassistant as ha_client
 from modules import jsonstore
 import modules.thermostat as thermostat_module
 import modules.history as history_module
-import modules.cop_learning as cop_learning_module
-import modules.cop_sampling as cop_sampling_module
-import modules.cop_auto_learning as cop_auto_learning_module
 from modules.stock import compute_stock_stats
 import modules.imap_client as imap_client
 import modules.electricity as electricity_module
@@ -184,10 +181,6 @@ def api_change_password():
 
 _scheduler = BackgroundScheduler(timezone="Europe/Paris")
 _scheduler.start()
-
-# ── Worker auto-learning COP ───────────────────────────────────
-# Démarré automatiquement si activé dans la config
-cop_auto_learning_module.start_worker(config)
 
 
 def _run_notify():
@@ -458,20 +451,6 @@ _scheduler.add_job(
     CronTrigger(day_of_week="mon", hour=3, minute=10, timezone="Europe/Paris"),
     id="diagnose_purge_job",
     misfire_grace_time=300,
-)
-# Purge hebdomadaire des données COP > 90 jours
-_scheduler.add_job(
-    lambda: cop_learning_module.purge_old(90),
-    CronTrigger(day_of_week="mon", hour=3, minute=20, timezone="Europe/Paris"),
-    id="cop_purge_job",
-    misfire_grace_time=300,
-)
-# Nettoyage des tasks d'échantillonnage COP toutes les 5 minutes
-_scheduler.add_job(
-    lambda: cop_sampling_module.cleanup_old_tasks(max_age_minutes=10),
-    "interval",
-    minutes=5,
-    id="cop_sampling_cleanup"
 )
 # Agrégation mensuelle quotidienne à 2h30 (avant la purge)
 def _run_monthly_aggregation():
@@ -1344,287 +1323,11 @@ def docs_page():
     return render_template("docs.html", config=config)
 
 
-@app.route("/cop-learning")
-def cop_learning_page():
-    return render_template("cop_learning.html", config=config)
-
-
 @app.route("/config")
 def config_page():
     override = jsonstore.load(OVERRIDE_FILE, {})
     purchase = override.get("_poele_purchase", {}) if isinstance(override, dict) else {}
     return render_template("config.html", config=config, purchase=purchase)
-
-
-@app.route("/api/cop/tag", methods=["POST"])
-def api_cop_tag():
-    """Enregistre un tag ON/OFF pour l'apprentissage du COP."""
-    try:
-        data = request.get_json(force=True)
-        tag = data.get("tag", "").lower()
-        notes = data.get("notes", "").strip()
-
-        if tag not in ("on", "off"):
-            return jsonify({"error": "Tag invalide (attendu: on ou off)"}), 400
-
-        # Récupérer les capteurs Shelly
-        cop_cfg = config.COP_LEARNING
-        sensors = cop_learning_module.get_current_sensors(config.HOME_ASSISTANT, cop_cfg)
-
-        if not sensors:
-            return jsonify({"error": "Capteurs Shelly indisponibles — vérifiez la configuration Home Assistant"}), 400
-
-        # Règle de sécurité : interdire tag ON si ballon en chauffe (fausserait le calcul COP)
-        heater_power_threshold = 50  # Watts
-        if tag == "on" and sensors["heater_power"] > heater_power_threshold:
-            return jsonify({
-                "error": f"Tag ON refusé : ballon eau chaude en chauffe ({sensors['heater_power']:.0f}W > {heater_power_threshold}W). "
-                        f"Cela fausserait le calcul du COP. Attendez que le ballon ait terminé sa chauffe."
-            }), 400
-
-        # Récupérer la température extérieure
-        outdoor_temp = None
-        try:
-            data_analysis = get_analysis()
-            outdoor_temp = data_analysis.get("weather", {}).get("temperature")
-        except Exception as e:
-            logger.warning(f"Impossible de récupérer la température extérieure : {e}")
-
-        # Enregistrer le tag
-        result = cop_learning_module.record_tag(
-            tag=tag,
-            outdoor_temp=outdoor_temp,
-            total_power=sensors["total_power"],
-            heater_power=sensors["heater_power"],
-            notes=notes,
-            config=config
-        )
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.exception("Erreur enregistrement tag COP : %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/start-sampling", methods=["POST"])
-def api_cop_start_sampling():
-    """Démarre un échantillonnage asynchrone pour tag ON."""
-    try:
-        data = request.get_json(force=True)
-        notes = data.get("notes", "").strip()
-
-        # Validation préalable (capteurs, ballon)
-        cop_cfg = config.COP_LEARNING
-        sensors = cop_learning_module.get_current_sensors(config.HOME_ASSISTANT, cop_cfg)
-
-        if not sensors:
-            return jsonify({"error": "Capteurs Shelly indisponibles"}), 400
-
-        if sensors["heater_power"] > 50:
-            return jsonify({"error": "Tag ON refusé : ballon en chauffe"}), 400
-
-        # Capturer température extérieure
-        outdoor_temp = None
-        try:
-            data_analysis = get_analysis()
-            outdoor_temp = data_analysis.get("weather", {}).get("temperature")
-        except Exception as e:
-            logger.warning(f"Température extérieure indisponible : {e}")
-
-        # Démarrer task
-        task_id = cop_sampling_module.start_sampling_task(notes, outdoor_temp, config)
-
-        return jsonify({
-            "status": "ok",
-            "task_id": task_id,
-            "message": "Échantillonnage démarré"
-        })
-
-    except Exception as e:
-        logger.exception("Erreur start sampling")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/sampling-status/<task_id>")
-def api_cop_sampling_status(task_id):
-    """Retourne l'état d'un échantillonnage en cours."""
-    status = cop_sampling_module.get_task_status(task_id)
-
-    if not status:
-        return jsonify({"error": "Task non trouvée"}), 404
-
-    return jsonify(status)
-
-
-@app.route("/api/cop/cancel-sampling/<task_id>", methods=["POST"])
-def api_cop_cancel_sampling(task_id):
-    """Annule un échantillonnage en cours."""
-    success = cop_sampling_module.cancel_task(task_id)
-
-    if not success:
-        return jsonify({"error": "Task non trouvée"}), 404
-
-    return jsonify({"status": "ok", "message": "Échantillonnage annulé"})
-
-
-@app.route("/api/cop/data")
-def api_cop_data():
-    """Retourne les données pour l'interface COP Learning."""
-    try:
-        cop_cfg = config.COP_LEARNING
-
-        # Statistiques
-        stats = cop_learning_module.get_statistics()
-
-        # Tags récents
-        recent_tags = cop_learning_module.get_recent_tags(20)
-
-        # Courbes (théorique vs apprise)
-        comparison = cop_learning_module.get_cop_curve_comparison(config.CLIM["cop_curve"])
-
-        # Profil de base
-        base_profile = cop_learning_module.get_base_profile()
-
-        # Capteurs temps réel
-        sensors = cop_learning_module.get_current_sensors(config.HOME_ASSISTANT, cop_cfg)
-
-        # Température extérieure
-        outdoor_temp = None
-        try:
-            data_analysis = get_analysis()
-            outdoor_temp = data_analysis.get("weather", {}).get("temperature")
-        except Exception:
-            pass
-
-        return jsonify({
-            "enabled": cop_cfg.get("enabled", False),
-            "stats": stats,
-            "recent_tags": recent_tags,
-            "curves": comparison,
-            "base_profile": base_profile,
-            "sensors": sensors,
-            "outdoor_temp": outdoor_temp,
-            "config": {
-                "nominal_thermal_kw": cop_cfg.get("nominal_thermal_kw", 4.0),
-                "confidence_threshold": cop_cfg.get("confidence_threshold", 0.6),
-                "auto_switch_to_learned": cop_cfg.get("auto_switch_to_learned", False),
-            }
-        })
-
-    except Exception as e:
-        logger.exception("Erreur récupération données COP : %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/calibrate", methods=["POST"])
-def api_cop_calibrate():
-    """Calibration manuelle de la consommation de base."""
-    try:
-        data = request.get_json(force=True)
-        base_watts = float(data.get("base_watts", 0))
-        hour = data.get("hour")
-
-        if hour is not None:
-            hour = int(hour)
-            if not (0 <= hour <= 23):
-                return jsonify({"error": "Heure invalide (0-23)"}), 400
-
-        cop_learning_module.calibrate_base_consumption(base_watts, hour)
-
-        return jsonify({"status": "ok"})
-
-    except (ValueError, TypeError) as e:
-        return jsonify({"error": f"Valeur invalide : {e}"}), 400
-    except Exception as e:
-        logger.exception("Erreur calibration COP : %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/clear", methods=["DELETE"])
-def api_cop_clear():
-    """Efface les données d'apprentissage."""
-    try:
-        keep_config = request.args.get("keep_config", "true").lower() == "true"
-        cop_learning_module.clear_all(keep_config)
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        logger.exception("Erreur effacement données COP : %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/tag/<int:tag_id>", methods=["DELETE"])
-def api_cop_delete_tag(tag_id):
-    """Supprime un tag spécifique."""
-    try:
-        success = cop_learning_module.delete_tag(tag_id)
-        if success:
-            return jsonify({"status": "ok", "message": f"Tag {tag_id} supprimé"})
-        else:
-            return jsonify({"error": "Tag non trouvé"}), 404
-    except Exception as e:
-        logger.exception("Erreur suppression tag %s : %s", tag_id, e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/tag/last-on", methods=["GET"])
-def api_cop_last_on_tag():
-    """Retourne le dernier tag ON enregistré."""
-    try:
-        tag = cop_learning_module.get_last_on_tag()
-        if tag:
-            return jsonify({"status": "ok", "tag": tag})
-        else:
-            return jsonify({"error": "Aucun tag ON trouvé"}), 404
-    except Exception as e:
-        logger.exception("Erreur récupération dernier tag ON : %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/auto-learning/status")
-def api_cop_auto_learning_status():
-    """Retourne le statut du worker d'auto-learning."""
-    try:
-        status = cop_auto_learning_module.get_status()
-        return jsonify(status)
-    except Exception as e:
-        logger.exception("Erreur récupération statut auto-learning : %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/auto-learning/toggle", methods=["POST"])
-def api_cop_auto_learning_toggle():
-    """Active ou désactive le worker d'auto-learning."""
-    try:
-        data = request.get_json(force=True)
-        enable = data.get("enable", False)
-
-        success = cop_auto_learning_module.toggle_worker(config, enable)
-
-        if success:
-            return jsonify({
-                "status": "ok",
-                "enabled": enable,
-                "message": f"Auto-learning {'activé' if enable else 'désactivé'}"
-            })
-        else:
-            return jsonify({"error": "Impossible de modifier l'état du worker"}), 400
-
-    except Exception as e:
-        logger.exception("Erreur toggle auto-learning : %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/cop/auto-learning/history")
-def api_cop_auto_learning_history():
-    """Retourne l'historique des rejets d'auto-learning."""
-    try:
-        limit = int(request.args.get("limit", 20))
-        history = cop_auto_learning_module.get_rejection_history(limit)
-        return jsonify({"history": history})
-    except Exception as e:
-        logger.exception("Erreur récupération historique auto-learning : %s", e)
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/config", methods=["POST"])
@@ -1752,21 +1455,6 @@ def api_config_save():
                     if isinstance(e, dict) and e.get("entity_id", "").strip()
                 ],
             },
-            "COP_LEARNING": {
-                "enabled": bool(data.get("cop_enabled", False)),
-                "shelly_total_power_entity_id": str(data.get("cop_shelly_total", config.COP_LEARNING.get("shelly_total_power_entity_id", ""))).strip(),
-                "shelly_heater_power_entity_id": str(data.get("cop_shelly_heater", config.COP_LEARNING.get("shelly_heater_power_entity_id", ""))).strip(),
-                "nominal_thermal_kw": float(data.get("cop_thermal_kw", config.COP_LEARNING.get("nominal_thermal_kw", 4.0))),
-                "confidence_threshold": float(data.get("cop_confidence_threshold", config.COP_LEARNING.get("confidence_threshold", 0.6))),
-                "min_samples_per_bin": int(data.get("cop_min_samples", config.COP_LEARNING.get("min_samples_per_bin", 3))),
-                "temp_bin_size": int(data.get("cop_temp_bin", config.COP_LEARNING.get("temp_bin_size", 5))),
-                "min_ac_power": int(data.get("cop_min_power", config.COP_LEARNING.get("min_ac_power", 500))),
-                "max_ac_power": int(data.get("cop_max_power", config.COP_LEARNING.get("max_ac_power", 3000))),
-                "auto_switch_to_learned": bool(data.get("cop_auto_switch", config.COP_LEARNING.get("auto_switch_to_learned", False))),
-                "auto_learning": {
-                    "enabled": bool(data.get("cop_auto_learning_enabled", config.COP_LEARNING.get("auto_learning", {}).get("enabled", False))),
-                },
-            },
             "ELECTRICITY": {
                 "enabled": bool(data.get("electricity_enabled", False)),
                 "imap_host": str(data.get("imap_host", config.ELECTRICITY.get("imap_host", "imap.orange.fr"))).strip(),
@@ -1784,21 +1472,16 @@ def api_config_save():
             thermostat_override["temp_on"], thermostat_override["temp_off"]
         )
         previous_temp_off = config.THERMOSTAT.get("temp_off")
-        _patch_override(lambda d: d.update(override))
+        def _save(d):
+            d.update(override)
+            d.pop("COP_LEARNING", None)  # section de l'apprentissage COP, supprimé
+        _patch_override(_save)
         apply_overrides(config, override)
         _cache["data"] = None
         _cache["expires_at"] = None
         _reschedule_notify()
         _reschedule_radiateurs()
         _reschedule_electricity_fetch()
-
-        # Redémarrer le worker auto-learning si la config a changé
-        auto_learning_enabled = config.COP_LEARNING.get("auto_learning", {}).get("enabled", False)
-        if auto_learning_enabled:
-            cop_auto_learning_module.stop_worker()
-            cop_auto_learning_module.start_worker(config)
-        else:
-            cop_auto_learning_module.stop_worker()
 
         # Consigne clim alignée sur temp_off si elle chauffe déjà (sinon envoyée au prochain allumage)
         clim_setpoint = None

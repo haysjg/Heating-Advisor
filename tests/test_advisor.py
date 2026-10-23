@@ -8,7 +8,6 @@ Ce module teste toutes les fonctions de calcul et de décision :
 - Analyses aujourd'hui et demain
 """
 
-from unittest.mock import patch, MagicMock
 from datetime import datetime
 
 import pytest
@@ -18,7 +17,6 @@ from modules.advisor import (
     compute_clim_cost,
     compute_poele_cost,
     make_recommendation,
-    get_effective_cop_curve,
     analyze,
     analyze_tomorrow,
 )
@@ -106,13 +104,6 @@ class TestComputeClimCost:
         assert result["cop"] == 1.0
         # cost = 4.0 kW / 1.0 * 0.20 = 0.80 €/h
         assert result["cost_per_hour"] == 0.8
-
-    def test_cop_curve_override(self, base_config):
-        clim_cfg = base_config["CLIM"]
-        custom_curve = [(0, 5.0), (20, 6.0)]
-        result = compute_clim_cost(10.0, clim_cfg, 0.1369, cop_curve_override=custom_curve)
-        # COP à 10°C interpolé entre 5.0 et 6.0 → 5.5
-        assert result["cop"] == 5.5
 
 
 # ── compute_poele_cost ───────────────────────────────────────────
@@ -217,59 +208,6 @@ class TestMakeRecommendation:
         # Écart ≤ 0.01 → level="info"
         r = make_recommendation(10.0, self._clim(0.425), self._poele(0.4233), "BLUE", "HP")
         assert r["level"] == "info"
-
-
-# ── get_effective_cop_curve ──────────────────────────────────────
-
-
-class TestGetEffectiveCopCurve:
-    """Tests du blend entre courbe COP théorique et apprise.
-
-    Stratégies testées :
-    - COP_LEARNING désactivé → courbe théorique pure
-    - Confiance < 0.3 → courbe théorique
-    - Confiance ≥ 0.6 + auto_switch → courbe apprise pure
-    - Confiance entre 0.3 et 0.6 → blend pondéré
-      blend_factor = (confidence - 0.3) / 0.7
-    """
-
-    def test_learning_disabled(self, base_config):
-        result = get_effective_cop_curve(base_config)
-        assert result == base_config["CLIM"]["cop_curve"]
-
-    @patch("modules.cop_learning.get_confidence_score", return_value=0.1)
-    @patch("modules.cop_learning.get_cop_curve_learned", return_value=[(0, 2.5)])
-    def test_low_confidence_returns_theoretical(self, _mock_curve, _mock_conf, base_config):
-        base_config["COP_LEARNING"]["enabled"] = True
-        result = get_effective_cop_curve(base_config)
-        assert result == base_config["CLIM"]["cop_curve"]
-
-    @patch("modules.cop_learning.get_confidence_score", return_value=0.8)
-    @patch("modules.cop_learning.get_cop_curve_learned", return_value=[(-10, 1.6), (0, 2.3), (7, 3.0), (12, 3.5), (20, 4.0)])
-    def test_high_confidence_auto_switch(self, _mock_curve, _mock_conf, base_config):
-        base_config["COP_LEARNING"] = {
-            "enabled": True,
-            "confidence_threshold": 0.6,
-            "auto_switch_to_learned": True,
-        }
-        result = get_effective_cop_curve(base_config)
-        # Doit retourner la courbe apprise pure
-        assert result == [(-10, 1.6), (0, 2.3), (7, 3.0), (12, 3.5), (20, 4.0)]
-
-    @patch("modules.cop_learning.get_confidence_score", return_value=0.5)
-    @patch("modules.cop_learning.get_cop_curve_learned", return_value=[(-10, 1.6), (0, 2.4), (7, 3.0), (12, 3.4), (20, 4.0)])
-    def test_medium_confidence_blend(self, _mock_curve, _mock_conf, base_config):
-        base_config["COP_LEARNING"] = {
-            "enabled": True,
-            "confidence_threshold": 0.6,
-            "auto_switch_to_learned": True,
-        }
-        result = get_effective_cop_curve(base_config)
-        # blend_factor = (0.5 - 0.3) / 0.7 ≈ 0.2857
-        # Pour le point (0): théorique=2.2, appris=2.4
-        # blended = 2.2 * (1 - 0.2857) + 2.4 * 0.2857 ≈ 2.257
-        cop_at_0 = next(c for t, c in result if t == 0)
-        assert 2.2 < cop_at_0 < 2.4
 
 
 # ── analyze ──────────────────────────────────────────────────────
