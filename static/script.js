@@ -100,91 +100,102 @@ async function controlRadiateur(entityId, action) {
   }
 }
 
+function renderPoeleStatus(state) {
+  const isOn = state === 'heat' || state === 'on';
+
+  // Sidebar + drawer icons
+  ['poele-status-icon', 'mob-poele-status-icon'].forEach(id => {
+    const icon = document.getElementById(id);
+    if (icon) icon.textContent = isOn ? '🟢' : '⚫';
+  });
+
+  const btnOn = document.getElementById('btn-poele-on');
+  const btnOff = document.getElementById('btn-poele-off');
+
+  if (btnOn) btnOn.classList.toggle('active', isOn);
+  if (btnOff) btnOff.classList.toggle('active', !isOn);
+}
+
 async function updatePoeleStatus() {
   try {
     const response = await fetch('/api/ha/state');
-    const data = await response.json();
-
-    const isOn = data.state === 'heat' || data.state === 'on';
-
-    // Sidebar + drawer icons
-    ['poele-status-icon', 'mob-poele-status-icon'].forEach(id => {
-      const icon = document.getElementById(id);
-      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-    });
-
-    const btnOn = document.getElementById('btn-poele-on');
-    const btnOff = document.getElementById('btn-poele-off');
-
-    if (btnOn) btnOn.classList.toggle('active', isOn);
-    if (btnOff) btnOff.classList.toggle('active', !isOn);
+    renderPoeleStatus((await response.json()).state);
   } catch (e) {
     console.warn('Erreur mise à jour état poêle:', e);
   }
 }
 
+function renderClimStatus(state) {
+  const isOn = state === 'heat' || state === 'on';
+
+  // Sidebar + drawer icons
+  ['clim-status-icon', 'mob-clim-status-icon'].forEach(id => {
+    const icon = document.getElementById(id);
+    if (icon) icon.textContent = isOn ? '🟢' : '⚫';
+  });
+
+  const btnOn = document.getElementById('btn-clim-on');
+  const btnOff = document.getElementById('btn-clim-off');
+
+  if (btnOn) btnOn.classList.toggle('active', isOn);
+  if (btnOff) btnOff.classList.toggle('active', !isOn);
+}
+
 async function updateClimStatus() {
   try {
     const response = await fetch('/api/ha/clim/state');
-    const data = await response.json();
-
-    const isOn = data.state === 'heat' || data.state === 'on';
-
-    // Sidebar + drawer icons
-    ['clim-status-icon', 'mob-clim-status-icon'].forEach(id => {
-      const icon = document.getElementById(id);
-      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-    });
-
-    const btnOn = document.getElementById('btn-clim-on');
-    const btnOff = document.getElementById('btn-clim-off');
-
-    if (btnOn) btnOn.classList.toggle('active', isOn);
-    if (btnOff) btnOff.classList.toggle('active', !isOn);
+    renderClimStatus((await response.json()).state);
   } catch (e) {
     console.warn('Erreur mise à jour état clim:', e);
+  }
+}
+
+function renderRadiateurStatus(entityId, state) {
+  const isOn = state === 'on' || state === 'heat';
+
+  // Sidebar
+  const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
+  if (statusDiv) {
+    const radiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-entity-id]'));
+    const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
+    if (index >= 0) {
+      const icon = document.getElementById(`radiateur-${index}-icon`);
+      const compact = statusDiv.closest('.control-compact');
+      const btnOn = compact ? compact.querySelector('.btn-compact-on') : null;
+      const btnOff = compact ? compact.querySelector('.btn-compact-off') : null;
+      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
+      if (btnOn) btnOn.classList.toggle('active', isOn);
+      if (btnOff) btnOff.classList.toggle('active', !isOn);
+    }
+  }
+
+  // Drawer (mobile)
+  const mobStatusDiv = document.querySelector(`[data-mob-entity-id="${entityId}"]`);
+  if (mobStatusDiv) {
+    const mobRadiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-mob-entity-id]'));
+    const mobIndex = mobRadiateurs.findIndex(r => r.getAttribute('data-mob-entity-id') === entityId);
+    if (mobIndex >= 0) {
+      const mobIcon = document.getElementById(`mob-radiateur-${mobIndex}-icon`);
+      if (mobIcon) mobIcon.textContent = isOn ? '🟢' : '⚫';
+    }
   }
 }
 
 async function updateRadiateurStatus(entityId) {
   try {
     const response = await fetch('/api/radiateurs/status');
-    const data = await response.json();
-
-    const entity = data.entities.find(e => e.entity_id === entityId);
-    if (!entity) return;
-
-    const isOn = entity.state === 'on' || entity.state === 'heat';
-
-    // Sidebar
-    const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
-    if (statusDiv) {
-      const radiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-entity-id]'));
-      const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
-      if (index >= 0) {
-        const icon = document.getElementById(`radiateur-${index}-icon`);
-        const compact = statusDiv.closest('.control-compact');
-        const btnOn = compact ? compact.querySelector('.btn-compact-on') : null;
-        const btnOff = compact ? compact.querySelector('.btn-compact-off') : null;
-        if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-        if (btnOn) btnOn.classList.toggle('active', isOn);
-        if (btnOff) btnOff.classList.toggle('active', !isOn);
-      }
-    }
-
-    // Drawer (mobile)
-    const mobStatusDiv = document.querySelector(`[data-mob-entity-id="${entityId}"]`);
-    if (mobStatusDiv) {
-      const mobRadiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-mob-entity-id]'));
-      const mobIndex = mobRadiateurs.findIndex(r => r.getAttribute('data-mob-entity-id') === entityId);
-      if (mobIndex >= 0) {
-        const mobIcon = document.getElementById(`mob-radiateur-${mobIndex}-icon`);
-        if (mobIcon) mobIcon.textContent = isOn ? '🟢' : '⚫';
-      }
-    }
+    const entity = (await response.json()).entities.find(e => e.entity_id === entityId);
+    if (entity) renderRadiateurStatus(entityId, entity.state);
   } catch (e) {
     console.warn('Erreur mise à jour état radiateur:', e);
   }
+}
+
+// Met à jour le panneau de contrôle (poêle, clim, radiateurs) depuis la réponse de /api/dashboard/refresh
+function updateControlPanel(data) {
+  if (data.poele_state != null) renderPoeleStatus(data.poele_state);
+  if (data.clim_state != null) renderClimStatus(data.clim_state);
+  (data.radiateurs || []).forEach(r => renderRadiateurStatus(r.entity_id, r.state));
 }
 
 function showToast(message, type = 'info') {
@@ -238,14 +249,17 @@ function toggleControlDrawer() {
   const hasDrawer  = document.getElementById('mobile-control-drawer');
   if (!hasSidebar && !hasDrawer) return;
 
-  function pollAll() {
-    updatePoeleStatus();
-    if (document.getElementById('clim-status') || document.getElementById('mob-clim-status-icon')) {
-      updateClimStatus();
+  // Avec le rafraîchissement AJAX, DashboardRefresh met déjà le panneau à jour (un seul appel serveur)
+  if ((window.AJAX_REFRESH_INTERVAL || 0) > 0) return;
+
+  async function pollAll() {
+    if (document.hidden) return;
+    try {
+      const response = await fetch('/api/dashboard/refresh');
+      if (response.ok) updateControlPanel(await response.json());
+    } catch (e) {
+      console.warn('Erreur mise à jour du panneau de contrôle:', e);
     }
-    document.querySelectorAll('.control-compact-status[data-entity-id]').forEach(r => {
-      updateRadiateurStatus(r.getAttribute('data-entity-id'));
-    });
   }
 
   pollAll();
@@ -308,8 +322,8 @@ const DashboardRefresh = {
       }
     }, this.intervalSeconds * 1000);
 
-    // Premier appel immédiat
-    setTimeout(() => this.fetchAndUpdate(), this.intervalSeconds * 1000);
+    // Premier appel immédiat (le panneau de contrôle n'a pas d'état initial rendu côté serveur)
+    this.fetchAndUpdate();
   },
 
   stopPolling() {
@@ -361,6 +375,7 @@ const DashboardRefresh = {
       this.updateRecommendation(data.recommendation, data.tempo);
       this.updateThermostat(data.thermostat);
       this.updateRadiateurs(data.radiateurs);
+      updateControlPanel(data);
       this.updateTempo(data.tempo);
       this.updateTomorrow(data.tomorrow);
       this.updateTimestamp(data.timestamp);
