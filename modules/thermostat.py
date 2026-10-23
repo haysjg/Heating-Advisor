@@ -16,6 +16,7 @@ DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 ALERT_FAILURES_THRESHOLD = 3    # nombre de checks consécutifs en échec avant alerte
 ALERT_RESEND_HOURS = 4          # délai min entre deux alertes (heures)
+COMMAND_ALERT_THRESHOLD = 3     # commandes HA consécutives en échec avant alerte ntfy
 
 
 def _load_state() -> dict:
@@ -97,6 +98,9 @@ def _update_system_timestamp(state: dict, system: str, event_type: str) -> None:
 
     # Mettre à jour system_history
     state["system_history"][system][field] = timestamp
+
+    # Une transition a eu lieu : les échecs de commande précédents sont résolus
+    state["command_failures"] = 0
 
     # Maintenir les champs legacy pour rétrocompatibilité
     state[field] = timestamp
@@ -410,6 +414,26 @@ def next_schedule_start(cfg: dict) -> str | None:
     return None
 
 
+def _record_command_failure(state: dict, action: str, ntfy_cfg: dict | None) -> dict:
+    """Comptabilise une commande HA en échec, sans changer l'état du chauffage (nouvel essai au prochain check).
+
+    Alerte ntfy au COMMAND_ALERT_THRESHOLD-ième échec consécutif. Le compteur est remis à zéro
+    par _update_system_timestamp à la prochaine transition réussie.
+    """
+    from modules.ntfy_push import send as ntfy_send
+    failures = state.get("command_failures", 0) + 1
+    logger.error("Thermostat : échec de la commande HA — %s (%d échec(s) consécutif(s))", action, failures)
+    state = {**state, "command_failures": failures}
+    _save_state(state)
+    if failures == COMMAND_ALERT_THRESHOLD:
+        ntfy_send(
+            "⚠️ Commande chauffage en échec",
+            f"{action.capitalize()} : échec {failures} fois de suite via Home Assistant. Vérifiez le poêle et la clim.",
+            ntfy_cfg,
+        )
+    return state
+
+
 def _turn_off_active_system(ha_client, ha_cfg: dict, active_system: str | None) -> bool:
     """Éteint le système actuellement actif (poêle ou clim)."""
     if active_system == "clim":
@@ -471,7 +495,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             import modules.homeassistant as ha_client
             active = state.get("active_system", "poele")
             logger.info("Thermostat : extinction %s — mode vacances actif", _system_label(active))
-            _turn_off_active_system(ha_client, ha_cfg, active)
+            if not _turn_off_active_system(ha_client, ha_cfg, active):
+                _record_command_failure(state, "extinction " + _system_label(active), ntfy_cfg)
+                return
             new_state = {**state, "state": "off", "active_system": None}
             _update_system_timestamp(new_state, active, "off")
             _save_state(new_state)
@@ -483,7 +509,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             import modules.homeassistant as ha_client
             active = state.get("active_system", "poele")
             logger.info("Thermostat : extinction %s — horaire d'absence actif", _system_label(active))
-            _turn_off_active_system(ha_client, ha_cfg, active)
+            if not _turn_off_active_system(ha_client, ha_cfg, active):
+                _record_command_failure(state, "extinction " + _system_label(active), ntfy_cfg)
+                return
             new_state = {**state, "state": "off", "active_system": None}
             _update_system_timestamp(new_state, active, "off")
             _save_state(new_state)
@@ -507,18 +535,23 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     clim_overlap_str = state.get("clim_overlap_until")
     if clim_overlap_str:
         try:
-            if datetime.now() >= datetime.fromisoformat(clim_overlap_str):
-                logger.info("Thermostat : fin chevauchement clim → poêle, extinction clim")
-                ha_client.turn_off_clim(ha_cfg)
+            overlap_until = datetime.fromisoformat(clim_overlap_str)
+        except ValueError:
+            overlap_until = None
+            state = {**state, "clim_overlap_until": None}
+            _save_state(state)
+        if overlap_until and datetime.now() >= overlap_until:
+            logger.info("Thermostat : fin chevauchement clim → poêle, extinction clim")
+            if ha_client.turn_off_clim(ha_cfg):
                 _update_system_timestamp(state, "clim", "off")
                 state = {**state, "clim_overlap_until": None}
                 _save_state(state)
             else:
-                remaining_min = int((datetime.fromisoformat(clim_overlap_str) - datetime.now()).total_seconds() / 60)
-                logger.debug("Thermostat : chevauchement clim → poêle actif, extinction clim dans %d min", remaining_min)
-        except Exception:
-            state = {**state, "clim_overlap_until": None}
-            _save_state(state)
+                # clim_overlap_until conservé : nouvelle tentative au prochain check
+                state = _record_command_failure(state, "extinction clim (fin de chevauchement)", ntfy_cfg)
+        elif overlap_until:
+            remaining_min = int((overlap_until - datetime.now()).total_seconds() / 60)
+            logger.debug("Thermostat : chevauchement clim → poêle actif, extinction clim dans %d min", remaining_min)
 
     if not sensor_ok:
         logger.warning("Thermostat : température intérieure indisponible")
@@ -535,7 +568,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 grace = thermostat_cfg.get("end_of_schedule_grace_minutes", 45)
                 if on_minutes >= grace:
                     logger.info("Thermostat : extinction sécurité fin de plage (sonde HS) — %s", _system_label(active))
-                    _turn_off_active_system(ha_client, ha_cfg, active)
+                    if not _turn_off_active_system(ha_client, ha_cfg, active):
+                        _record_command_failure(state, "extinction " + _system_label(active), ntfy_cfg)
+                        return
                     new_state = {
                         **state,
                         "state": "off",
@@ -745,7 +780,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         # Capturer le système actif AVANT de le mettre à None
                         prev_system = active_system
                         logger.info("Thermostat : extinction %s — zone proximité après %dh (grâce écoulée)", _system_label(prev_system), no_ignition_after)
-                        _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                        if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
+                            _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                            return
                         new_state = {**state, "state": "off", "active_system": None}
                         _update_system_timestamp(new_state, prev_system, "off")
                         _save_state(new_state)
@@ -782,7 +819,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     # Capturer le système actif AVANT de le mettre à None
                     prev_system = active_system
                     logger.info("Thermostat : extinction %s — absence confirmée", _system_label(prev_system))
-                    _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                    if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
+                        _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                        return
                     new_state = {**state, "state": "off", "active_system": None, "off_reason": "absence"}
                     _update_system_timestamp(new_state, prev_system, "off")
                     _save_state(new_state)
@@ -828,7 +867,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : allumage poêle (ressenti %.1f°C < %.1f°C, réel %.1f°C, recommandation=%s)",
                     effective_temp, temp_on, temp, recommendation,
                 )
-                ha_client.turn_on(ha_cfg)
+                if not ha_client.turn_on(ha_cfg):
+                    _record_command_failure(state, "allumage poêle", ntfy_cfg)
+                    return
                 off_reason = state.get("off_reason")
                 new_state = {
                     **state,
@@ -850,7 +891,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : allumage clim (ressenti %.1f°C < %.1f°C, réel %.1f°C, recommandation=%s)",
                     effective_temp, temp_on, temp, recommendation,
                 )
-                ha_client.turn_on_clim(ha_cfg, temp_off)
+                if not ha_client.turn_on_clim(ha_cfg, temp_off):
+                    _record_command_failure(state, "allumage clim", ntfy_cfg)
+                    return
                 off_reason = state.get("off_reason")
                 new_state = {
                     **state,
@@ -908,7 +951,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                             "Thermostat : transition clim → poêle avec chevauchement %d min (allumé depuis %.0f min, temp %.1f°C)",
                             overlap_min, on_minutes, effective_temp,
                         )
-                        ha_client.turn_on(ha_cfg)
+                        if not ha_client.turn_on(ha_cfg):
+                            _record_command_failure(state, "allumage poêle (transition clim → poêle)", ntfy_cfg)
+                            return
                         new_state = {
                             **state,
                             "state": "on",
@@ -928,7 +973,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                             "Thermostat : clim → poêle, temp déjà atteinte (%.1f°C), extinction clim sans démarrer le poêle",
                             effective_temp,
                         )
-                        ha_client.turn_off_clim(ha_cfg)
+                        if not ha_client.turn_off_clim(ha_cfg):
+                            _record_command_failure(state, "extinction clim", ntfy_cfg)
+                            return
                         prev_system = active_system
                         new_state = {
                             **state,
@@ -951,13 +998,22 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         _system_label(active_system), _system_label(recommendation), on_minutes, effective_temp,
                     )
                     # Éteindre l'ancien
-                    _turn_off_active_system(ha_client, ha_cfg, active_system)
+                    if not _turn_off_active_system(ha_client, ha_cfg, active_system):
+                        _record_command_failure(state, "extinction " + _system_label(active_system), ntfy_cfg)
+                        return
                     # Allumer le nouveau si temp encore basse
                     if effective_temp < temp_on:
                         if recommendation == "clim":
-                            ha_client.turn_on_clim(ha_cfg, temp_off)
+                            turned_on = ha_client.turn_on_clim(ha_cfg, temp_off)
                         else:
-                            ha_client.turn_on(ha_cfg)
+                            turned_on = ha_client.turn_on(ha_cfg)
+                        if not turned_on:
+                            # L'ancien système est déjà éteint : état off sans suspension, rallumage au prochain check
+                            new_state = {**state, "state": "off", "active_system": None}
+                            _update_system_timestamp(new_state, active_system, "off")
+                            new_state["command_failures"] = state.get("command_failures", 0)
+                            _record_command_failure(new_state, "allumage " + _system_label(recommendation), ntfy_cfg)
+                            return
                         new_state = {
                             **state,
                             "state": "on",
@@ -997,7 +1053,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : extinction %s — recommandation=%s (allumé depuis %.0f min)",
                     _system_label(prev_system), recommendation, on_minutes,
                 )
-                _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
+                    _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                    return
                 new_state = {
                     **state,
                     "state": "off",
@@ -1020,7 +1078,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : extinction %s (ressenti %.1f°C >= %.1f°C, réel %.1f°C, allumé depuis %.0f min)",
                     _system_label(prev_system), effective_temp, temp_off, temp, on_minutes,
                 )
-                _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
+                    _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                    return
                 new_state = {
                     **state,
                     "state": "off",
@@ -1041,7 +1101,9 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : extinction %s fin de plage (allumé depuis %.0f min >= %d min)",
                     _system_label(prev_system), on_minutes, grace,
                 )
-                _turn_off_active_system(ha_client, ha_cfg, prev_system)
+                if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
+                    _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                    return
                 new_state = {
                     **state,
                     "state": "off",

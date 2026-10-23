@@ -539,3 +539,67 @@ class TestSyncClimSetpoint:
     def test_reports_failure(self):
         from modules.thermostat import sync_clim_setpoint
         assert sync_clim_setpoint(self._ha(set_ok=False), {}, 21.5) is False
+
+
+# ── Échecs des commandes Home Assistant ──────────────────────────
+
+
+@freeze_time("2025-01-06 10:00:00")  # lundi, dans la plage
+class TestCommandFailures:
+    """Une commande HA en échec ne doit jamais changer l'état ni créer de fausse suspension."""
+
+    @pytest.fixture
+    def store(self):
+        data = {"state": {
+            "state": "off", "active_system": None, "sensor_failures": 0, "suspended_until": None,
+            "system_history": {"poele": {"last_turned_on": None, "last_turned_off": None},
+                               "clim": {"last_turned_on": None, "last_turned_off": None}},
+        }}
+        with patch("modules.thermostat._load_state", side_effect=lambda: dict(data["state"])), \
+             patch("modules.thermostat._save_state", side_effect=lambda s: data.__setitem__("state", s)), \
+             patch("modules.thermostat.is_on_vacation", return_value=False), \
+             patch("modules.thermostat.is_in_absence_schedule", return_value=False):
+            yield data
+
+    def _check(self, base_ha_cfg, base_thermostat_cfg, indoor_temp, poele_real, turn_on=True, turn_off=True):
+        with patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": indoor_temp, "humidity": 50.0}), \
+             patch("modules.homeassistant.get_state", return_value={"state": poele_real}), \
+             patch("modules.homeassistant.turn_on", return_value=turn_on) as on, \
+             patch("modules.homeassistant.turn_off", return_value=turn_off) as off, \
+             patch("modules.ntfy_push.send") as ntfy:
+            check_and_apply(base_ha_cfg, base_thermostat_cfg, "poele", ntfy_cfg={"enabled": True})
+        return on, off, ntfy
+
+    def test_failed_ignition_keeps_state_off(self, store, base_ha_cfg, base_thermostat_cfg):
+        on, _, ntfy = self._check(base_ha_cfg, base_thermostat_cfg, 18.0, "off", turn_on=False)
+        on.assert_called_once()
+        assert store["state"]["state"] == "off"
+        assert store["state"]["command_failures"] == 1
+        assert not any("allumé" in c[0][0] for c in ntfy.call_args_list)
+
+    def test_failed_ignition_does_not_suspend_and_retries(self, store, base_ha_cfg, base_thermostat_cfg):
+        self._check(base_ha_cfg, base_thermostat_cfg, 18.0, "off", turn_on=False)
+        on, _, _ = self._check(base_ha_cfg, base_thermostat_cfg, 18.0, "off", turn_on=True)
+        on.assert_called_once()
+        assert store["state"]["suspended_until"] is None
+        assert store["state"]["state"] == "on"
+        assert store["state"]["command_failures"] == 0
+
+    def test_alert_on_third_consecutive_failure(self, store, base_ha_cfg, base_thermostat_cfg):
+        alerts = []
+        for _ in range(4):
+            _, _, ntfy = self._check(base_ha_cfg, base_thermostat_cfg, 18.0, "off", turn_on=False)
+            alerts += [c for c in ntfy.call_args_list if "échec" in c[0][0]]
+        assert len(alerts) == 1
+        assert store["state"]["command_failures"] == 4
+
+    def test_failed_turn_off_keeps_state_on(self, store, base_ha_cfg, base_thermostat_cfg):
+        store["state"] = {**store["state"], "state": "on", "active_system": "poele",
+                          "system_history": {"poele": {"last_turned_on": "2025-01-06T07:00:00", "last_turned_off": None},
+                                             "clim": {"last_turned_on": None, "last_turned_off": None}}}
+        _, off, ntfy = self._check(base_ha_cfg, base_thermostat_cfg, 23.5, "heat", turn_off=False)
+        off.assert_called_once()
+        assert store["state"]["state"] == "on"
+        assert store["state"]["active_system"] == "poele"
+        assert store["state"]["command_failures"] == 1
+        assert not any("éteint" in c[0][0] for c in ntfy.call_args_list)
