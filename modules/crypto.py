@@ -59,19 +59,29 @@ def encrypt_password(plaintext: str) -> str:
     return f"{_PREFIX}{payload}"
 
 
+# Valeurs déjà déchiffrées, indexées par la valeur chiffrée : la dérivation PBKDF2 (~200 ms)
+# n'est faite qu'une fois par secret. Un nouveau secret a une nouvelle valeur chiffrée (sel aléatoire).
+_decrypted_cache: dict[str, str] = {}
+
+
 def decrypt_password(stored: str) -> str:
     """Déchiffre un mot de passe. Retourne la valeur telle quelle si non chiffrée."""
     if not stored or not stored.startswith(_PREFIX):
         return stored
+    cached = _decrypted_cache.get(stored)
+    if cached is not None:
+        return cached
     try:
         master = _get_master_key()
         raw = base64.urlsafe_b64decode(stored[len(_PREFIX):])
         salt, token = raw[:16], raw[16:]
         fernet_key = _derive_fernet_key(master, salt)
-        return Fernet(fernet_key).decrypt(token).decode()
+        plaintext = Fernet(fernet_key).decrypt(token).decode()
     except (InvalidToken, Exception) as e:
         logger.error("Impossible de déchiffrer le mot de passe SMTP : %s", e)
         return ""
+    _decrypted_cache[stored] = plaintext
+    return plaintext
 
 
 def is_configured(stored: str) -> bool:
