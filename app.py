@@ -902,8 +902,9 @@ def api_radiateurs_turn_off(entity_id):
     if entity_id not in configured:
         return jsonify({"error": "Radiateur non configuré"}), 404
 
-    # Ajouter à managed_off si pas présent
-    _update_managed_off(add=[entity_id])
+    # Extinction manuelle : le radiateur sort de la liste « éteints par la règle jour rouge »,
+    # sinon le job radiateurs le rallumerait au prochain passage d'un jour non rouge.
+    _update_managed_off(remove=[entity_id])
 
     success = ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id)
     return jsonify({"status": "ok" if success else "error"})
