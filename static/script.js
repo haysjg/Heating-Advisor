@@ -191,6 +191,29 @@ async function updateRadiateurStatus(entityId) {
   }
 }
 
+// Interrupteur « Auto le week-end » (radiateur des combles) : sidebar et tiroir mobile restent synchronisés
+async function setWeekendAuto(input) {
+  const allowed = input.checked;
+  const inputs = document.querySelectorAll('.weekend-toggle-input');
+  inputs.forEach(i => { i.disabled = true; });
+  try {
+    const response = await fetch('/api/radiateurs/weekend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allowed }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    inputs.forEach(i => { i.checked = data.allowed; });
+    showToast(data.allowed ? 'Gestion automatique autorisée le week-end' : 'Pas de rallumage automatique le week-end', 'success');
+  } catch (e) {
+    inputs.forEach(i => { i.checked = !allowed; });
+    showToast(`Réglage non enregistré : ${e.message}`, 'error');
+  } finally {
+    inputs.forEach(i => { i.disabled = false; });
+  }
+}
+
 // Met à jour le panneau de contrôle (poêle, clim, radiateurs) depuis la réponse de /api/dashboard/refresh
 function updateControlPanel(data) {
   if (data.poele_state != null) renderPoeleStatus(data.poele_state);

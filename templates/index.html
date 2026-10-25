@@ -179,6 +179,13 @@
           <button class="btn-compact btn-compact-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')" title="Allumer {{ r.name }}">ON</button>
           <button class="btn-compact btn-compact-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')" title="Éteindre {{ r.name }}">OFF</button>
         </div>
+        {% if r.weekend_restricted %}
+        <label class="weekend-toggle" title="Week-end : sans cette autorisation, l'appli ne rallume jamais ce radiateur automatiquement (rallumage reporté au lundi). Les boutons ON/OFF restent utilisables.">
+          <input type="checkbox" class="weekend-toggle-input" {% if weekend_auto_allowed %}checked{% endif %} onchange="setWeekendAuto(this)">
+          <span class="weekend-toggle-track" aria-hidden="true"></span>
+          <span class="weekend-toggle-label">Auto le week-end</span>
+        </label>
+        {% endif %}
         <div class="control-compact-status" data-entity-id="{{ r.entity_id }}">
           <span id="radiateur-{{ loop.index0 }}-icon">⚫</span>
         </div>
@@ -246,6 +253,13 @@
           <button class="btn-compact btn-compact-on" onclick="controlRadiateur('{{ r.entity_id }}', 'on')" title="Allumer {{ r.name }}">ON</button>
           <button class="btn-compact btn-compact-off" onclick="controlRadiateur('{{ r.entity_id }}', 'off')" title="Éteindre {{ r.name }}">OFF</button>
         </div>
+        {% if r.weekend_restricted %}
+        <label class="weekend-toggle" title="Week-end : sans cette autorisation, l'appli ne rallume jamais ce radiateur automatiquement (rallumage reporté au lundi). Les boutons ON/OFF restent utilisables.">
+          <input type="checkbox" class="weekend-toggle-input" {% if weekend_auto_allowed %}checked{% endif %} onchange="setWeekendAuto(this)">
+          <span class="weekend-toggle-track" aria-hidden="true"></span>
+          <span class="weekend-toggle-label">Auto le week-end</span>
+        </label>
+        {% endif %}
         <div class="control-compact-status" data-mob-entity-id="{{ r.entity_id }}">
           <span id="mob-radiateur-{{ loop.index0 }}-icon">⚫</span>
         </div>

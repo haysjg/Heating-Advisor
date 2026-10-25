@@ -148,6 +148,9 @@ ELECTRICITY = {
 RADIATEURS_TEMPO_ROUGE = {
     "enabled": False,
     "entities": [],  # liste de dicts {entity_id, name, enabled} — ex. [{"entity_id": "climate.radiateur_salon", "name": "Salon", "enabled": True}]
+    # Jamais rallumés automatiquement le week-end (rallumage reporté au lundi),
+    # sauf si « Auto le week-end » est activé sur le dashboard
+    "weekend_restricted_entities": ["switch.prise_radiateur_combles_switch_0"],
 }
 
 # ── Notifications email ───────────────────────────────────────

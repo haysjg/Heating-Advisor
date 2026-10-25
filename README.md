@@ -140,6 +140,17 @@ Le système le moins cher est recommandé.
 | `get_presence_extended(cfg, person_entities, nearby_zone_name)` | Retourne `"home"` / `"nearby"` / `"away"` selon la position des personnes par rapport aux zones HA. |
 | `apply_recommendation(cfg, system)` | Allume le poêle si `system == "poele"`, l'éteint sinon. Utilisé en mode pilotage automatique. |
 
+### `radiateurs.py` — Radiateurs Tempo Rouge
+
+Le job radiateurs (toutes les 50 min, heures pleines) éteint les radiateurs configurés un jour rouge, puis rallume le premier jour non rouge **uniquement ceux qu'il a lui-même éteints** (`data/radiateurs_managed_off.json`). Un arrêt manuel depuis l'appli retire le radiateur de cette liste : il n'est jamais rallumé automatiquement.
+
+Les radiateurs de `RADIATEURS_TEMPO_ROUGE.weekend_restricted_entities` (par défaut le radiateur des combles) ne sont **jamais rallumés automatiquement le week-end** : le rallumage est reporté au lundi. L'interrupteur « Auto le week-end » de leur commande sur le dashboard lève cette restriction (réglage permanent, `data/radiateurs_weekend.json`). Les boutons ON/OFF restent toujours utilisables.
+
+| Fonction | Description |
+|---|---|
+| `split_turn_back_on(managed, entity_ids, weekend_restricted, now, weekend_allowed)` | Sépare les radiateurs à rallumer maintenant de ceux reportés (week-end). |
+| `weekend_auto_allowed()` / `set_weekend_auto_allowed(allowed)` | Lecture / écriture de l'autorisation week-end (refusée par défaut). |
+
 ### `history.py` — Historisation
 
 Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).

@@ -505,6 +505,70 @@ main {
   font-size: 1.2rem;
 }
 
+/* Interrupteur « Auto le week-end » (radiateur des combles) */
+.weekend-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.weekend-toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.weekend-toggle-track {
+  position: relative;
+  flex-shrink: 0;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: rgba(148,163,184,0.25);
+  border: 1px solid rgba(148,163,184,0.4);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.weekend-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-sub);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.weekend-toggle-input:checked + .weekend-toggle-track {
+  background: rgba(34,197,94,0.25);
+  border-color: var(--green);
+}
+
+.weekend-toggle-input:checked + .weekend-toggle-track::after {
+  transform: translateX(12px);
+  background: var(--green);
+}
+
+.weekend-toggle-input:focus-visible + .weekend-toggle-track {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.weekend-toggle-input:disabled + .weekend-toggle-track {
+  opacity: 0.5;
+}
+
+.weekend-toggle-label {
+  font-size: 0.65rem;
+  color: var(--text-sub);
+}
+
 .sidebar-warning {
   background: rgba(245,158,11,0.1);
   border: 1px solid rgba(245,158,11,0.3);

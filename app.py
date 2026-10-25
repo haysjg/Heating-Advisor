@@ -27,6 +27,7 @@ import modules.homeassistant as ha_client
 from modules import jsonstore
 import modules.thermostat as thermostat_module
 import modules.history as history_module
+import modules.radiateurs as radiateurs_module
 from modules.stock import compute_stock_stats
 import modules.imap_client as imap_client
 import modules.electricity as electricity_module
@@ -394,11 +395,16 @@ def _run_radiateurs_tempo_rouge():
             ntfy_send("🔴 Jour Rouge — Radiateurs éteints", f"Extinction automatique : {names}", config.NTFY)
             logger.info("Radiateurs éteints (jour rouge) : %s", turned_off)
     else:
+        to_turn_on, postponed = radiateurs_module.split_turn_back_on(
+            _load_managed_off(), entity_ids, cfg.get("weekend_restricted_entities", []),
+            now, radiateurs_module.weekend_auto_allowed(),
+        )
+        if postponed:
+            logger.info("Radiateurs : rallumage reporté (week-end, gestion auto non autorisée) : %s", postponed)
         turned_on = []
-        for entity_id in _load_managed_off():
-            if entity_id in entity_ids:
-                if ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id):
-                    turned_on.append(entity_id)
+        for entity_id in to_turn_on:
+            if ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id):
+                turned_on.append(entity_id)
         if turned_on:
             _update_managed_off(remove=turned_on)
             names = ", ".join(label_map.get(e, e) for e in turned_on)
@@ -655,9 +661,11 @@ def index():
                     "enabled": enabled,
                     "managed_off": is_managed_off,
                     "state": state,
+                    "weekend_restricted": entity_id in config.RADIATEURS_TEMPO_ROUGE.get("weekend_restricted_entities", []),
                 })
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
                                next_schedule_start=next_start, radiateurs_info=radiateurs_info,
+                               weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
                                poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL)
     except Exception as e:
         logger.exception("Erreur index : %s", e)
@@ -743,6 +751,7 @@ def api_dashboard_refresh():
                     "enabled": enabled,
                     "managed_off": is_managed_off,
                     "state": state,
+                    "weekend_restricted": entity_id in config.RADIATEURS_TEMPO_ROUGE.get("weekend_restricted_entities", []),
                 })
 
         # État clim
@@ -908,6 +917,15 @@ def api_radiateurs_turn_off(entity_id):
 
     success = ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id)
     return jsonify({"status": "ok" if success else "error"})
+
+
+@app.route("/api/radiateurs/weekend", methods=["POST"])
+def api_radiateurs_weekend():
+    """Autorise ou non la gestion automatique le week-end des radiateurs restreints (combles)."""
+    allowed = bool(request.get_json(force=True).get("allowed", False))
+    radiateurs_module.set_weekend_auto_allowed(allowed)
+    logger.info("Radiateurs : gestion automatique le week-end → %s", "autorisée" if allowed else "interdite")
+    return jsonify({"status": "ok", "allowed": allowed})
 
 
 @app.route("/api/ntfy-test", methods=["POST"])
