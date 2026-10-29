@@ -318,16 +318,18 @@ class TestCheckAndApply:
     @patch("modules.homeassistant.get_state", return_value={"state": "heat"})
     @patch("modules.homeassistant.get_clim_state", return_value={"state": "off"})
     @patch("modules.homeassistant.is_clim_configured", return_value=True)
+    @patch("modules.homeassistant.turn_on_clim", return_value=True)
     @patch("modules.homeassistant.turn_off", return_value=True)
     @patch("modules.ntfy_push.send")
-    def test_reco_changed_min_on_met_turns_off(self, mock_ntfy, mock_ha_off, mock_clim_cfg,
-                                                mock_clim_state, mock_ha_state, mock_indoor,
-                                                mock_save, mock_load, _mock_vac,
-                                                base_ha_cfg, base_thermostat_cfg):
+    def test_reco_changed_min_on_met_switches_system(self, mock_ntfy, mock_ha_off, mock_clim_on, mock_clim_cfg,
+                                                     mock_clim_state, mock_ha_state, mock_indoor,
+                                                     mock_save, mock_load, _mock_vac,
+                                                     base_ha_cfg, base_thermostat_cfg):
         two_hours_ago = (datetime(2025, 1, 6, 8, 0, 0)).isoformat()
         mock_load.return_value = self._make_state(state="on", last_on=two_hours_ago)
         check_and_apply(base_ha_cfg, base_thermostat_cfg, "clim")  # reco changée
         mock_ha_off.assert_called_once()
+        mock_clim_on.assert_called_once()
 
     @freeze_time("2025-01-06 10:00:00")  # lundi
     @patch("modules.thermostat.is_on_vacation", return_value=False)
@@ -603,3 +605,68 @@ class TestCommandFailures:
         assert store["state"]["active_system"] == "poele"
         assert store["state"]["command_failures"] == 1
         assert not any("éteint" in c[0][0] for c in ntfy.call_args_list)
+
+
+class TestTransitions:
+    """Changement de recommandation en cours de chauffe : le nouveau système prend le relais
+    tant que la cible (temp_off) n'est pas atteinte, même au-dessus du seuil d'allumage."""
+
+    @pytest.fixture
+    def store(self):
+        data = {"state": {
+            "state": "on", "active_system": None, "sensor_failures": 0, "suspended_until": None,
+            "system_history": {"poele": {"last_turned_on": None, "last_turned_off": None},
+                               "clim": {"last_turned_on": None, "last_turned_off": None}},
+        }}
+        with patch("modules.thermostat._load_state", side_effect=lambda: dict(data["state"])), \
+             patch("modules.thermostat._save_state", side_effect=lambda s: data.__setitem__("state", s)), \
+             patch("modules.thermostat.is_on_vacation", return_value=False), \
+             patch("modules.thermostat.is_in_absence_schedule", return_value=False), \
+             freeze_time("2025-01-06 10:00:00"):
+            yield data
+
+    def _run(self, store, base_ha_cfg, base_thermostat_cfg, active, recommendation, indoor_temp):
+        store["state"]["active_system"] = active
+        store["state"]["system_history"][active]["last_turned_on"] = "2025-01-06T07:00:00"
+        poele_real = "heat" if active == "poele" else "off"
+        clim_real = "heat" if active == "clim" else "off"
+        with patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": indoor_temp, "humidity": 50.0}), \
+             patch("modules.homeassistant.get_state", return_value={"state": poele_real}), \
+             patch("modules.homeassistant.is_clim_configured", return_value=True), \
+             patch("modules.homeassistant.get_clim_state", return_value={"state": clim_real}), \
+             patch("modules.homeassistant.turn_on", return_value=True) as poele_on, \
+             patch("modules.homeassistant.turn_off", return_value=True) as poele_off, \
+             patch("modules.homeassistant.turn_on_clim", return_value=True) as clim_on, \
+             patch("modules.homeassistant.turn_off_clim", return_value=True) as clim_off, \
+             patch("modules.ntfy_push.send") as ntfy:
+            check_and_apply(base_ha_cfg, base_thermostat_cfg, recommendation, ntfy_cfg={"enabled": True})
+        return poele_on, poele_off, clim_on, clim_off, ntfy
+
+    def test_poele_to_clim_above_temp_on_below_target_starts_clim(self, store, base_ha_cfg, base_thermostat_cfg):
+        # 20.5°C : au-dessus de temp_on (20.0) mais sous la cible (22.9)
+        _, poele_off, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg, "poele", "clim", 20.5)
+        poele_off.assert_called_once()
+        clim_on.assert_called_once()
+        assert store["state"]["state"] == "on"
+        assert store["state"]["active_system"] == "clim"
+
+    def test_poele_to_clim_target_reached_turns_off(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, clim_on, _, ntfy = self._run(store, base_ha_cfg, base_thermostat_cfg, "poele", "clim", 23.0)
+        poele_off.assert_called_once()
+        clim_on.assert_not_called()
+        assert store["state"]["state"] == "off"
+        assert "cible atteinte" in ntfy.call_args[0][1]
+
+    def test_clim_to_poele_above_temp_on_below_target_starts_poele(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, _, clim_off, _ = self._run(store, base_ha_cfg, base_thermostat_cfg, "clim", "poele", 20.5)
+        poele_on.assert_called_once()
+        clim_off.assert_not_called()  # chevauchement : clim maintenue pendant la montée en température
+        assert store["state"]["active_system"] == "poele"
+        assert store["state"]["clim_overlap_until"]
+
+    def test_clim_to_poele_target_reached_turns_off_clim(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, _, clim_off, ntfy = self._run(store, base_ha_cfg, base_thermostat_cfg, "clim", "poele", 23.0)
+        poele_on.assert_not_called()
+        clim_off.assert_called_once()
+        assert store["state"]["state"] == "off"
+        assert "cible atteinte" in ntfy.call_args[0][1]

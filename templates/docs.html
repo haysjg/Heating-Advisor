@@ -309,6 +309,22 @@
         </div>
       </div>
 
+      <div class="rule">
+        <div class="rule-title">Changement de recommandation en cours de chauffe</div>
+        <div class="rule-desc">
+          Quand la recommandation change alors qu'un système chauffe (après sa durée
+          minimale d'allumage), le système recommandé prend le relais tant que la cible
+          <strong>{{ config.THERMOSTAT.temp_off }}°C</strong> n'est pas atteinte,
+          même si la température est déjà au-dessus du seuil d'allumage.
+          Si la cible est atteinte, tout s'éteint.
+        </div>
+        <div class="rule-example">
+          Exemple : poêle allumé, 20,8°C ressentis, recommandation passe à clim →
+          poêle éteint et clim allumée aussitôt, sans attendre de redescendre
+          sous {{ config.THERMOSTAT.temp_on }}°C.
+        </div>
+      </div>
+
     </div>
   </div>
 

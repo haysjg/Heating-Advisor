@@ -951,7 +951,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 # ── Transition clim → poêle : chevauchement pour montée en température ──
                 if active_system == "clim" and can_switch_to_poele:
                     overlap_min = thermostat_cfg.get("clim_to_poele_overlap_minutes", 20)
-                    if effective_temp < temp_on:
+                    # Cible pas encore atteinte : le poêle prend le relais
+                    if effective_temp < temp_off:
                         overlap_until = (datetime.now() + timedelta(minutes=overlap_min)).isoformat()
                         logger.info(
                             "Thermostat : transition clim → poêle avec chevauchement %d min (allumé depuis %.0f min, temp %.1f°C)",
@@ -974,10 +975,10 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                             ntfy_cfg,
                         )
                     else:
-                        # Temp déjà atteinte : éteindre clim normalement sans démarrer le poêle
+                        # Cible atteinte : éteindre clim normalement sans démarrer le poêle
                         logger.info(
-                            "Thermostat : clim → poêle, temp déjà atteinte (%.1f°C), extinction clim sans démarrer le poêle",
-                            effective_temp,
+                            "Thermostat : clim → poêle, cible atteinte (ressenti %.1f°C ≥ %.1f°C), extinction clim sans démarrer le poêle",
+                            effective_temp, temp_off,
                         )
                         if not ha_client.turn_off_clim(ha_cfg):
                             _record_command_failure(state, "extinction clim", ntfy_cfg)
@@ -992,7 +993,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         _save_state(new_state)
                         ntfy_send(
                             f"✅ {_system_label(prev_system).capitalize()} éteint",
-                            f"Recommandation : {_system_label('poele')} mais temp déjà atteinte ({effective_temp:.1f}°C).",
+                            f"Recommandation : {_system_label('poele')} mais cible atteinte "
+                            f"(réel {temp:.1f}°C, ressenti {effective_temp:.1f}°C ≥ {temp_off}°C).",
                             ntfy_cfg,
                         )
                     return
@@ -1007,8 +1009,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     if not _turn_off_active_system(ha_client, ha_cfg, active_system):
                         _record_command_failure(state, "extinction " + _system_label(active_system), ntfy_cfg)
                         return
-                    # Allumer le nouveau si temp encore basse
-                    if effective_temp < temp_on:
+                    # Cible pas encore atteinte : le nouveau système prend le relais
+                    if effective_temp < temp_off:
                         if recommendation == "clim":
                             turned_on = ha_client.turn_on_clim(ha_cfg, temp_off)
                         else:
@@ -1046,7 +1048,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         _save_state(new_state)
                         ntfy_send(
                             f"✅ {_system_label(active_system).capitalize()} éteint",
-                            f"Recommandation : {_system_label(recommendation)} mais temp déjà atteinte ({effective_temp:.1f}°C).",
+                            f"Recommandation : {_system_label(recommendation)} mais cible atteinte "
+                            f"(réel {temp:.1f}°C, ressenti {effective_temp:.1f}°C ≥ {temp_off}°C).",
                             ntfy_cfg,
                         )
                     return
