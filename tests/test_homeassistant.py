@@ -84,3 +84,11 @@ def test_ha_down_returns_none_and_false(session):
 def test_bearer_token_sent(session):
     ha.get_state(CFG)
     assert _gets(session)[0].kwargs["headers"] == {"Authorization": "Bearer tok"}
+
+
+class TestGetEntities:
+    def test_returns_known_entities_only(self, session):
+        assert ha.get_entities(CFG, ["person.a", "person.inconnu"]) == {"person.a": STATES[4]}
+
+    def test_not_configured(self):
+        assert ha.get_entities({"enabled": False}, ["person.a"]) is None

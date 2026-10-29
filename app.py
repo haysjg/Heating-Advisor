@@ -28,6 +28,7 @@ from modules import jsonstore
 import modules.thermostat as thermostat_module
 import modules.history as history_module
 import modules.radiateurs as radiateurs_module
+import modules.presence_watch as presence_watch
 from modules.stock import compute_stock_stats
 import modules.imap_client as imap_client
 import modules.electricity as electricity_module
@@ -476,6 +477,14 @@ _scheduler.add_job(
     minutes=10,
     id="diagnose_job",
     misfire_grace_time=60,
+)
+# Surveillance des traqueurs de présence figés (alerte ntfy)
+_scheduler.add_job(
+    lambda: presence_watch.check(config.HOME_ASSISTANT, config.THERMOSTAT, config.NTFY),
+    "interval",
+    minutes=30,
+    id="presence_watch_job",
+    misfire_grace_time=300,
 )
 # Purge hebdomadaire des données > 30 jours
 _scheduler.add_job(
@@ -1522,6 +1531,7 @@ def api_config_save():
                 "nearby_no_ignition_after": int(data.get("nearby_no_ignition_after", config.THERMOSTAT.get("nearby_no_ignition_after", 20))),
                 "nearby_grace_minutes": int(data.get("nearby_grace_minutes", config.THERMOSTAT.get("nearby_grace_minutes", 20))),
                 "away_grace_minutes": int(data.get("away_grace_minutes", config.THERMOSTAT.get("away_grace_minutes", 5))),
+                "tracker_stale_hours": float(data.get("tracker_stale_hours", config.THERMOSTAT.get("tracker_stale_hours", 3))),
                 "use_felt_temperature": bool(data.get("thermostat_use_felt", config.THERMOSTAT.get("use_felt_temperature", True))),
                 "humidity_reference": float(data.get("thermostat_humidity_ref", config.THERMOSTAT.get("humidity_reference", 50.0))),
                 "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),

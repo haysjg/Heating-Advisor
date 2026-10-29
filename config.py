@@ -101,6 +101,7 @@ THERMOSTAT = {
     "nearby_no_ignition_after": 20,       # heure à partir de laquelle la zone proximité = restriction (0-23)
     "nearby_grace_minutes": 20,           # grâce avant extinction si tout le monde en zone proximité après l'heure
     "away_grace_minutes": 15,             # grâce avant extinction si tout le monde hors zone (évite faux positifs GPS)
+    "tracker_stale_hours": 3,             # alerte ntfy si une entité person n'est plus mise à jour depuis N h (0 = désactivé)
     "use_felt_temperature": True,         # utiliser la température ressentie (temp + correction humidité)
     "humidity_reference": 50.0,           # humidité de référence (%)
     "humidity_correction_factor": 0.05,   # correction °C par % d'écart à la référence

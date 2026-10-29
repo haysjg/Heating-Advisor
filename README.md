@@ -137,6 +137,7 @@ Le système le moins cher est recommandé.
 | `get_state(cfg)` | Retourne l'état brut de l'entité poêle dans HA. |
 | `get_indoor_climate(cfg)` | Récupère la température et l'humidité intérieure depuis le Shelly via HA. |
 | `get_presence(cfg, person_entities)` | Retourne `True` si au moins une personne est `"home"`, `False` si tout le monde est absent, `None` en cas d'erreur. |
+| `get_entities(cfg, entity_ids)` | États bruts de plusieurs entités (entités inconnues omises), `None` si HA injoignable. |
 | `get_presence_extended(cfg, person_entities, nearby_zone_name)` | Retourne `"home"` / `"nearby"` / `"away"` selon la position des personnes par rapport aux zones HA. |
 | `apply_recommendation(cfg, system)` | Allume le poêle si `system == "poele"`, l'éteint sinon. Utilisé en mode pilotage automatique. |
 
@@ -262,6 +263,12 @@ Nécessite deux zones configurées dans Home Assistant :
 | Tout le monde hors `nearby` | Extinction immédiate, pas d'allumage |
 
 **`nearby_restricted_since`** est persisté dans `thermostat_state.json` pour calculer la durée de la grâce de façon fiable entre deux cycles de 10 min.
+
+### Alerte traqueur figé
+
+Une entité `person` dont le téléphone n'envoie plus de position reste figée sur son dernier état (souvent `home`) : il suffit d'une personne figée à `home` pour que l'absence ne soit jamais détectée. Toutes les 30 min, `modules/presence_watch.py` vérifie le `last_updated` de chaque entité de `person_entities` ; au-delà de `tracker_stale_hours` heures (3 par défaut, 0 = désactivé), une notification ntfy « 📍 Traqueur figé » est envoyée, une seule fois par épisode, puis « ✅ Traqueur actif » quand les positions reviennent. Les alertes en cours sont mémorisées dans `data/tracker_alerts.json`.
+
+Causes habituelles : localisation de l'app Home Assistant non réglée sur « Toujours autoriser », optimisation de batterie Android, app déconnectée du serveur. Un redémarrage de Home Assistant remet `last_updated` à jour pour toutes les entités : un traqueur figé peut alors être signalé « actif » à tort, puis de nouveau figé après le délai.
 
 ---
 
@@ -480,6 +487,7 @@ Trois couleurs (`BLUE`, `WHITE`, `RED`), deux périodes chacune (`HP`, `HC`).
 | `nearby_zone_name` | Slug de la zone de proximité HA |
 | `nearby_no_ignition_after` | Heure de restriction si tout le monde en zone proximité |
 | `nearby_grace_minutes` | Grâce avant extinction en mode proximité restreint |
+| `tracker_stale_hours` | Alerte ntfy si une entité `person` n'est plus mise à jour depuis N heures (0 = désactivé) |
 | `use_felt_temperature` | Utilise la température ressentie (humidité) |
 | `schedule` | Plages horaires par jour (`start`/`end` au format `HH:MM`) |
 

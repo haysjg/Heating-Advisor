@@ -207,6 +207,19 @@ def get_presence(cfg: dict, person_entities: list) -> bool | None:
         return None
 
 
+def get_entities(cfg: dict, entity_ids: list) -> dict | None:
+    """États bruts de plusieurs entités (clé = entity_id, entités absentes de HA omises).
+    None si HA n'est pas configuré ou injoignable."""
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return None
+    try:
+        states = _all_states(cfg)
+    except Exception as e:
+        logger.error("HA get_entities échoué : %s", e)
+        return None
+    return {e: states[e] for e in entity_ids if e in states}
+
+
 def get_entity_state(cfg: dict, entity_id: str) -> dict | None:
     """Retourne l'état d'une entité HA quelconque."""
     if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
