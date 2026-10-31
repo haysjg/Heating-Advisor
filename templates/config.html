@@ -1256,10 +1256,10 @@
       <input type="checkbox" class="radiateur-enabled" ${enabled ? 'checked' : ''}
              style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer;flex-shrink:0"
              title="Activer l'extinction automatique pour ce radiateur">
-      <input type="text" class="radiateur-name" value="${name}"
+      <input type="text" class="radiateur-name" value="${escapeHtml(name)}"
              placeholder="Nom (ex : Salon)"
              style="width:9rem;flex-shrink:0;font-size:0.85rem">
-      <input type="text" class="radiateur-entity" value="${entity_id}"
+      <input type="text" class="radiateur-entity" value="${escapeHtml(entity_id)}"
              placeholder="climate.radiateur_salon"
              style="flex:1;font-family:monospace;font-size:0.85rem">
       <button type="button" onclick="removeRadiateur(this)"

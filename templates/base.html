@@ -20,6 +20,13 @@
         return nativeFetch(input, init);
       };
     })();
+
+    // Échappe une donnée dynamique avant de l'insérer dans du HTML (innerHTML, attributs)
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      })[c]);
+    }
   </script>
   {% block extra_head %}{% endblock %}
 </head>

@@ -182,9 +182,9 @@
     const container = document.getElementById('year-controls');
     container.innerHTML = years.map((y, i) => `
       <label style="display:flex; align-items:center; gap:0.4rem; padding:0.4rem 0.75rem; border-radius:8px; border:1px solid var(--border); cursor:pointer; font-size:0.88rem;">
-        <input type="checkbox" value="${y}" onchange="toggleYear(${y}, this.checked)" ${selectedYears.has(y) ? 'checked' : ''}
+        <input type="checkbox" value="${escapeHtml(y)}" onchange="toggleYear(${Number(y)}, this.checked)" ${selectedYears.has(y) ? 'checked' : ''}
                style="accent-color:${YEAR_COLORS[i % YEAR_COLORS.length]}">
-        ${y}
+        ${escapeHtml(y)}
       </label>
     `).join('');
   }
@@ -411,7 +411,7 @@
     log.forEach(row => {
       const badge = row.status === 'success'
         ? '<span class="status-badge status-success">✓ Succès</span>'
-        : `<span class="status-badge status-error" title="${IMPORT_REASON_LABELS[row.reason] || row.reason || ''}">✗ Échec</span>`;
+        : `<span class="status-badge status-error" title="${escapeHtml(IMPORT_REASON_LABELS[row.reason] || row.reason || '')}">✗ Échec</span>`;
       html += `<tr>
         <td style="text-align:left">${fmtDateTime(row.email_date)}</td>
         <td style="text-align:left">${fmtDateTime(row.imported_at)}</td>
