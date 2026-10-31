@@ -5,6 +5,7 @@ Enregistrement toutes les ~10 min via le scheduler de app.py.
 import logging
 import os
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 
 from modules import migrate
@@ -17,11 +18,44 @@ DB_FILE = os.path.join(
 )
 
 
-def _connect() -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
-    conn = sqlite3.connect(DB_FILE)
-    migrate.run(conn)
+# Délai d'attente (ms) quand la base est verrouillée par un autre thread (Flask / APScheduler)
+BUSY_TIMEOUT_MS = 5000
+
+# Chemins de base déjà migrés dans ce processus (les migrations ne tournent qu'une fois)
+_migrated_paths: set[str] = set()
+_migrate_lock = threading.Lock()
+
+
+def _open(path: str) -> sqlite3.Connection:
+    """Ouvre une connexion configurée pour l'accès concurrent : WAL + busy_timeout."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_MS / 1000)
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    # WAL : les lectures ne bloquent plus les écritures (mode persistant, stocké dans le fichier)
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def init_db() -> None:
+    """Applique les migrations de la base. Appelé une fois au démarrage de l'app ;
+    idempotent (ne refait rien si ce chemin de base a déjà été migré dans ce processus)."""
+    path = os.path.abspath(DB_FILE)
+    with _migrate_lock:
+        if path in _migrated_paths:
+            return
+        conn = _open(path)
+        try:
+            migrate.run(conn)
+        finally:
+            conn.close()
+        _migrated_paths.add(path)
+
+
+def _connect() -> sqlite3.Connection:
+    # Garde-fou pour les tests et scripts qui n'appellent pas init_db()
+    if os.path.abspath(DB_FILE) not in _migrated_paths:
+        init_db()
+    return _open(DB_FILE)
 
 
 def poele_state_for_history(real_state: str | None, thermostat_state: dict) -> str:

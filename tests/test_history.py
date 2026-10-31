@@ -79,3 +79,48 @@ class TestPelletDaily:
                          [("2026-10-01T08:00:00", "on"), ("2026-10-01T08:10:00", "poele"), ("2026-10-01T08:20:00", "off")])
         conn.commit(); conn.close()
         assert history.get_pellet_consumption_since("2026-10-01")["total_on_minutes"] == 20
+
+
+class TestConnexion:
+    """WAL, busy_timeout, index et migrations une seule fois par base."""
+
+    @pytest.fixture(autouse=True)
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(history, "DB_FILE", str(tmp_path / "history.db"))
+
+    def test_wal_and_busy_timeout(self):
+        conn = history._connect()
+        try:
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+            assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == history.BUSY_TIMEOUT_MS
+        finally:
+            conn.close()
+
+    def test_ts_indexes_present_after_migration(self):
+        from modules import migrate
+        history.init_db()
+        conn = history._connect()
+        try:
+            names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+            version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+        finally:
+            conn.close()
+        assert {"idx_readings_ts", "idx_diagnose_log_ts"} <= names
+        assert version == len(migrate.MIGRATIONS)
+
+    def test_migrations_not_rerun_on_each_connection(self, monkeypatch):
+        from modules import migrate
+        calls = []
+        real_run = migrate.run
+        monkeypatch.setattr(migrate, "run", lambda conn: (calls.append(1), real_run(conn)))
+        history.init_db()
+        history.init_db()
+        for _ in range(3):
+            history._connect().close()
+        history.record(5.0, 20.0, "on", "BLUE")
+        assert len(calls) == 1
+
+    def test_guard_migrates_without_explicit_init(self):
+        # Scripts et tests qui n'appellent pas init_db() : la première connexion migre quand même
+        history.record(5.0, 20.0, "on", "BLUE")
+        assert len(history.get_history(1)) == 1
