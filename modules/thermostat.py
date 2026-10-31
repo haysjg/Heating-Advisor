@@ -706,6 +706,15 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 current = "off"
                 active_system = None
 
+    # Recommandation indéterminée (température extérieure indisponible) :
+    # on garde le système en cours, sinon la clim (le poêle n'est jamais un choix par défaut)
+    if recommendation == "unknown":
+        if current == "on" and active_system:
+            recommendation = active_system
+        else:
+            recommendation = "clim" if clim_available else "poele"
+        logger.warning("Thermostat : recommandation indéterminée (temp. extérieure indisponible) → %s", recommendation)
+
     # Récupérer le timestamp du système actif
     last_on_str = _get_system_timestamp(state, active_system, "on") if active_system else None
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None

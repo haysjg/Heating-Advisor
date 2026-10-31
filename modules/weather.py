@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 
@@ -21,6 +22,15 @@ HEADERS = {
 }
 
 
+# Pause du scraping météociel après un HTTP 429 (évite d'entretenir le blocage)
+METEOCIEL_BACKOFF_MINUTES = 60
+_meteociel_blocked_until: datetime | None = None
+
+# Dernière température obtenue : resservie si les deux sources échouent ponctuellement
+LAST_KNOWN_MAX_AGE_HOURS = 3
+_last_known: dict | None = None
+
+
 # ── Météociel.fr ─────────────────────────────────────────────
 # Structure HTML de la page d'observations :
 #   - Tableau horaire : bgcolor="#EBFAF7" — colonnes : Heure|Néb.|Temps|Visi|Température|...
@@ -29,8 +39,12 @@ HEADERS = {
 
 def get_temperature_meteociel(city: str, postal_code: str, forced_url: str = "") -> float | None:
     """Récupère la dernière température observée depuis la page d'observations météociel.fr."""
+    global _meteociel_blocked_until
     if not forced_url:
         logger.warning("Météociel : URL non configurée, scraping ignoré")
+        return None
+    if _meteociel_blocked_until and datetime.now() < _meteociel_blocked_until:
+        logger.debug("Météociel : en pause jusqu'à %s (HTTP 429)", _meteociel_blocked_until.strftime("%Hh%M"))
         return None
     try:
         from bs4 import BeautifulSoup
@@ -68,6 +82,15 @@ def get_temperature_meteociel(city: str, postal_code: str, forced_url: str = "")
         logger.info("Météociel : %.1f°C (obs. %s)", temp, hour_text)
         return temp
 
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            _meteociel_blocked_until = datetime.now() + timedelta(minutes=METEOCIEL_BACKOFF_MINUTES)
+            logger.warning(
+                "Scraping météociel échoué : HTTP 429 — pause jusqu'à %s, Open-Meteo utilisé",
+                _meteociel_blocked_until.strftime("%Hh%M"),
+            )
+        else:
+            logger.warning("Scraping météociel échoué : %s", e)
     except Exception as e:
         logger.warning("Scraping météociel échoué : %s", e)
     return None
@@ -151,6 +174,7 @@ def get_current_temperature(config: dict) -> dict:
     Retourne la température extérieure avec la source utilisée.
     config = LOCATION dict depuis config.py
     """
+    global _last_known
     result = {"temperature": None, "source": None, "error": None, "timestamp": datetime.now().isoformat()}
 
     # 1. Essai météociel.fr
@@ -162,6 +186,7 @@ def get_current_temperature(config: dict) -> dict:
     if temp is not None:
         result["temperature"] = temp
         result["source"] = "météociel.fr"
+        _last_known = {"temperature": temp, "source": "météociel.fr", "at": datetime.now()}
         return result
 
     # 2. Fallback Open-Meteo
@@ -169,6 +194,15 @@ def get_current_temperature(config: dict) -> dict:
     if temp is not None:
         result["temperature"] = temp
         result["source"] = "Open-Meteo"
+        _last_known = {"temperature": temp, "source": "Open-Meteo", "at": datetime.now()}
+        return result
+
+    # 3. Dernière valeur connue, si assez récente
+    if _last_known and datetime.now() - _last_known["at"] <= timedelta(hours=LAST_KNOWN_MAX_AGE_HOURS):
+        at = _last_known["at"].strftime("%Hh%M")
+        logger.warning("Température extérieure : sources HS, dernière valeur connue %.1f°C (%s)", _last_known["temperature"], at)
+        result["temperature"] = _last_known["temperature"]
+        result["source"] = f"{_last_known['source']} (dernière valeur, {at})"
         return result
 
     result["error"] = "Impossible de récupérer la température (météociel.fr et Open-Meteo inaccessibles)"

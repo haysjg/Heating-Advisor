@@ -230,6 +230,10 @@ def build_inactive_reasons(
             msg = "Aucun chauffage nécessaire actuellement."
         return {"clim": msg, "poele": msg, "shared": True}
 
+    if system == "unknown":
+        msg = "Température extérieure indisponible — comparaison des coûts impossible."
+        return {"clim": msg, "poele": msg, "shared": True}
+
     clim_reason = None
     poele_reason = None
 
@@ -340,7 +344,19 @@ def analyze(weather: dict, tempo: dict, config: dict) -> dict:
     }
     poele_result = compute_poele_cost(config["POELE"])
 
-    recommendation = make_recommendation(temp, clim_result, poele_result, color, period)
+    if temp is None and color != "RED":
+        # Sans température extérieure, la comparaison est impossible : ne pas basculer
+        # sur le poêle par défaut (la clim n'est pas en panne). Le thermostat garde
+        # le système en cours.
+        recommendation = {
+            "system": "unknown",
+            "level": "warning",
+            "title": "Température extérieure indisponible",
+            "explanation": "Comparaison des coûts impossible : le système en cours est conservé.",
+            "savings_per_hour": 0,
+        }
+    else:
+        recommendation = make_recommendation(temp, clim_result, poele_result, color, period)
 
     # Estimation journalière sur les HP uniquement (pas de chauffage la nuit)
     hp_hours = config["HP_END"] - config["HP_START"]  # 16h

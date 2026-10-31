@@ -670,3 +670,16 @@ class TestTransitions:
         clim_off.assert_called_once()
         assert store["state"]["state"] == "off"
         assert "cible atteinte" in ntfy.call_args[0][1]
+
+    def test_unknown_recommendation_keeps_clim(self, store, base_ha_cfg, base_thermostat_cfg):
+        # Température extérieure indisponible : pas de transition clim → poêle
+        poele_on, _, _, clim_off, _ = self._run(store, base_ha_cfg, base_thermostat_cfg, "clim", "unknown", 20.2)
+        poele_on.assert_not_called()
+        clim_off.assert_not_called()
+        assert store["state"]["active_system"] == "clim"
+
+    def test_unknown_recommendation_keeps_poele(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg, "poele", "unknown", 20.2)
+        poele_off.assert_not_called()
+        clim_on.assert_not_called()
+        assert store["state"]["active_system"] == "poele"

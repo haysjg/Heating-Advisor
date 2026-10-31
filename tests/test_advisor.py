@@ -254,6 +254,16 @@ class TestAnalyze:
         assert result["clim"]["available"] is True
         assert result["poele"]["available"] is True
 
+    def test_missing_temp_does_not_default_to_poele(self, base_config):
+        # Météociel + Open-Meteo HS : la clim n'est pas en panne, pas de bascule poêle
+        result = analyze(self._weather(None), self._tempo(color="BLUE"), base_config)
+        assert result["recommendation"]["system"] == "unknown"
+        assert result["inactive_reasons"]["shared"] is True
+
+    def test_missing_temp_red_day_still_poele(self, base_config):
+        result = analyze(self._weather(None), self._tempo(color="RED"), base_config)
+        assert result["recommendation"]["system"] == "poele"
+
 
 # ── analyze_tomorrow ─────────────────────────────────────────────
 

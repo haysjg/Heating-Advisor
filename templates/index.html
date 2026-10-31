@@ -424,7 +424,7 @@
           {% elif nothing_running and rec.system != 'none' %}
             {# Le système recommandé n'est pas non plus en route : message neutre #}
             <div class="inactive-reason"><span class="inactive-icon">💤</span><span>
-              {% if rec.system == 'clim' %}❄️ Clim recommandée{% else %}🔥 Poêle recommandé{% endif %}
+              {% if rec.system == 'clim' %}❄️ Clim recommandée{% elif rec.system == 'poele' %}🔥 Poêle recommandé{% else %}⚠️ {{ rec.title }}{% endif %}
               — thermostat en attente (température intérieure dans les seuils ou hors plage horaire).
             </span></div>
           {% else %}
