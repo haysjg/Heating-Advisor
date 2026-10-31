@@ -116,7 +116,7 @@ Le système le moins cher est recommandé.
 
 | Fonction | Description |
 |---|---|
-| `get_current_temperature(config)` | Récupère la température extérieure actuelle. Essaie d'abord **météociel.fr** (scraping HTML), puis bascule sur **Open-Meteo** en cas d'échec. |
+| `get_current_temperature(config)` | Récupère la température extérieure actuelle. Essaie d'abord **météociel.fr** (scraping HTML), puis bascule sur **Open-Meteo** en cas d'échec (météociel mis en pause 1 h après un HTTP 429). Si les deux échouent, resservit la dernière valeur connue de moins de 3 h ; sans aucune valeur, la recommandation vaut `unknown` et le thermostat garde le système en cours (jamais de bascule poêle par défaut). |
 | `get_tomorrow_weather(config)` | Récupère la température moyenne prévue pour demain via Open-Meteo. |
 | `get_hourly_forecast(lat, lon, hours)` | Récupère les prévisions horaires sur N heures via Open-Meteo (utilisé pour le graphique du dashboard). |
 
