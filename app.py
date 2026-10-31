@@ -7,8 +7,6 @@ import hmac
 import logging
 import os
 import secrets as _secrets
-import threading
-import time
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -20,7 +18,7 @@ from apscheduler.triggers.cron import CronTrigger
 import config
 from modules.weather import get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_tempo_info
-from modules.advisor import analyze, analyze_tomorrow
+from modules.analysis import DataCache, build_advisor_config, compute_analysis, tariff_slot
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
 from modules.crypto import encrypt_password
 import modules.homeassistant as ha_client
@@ -523,27 +521,10 @@ _scheduler.add_job(
 )
 logger.info("Historique : enregistrement toutes les 10 min, agrégation mensuelle à 2h30")
 
-# Cache simple en mémoire pour éviter de surcharger les APIs
-_cache: dict = {"data": None, "expires_at": None}
-
 
 def _build_config_dict() -> dict:
-    return {
-        "TEMPO_PRICES": config.TEMPO_PRICES,
-        "CLIM": config.CLIM,
-        "POELE": config.POELE,
-        "HP_START": config.HP_START,
-        "HP_END": config.HP_END,
-    }
-
-
-def _fetch_indoor() -> None:
-    """Rafraîchit uniquement la température intérieure dans le cache (HA local, pas d'API externe)."""
-    if not _cache["data"]:
-        return
-    indoor = _indoor_with_felt()
-    if indoor:
-        _cache["data"]["indoor"] = indoor
+    """Configuration du moteur de décision (partagée avec notify.py)."""
+    return build_advisor_config(config)
 
 
 def _indoor_with_felt() -> dict | None:
@@ -558,67 +539,48 @@ def _indoor_with_felt() -> dict | None:
     return indoor
 
 
-_refresh_lock = threading.Lock()
+def _fetch_external_data() -> dict:
+    """Récupère météo, Tempo et prévisions (appels réseau, potentiellement lents)."""
+    tomorrow_weather = get_tomorrow_weather({
+        **config.LOCATION,
+        "hp_start": config.HP_START,
+        "hp_end": config.HP_END,
+    })
+    return {
+        "fetched_at": datetime.now().isoformat(),
+        "weather": get_current_temperature(config.LOCATION),
+        "tomorrow_weather": tomorrow_weather,
+        "tempo": get_tempo_info(config.HP_START, config.HP_END),
+        "hourly_forecast": get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48),
+        "indoor": _indoor_with_felt(),
+    }
 
 
-def _refresh_analysis(force: bool = False) -> dict:
-    """Recharge météo, Tempo et prévisions puis recalcule l'analyse (un seul rafraîchissement à la fois)."""
-    with _refresh_lock:
-        # Un autre thread vient peut-être de rafraîchir pendant l'attente du verrou
-        if not force and _cache["data"] and _cache["expires_at"] and time.time() < _cache["expires_at"]:
-            return _cache["data"]
-
-        logger.info("Rafraîchissement des données…")
-        cfg = _build_config_dict()
-
-        weather = get_current_temperature(config.LOCATION)
-        tomorrow_weather = get_tomorrow_weather({
-            **config.LOCATION,
-            "hp_start": config.HP_START,
-            "hp_end": config.HP_END,
-        })
-        tempo = get_tempo_info(config.HP_START, config.HP_END)
-        result = analyze(weather, tempo, cfg)
-        result["tomorrow"] = analyze_tomorrow(tomorrow_weather, tempo, cfg)
-        result["hourly_forecast"] = get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48)
-
-        indoor = _indoor_with_felt()
-        if indoor:
-            result["indoor"] = indoor
-
-        _cache["data"] = result
-        _cache["expires_at"] = time.time() + config.REFRESH_INTERVAL_MINUTES * 60
-        return result
-
-
-def _refresh_in_background() -> None:
-    """Lance un rafraîchissement en tâche de fond, sauf s'il y en a déjà un en cours."""
-    if _refresh_lock.locked():
-        return
-
-    def _run():
-        try:
-            _refresh_analysis()
-        except Exception as e:
-            logger.error("Rafraîchissement en arrière-plan échoué : %s", e)
-
-    threading.Thread(target=_run, name="analysis-refresh", daemon=True).start()
+# Cache des données externes uniquement : la décision est recalculée à chaque lecture.
+# Périmé après REFRESH_INTERVAL_MINUTES, à chaque bascule HP/HC et au changement de jour.
+_data_cache = DataCache(
+    fetch=_fetch_external_data,
+    ttl=lambda: config.REFRESH_INTERVAL_MINUTES * 60,
+    slot=lambda: tariff_slot(config.HP_START, config.HP_END),
+)
 
 
 def get_analysis(force_refresh: bool = False) -> dict:
-    """Retourne l'analyse en cache.
+    """Retourne l'analyse courante.
 
-    Données expirées : le dernier résultat est servi immédiatement et le rafraîchissement
-    (météo, Tempo : jusqu'à plusieurs dizaines de secondes si une API est lente) part en
-    arrière-plan. Le calcul n'est bloquant qu'au premier appel ou sur demande explicite.
+    Les données externes viennent du cache (stale-while-revalidate : un résultat périmé est
+    servi pendant que le rafraîchissement part en arrière-plan). La décision est recalculée
+    à chaque appel avec l'heure courante : période HP/HC et tarif toujours ceux en vigueur
+    (05:50 → HC, 06:00 → HP), même si les données datent d'avant la bascule.
     """
-    if force_refresh or not _cache["data"]:
-        return _refresh_analysis(force=force_refresh)
-
-    if not _cache["expires_at"] or time.time() >= _cache["expires_at"]:
-        _refresh_in_background()
-    _fetch_indoor()
-    return _cache["data"]
+    just_fetched = force_refresh or _data_cache.data is None
+    raw = _data_cache.get(force=force_refresh)
+    if not just_fetched:
+        # Température intérieure toujours à jour (HA local, rapide)
+        indoor = _indoor_with_felt()
+        if indoor:
+            raw["indoor"] = indoor
+    return compute_analysis(raw, _build_config_dict())
 
 
 @app.route("/")
@@ -711,9 +673,6 @@ def api_dashboard_refresh():
         # Vérifier que les données sont valides
         if data is None:
             return jsonify({"error": "Impossible de récupérer les données"}), 500
-
-        # Force refresh de la température intérieure (HA local, rapide)
-        _fetch_indoor()
 
         # Récupérer l'état du thermostat
         thermostat_state = thermostat_module.get_state()
@@ -1572,8 +1531,7 @@ def api_config_save():
             d.pop("COP_LEARNING", None)  # section de l'apprentissage COP, supprimé
         _patch_override(_save)
         apply_overrides(config, override)
-        _cache["data"] = None
-        _cache["expires_at"] = None
+        _data_cache.invalidate()
         _reschedule_notify()
         _reschedule_radiateurs()
         _reschedule_electricity_fetch()
@@ -1714,7 +1672,7 @@ def api_stock_delivery_delete(idx: int):
 
 
 _migrate_deliveries_from_override()
-_refresh_in_background()  # premier calcul dès le démarrage, sans attendre une requête
+_data_cache.refresh_in_background()  # premier chargement dès le démarrage, sans attendre une requête
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)

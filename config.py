@@ -29,7 +29,8 @@ TEMPO_PRICES = {
 HP_START = 6
 HP_END = 22
 
-# Pas de chauffage la nuit (Heures Creuses)
+# Pas de chauffage la nuit (Heures Creuses). Non transmis au moteur de décision :
+# le chauffage de nuit est borné par les plages du thermostat (cf. modules/analysis.py).
 NO_HEATING_AT_NIGHT = True
 
 # Température cible intérieure (°C)

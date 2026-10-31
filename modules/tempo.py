@@ -107,23 +107,31 @@ def is_hp(hour: int, hp_start: int, hp_end: int) -> bool:
     return hp_start <= hour < hp_end
 
 
-def get_current_period(hp_start: int, hp_end: int) -> str:
-    """Retourne 'HP' ou 'HC' selon l'heure actuelle."""
-    return "HP" if is_hp(datetime.now().hour, hp_start, hp_end) else "HC"
+def get_current_period(hp_start: int, hp_end: int, now: datetime | None = None) -> str:
+    """Retourne 'HP' ou 'HC' selon l'heure (actuelle par défaut).
+
+    Heure entière : 05:59 → HC, 06:00 → HP (tarif réellement en vigueur).
+    """
+    now = now or datetime.now()
+    return "HP" if is_hp(now.hour, hp_start, hp_end) else "HC"
+
+
+def at_time(tempo: dict, hp_start: int, hp_end: int, now: datetime | None = None) -> dict:
+    """Copie des infos Tempo avec la période HP/HC et l'heure recalculées pour `now`.
+
+    Les couleurs (today/tomorrow) viennent du dernier appel API ; seule la partie
+    dépendant de l'heure est recalculée, sans aucun appel réseau.
+    """
+    now = now or datetime.now()
+    return {
+        **tempo,
+        "current_period": get_current_period(hp_start, hp_end, now),
+        "current_hour": now.hour,
+        "hp_start": hp_start,
+        "hp_end": hp_end,
+    }
 
 
 def get_tempo_info(hp_start: int, hp_end: int) -> dict:
     """Retourne un dictionnaire complet avec les infos Tempo du jour et de demain."""
-    today = get_today()
-    tomorrow = get_tomorrow()
-    period = get_current_period(hp_start, hp_end)
-    hour = datetime.now().hour
-
-    return {
-        "today": today,
-        "tomorrow": tomorrow,
-        "current_period": period,
-        "current_hour": hour,
-        "hp_start": hp_start,
-        "hp_end": hp_end,
-    }
+    return at_time({"today": get_today(), "tomorrow": get_tomorrow()}, hp_start, hp_end)
