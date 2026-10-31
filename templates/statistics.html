@@ -516,7 +516,7 @@
         const barOffWidth = Math.max(100 - pctOn, pctOn < 100 ? 2 : 0);
         return `<tr>
           <td>${fmtDate(r.date)}</td>
-          <td><span class="tempo-badge tempo-${color}">${TEMPO_LABELS[color] || color}</span></td>
+          <td><span class="tempo-badge tempo-${escapeHtml(color)}">${escapeHtml(TEMPO_LABELS[color] || color)}</span></td>
           <td style="color:#22c55e; font-weight:600;">${fmtDuration(r.on_minutes)}</td>
           <td style="color:var(--text-sub);">${fmtDuration(r.off_minutes)}</td>
           <td style="min-width:120px;">
@@ -572,14 +572,14 @@
         const rec = r.recommendation === 'poele' ? '🔥 Poêle' : r.recommendation === 'clim' ? '❄️ Clim' : r.recommendation === 'none' ? '—' : r.recommendation || '—';
         return `<tr>
           <td style="white-space:nowrap;color:var(--text-sub);font-size:0.82rem">${ts}</td>
-          <td style="color:${presenceColor};font-weight:600">${presenceLabel}</td>
-          <td style="color:${poeleColor};font-weight:600">${r.poele_real_state || '—'}</td>
-          <td style="color:${thColor};font-weight:600">${r.thermostat_state || '—'}</td>
+          <td style="color:${presenceColor};font-weight:600">${escapeHtml(presenceLabel)}</td>
+          <td style="color:${poeleColor};font-weight:600">${escapeHtml(r.poele_real_state || '—')}</td>
+          <td style="color:${thColor};font-weight:600">${escapeHtml(r.thermostat_state || '—')}</td>
           <td style="color:var(--text)">${r.felt_temperature !== null && r.felt_temperature !== undefined ? r.felt_temperature.toFixed(1) + ' °C' : '—'}</td>
           <td style="color:#fb923c">${r.indoor_temp !== null && r.indoor_temp !== undefined ? r.indoor_temp.toFixed(1) + ' °C' : '—'}</td>
           <td>${r.in_schedule ? '<span style="color:#22c55e">✓</span>' : '<span style="color:#8892a4">✗</span>'}</td>
           <td style="color:var(--text-sub);font-size:0.82rem">${susp}</td>
-          <td style="color:var(--text-sub)">${rec}</td>
+          <td style="color:var(--text-sub)">${escapeHtml(rec)}</td>
         </tr>`;
       }).join('');
     }

@@ -3,12 +3,14 @@ Application Flask – Conseiller Chauffage
 Déployable via Docker sur NAS Synology
 """
 
+import hashlib
 import hmac
 import logging
 import os
 import secrets as _secrets
 from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -119,6 +121,35 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="m
 
 load_overrides(config)
 
+# ── Erreurs internes ──────────────────────────────────────────
+# Le détail d'une exception (chemins, URLs internes, messages SMTP/IMAP ou SQLite) reste
+# dans les journaux : le client ne reçoit qu'un message neutre et une référence à y chercher.
+
+def _log_internal_error(exc: BaseException) -> str:
+    error_id = _secrets.token_hex(4)
+    logger.error("Erreur interne [%s] sur %s %s", error_id, request.method, request.path, exc_info=exc)
+    return error_id
+
+
+def _internal_error_message(error_id: str) -> str:
+    return f"Erreur interne (réf. {error_id}) — détails dans les journaux du serveur"
+
+
+def _internal_error(exc: BaseException):
+    """Réponse JSON 500 neutre pour une exception attrapée dans une route d'API."""
+    error_id = _log_internal_error(exc)
+    return jsonify({"error": _internal_error_message(error_id), "error_id": error_id}), 500
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(exc):
+    # Les erreurs HTTP (404, 405, 429…) gardent leur réponse habituelle
+    if isinstance(exc, HTTPException):
+        return exc
+    if request.path.startswith("/api/"):
+        return _internal_error(exc)
+    return _internal_error_message(_log_internal_error(exc)), 500
+
 # ── Authentification ─────────────────────────────────────────
 
 def _uses_default_password() -> bool:
@@ -132,12 +163,24 @@ def _check_password(password: str) -> bool:
     return check_password_hash(stored, password)
 
 
+def _auth_fingerprint() -> str:
+    """Empreinte des identifiants courants, gardée dans la session.
+
+    Elle change avec le mot de passe ou « Déconnecter tous les appareils » : les cookies de
+    session émis avant ne correspondent plus et sont rejetés.
+    """
+    material = f"{config.AUTH.get('password_hash', '')}|{config.AUTH.get('session_epoch', '')}"
+    return hashlib.sha256(material.encode()).hexdigest()[:16]
+
+
 @app.before_request
 def require_login():
     if request.path.startswith("/static"):
         return
     if request.endpoint in ("login", "logout"):
         return
+    if session.get("authenticated") and not hmac.compare_digest(session.get("auth_fp", ""), _auth_fingerprint()):
+        session.clear()  # session antérieure à un changement de mot de passe ou à « Déconnecter tous les appareils »
     # Mot de passe par défaut : il doit être changé avant toute autre action
     if session.get("must_change_password"):
         if not _uses_default_password():
@@ -166,6 +209,7 @@ def login():
         if _check_password(password):
             session.permanent = True
             session["authenticated"] = True
+            session["auth_fp"] = _auth_fingerprint()
             if _uses_default_password():
                 session["must_change_password"] = True
                 logger.warning("Connexion avec le mot de passe par défaut — changement exigé")
@@ -204,10 +248,21 @@ def api_change_password():
         _patch_override(lambda d: d.setdefault("AUTH", {}).__setitem__("password_hash", new_hash))
         config.AUTH["password_hash"] = new_hash
         session.pop("must_change_password", None)
-        logger.info("Mot de passe modifié")
+        session["auth_fp"] = _auth_fingerprint()  # cette session reste connectée, les autres non
+        logger.info("Mot de passe modifié — autres sessions déconnectées")
     except Exception as e:
-        logger.error("Erreur sauvegarde mot de passe : %s", e)
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/auth/logout-all", methods=["POST"])
+def api_logout_all():
+    """Déconnecte tous les appareils sauf celui qui fait la demande."""
+    epoch = _secrets.token_hex(8)
+    _patch_override(lambda d: d.setdefault("AUTH", {}).__setitem__("session_epoch", epoch))
+    config.AUTH["session_epoch"] = epoch
+    session["auth_fp"] = _auth_fingerprint()
+    logger.info("Toutes les autres sessions ont été déconnectées")
     return jsonify({"status": "ok"})
 
 
@@ -661,8 +716,8 @@ def index():
                                weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
                                poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL)
     except Exception as e:
-        logger.exception("Erreur index : %s", e)
-        return render_template("index.html", data=None, error=str(e), config=config, thermostat_state={},
+        error = _internal_error_message(_log_internal_error(e))
+        return render_template("index.html", data=None, error=error, config=config, thermostat_state={},
                                next_schedule_start=None, radiateurs_info=[], poele_state=None,
                                ajax_interval=config.AJAX_REFRESH_INTERVAL)
 
@@ -673,7 +728,7 @@ def api_data():
         data = get_analysis()
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/refresh")
@@ -682,7 +737,7 @@ def api_refresh():
         data = get_analysis(force_refresh=True)
         return jsonify({"status": "ok", "timestamp": data["timestamp"]})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/dashboard/refresh")
@@ -825,8 +880,7 @@ def api_dashboard_refresh():
 
         return jsonify(response)
     except Exception as e:
-        logger.exception("Erreur api_dashboard_refresh : %s", e)
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/notify-test", methods=["POST"])
@@ -837,8 +891,7 @@ def api_notify_test():
             return jsonify({"status": "ok"})
         return jsonify({"error": "Envoi échoué — vérifiez les logs et la configuration SMTP"}), 500
     except Exception as e:
-        logger.exception("Erreur test notification : %s", e)
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/radiateurs/status")
@@ -928,8 +981,7 @@ def api_ntfy_test():
         ntfy_send("🔔 Heating Advisor", "Notification de test — configuration OK !", ntfy_cfg)
         return jsonify({"status": "ok"})
     except Exception as e:
-        logger.exception("Erreur test ntfy : %s", e)
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/ha/turn_on", methods=["POST"])
@@ -1280,7 +1332,7 @@ def api_statistics():
         data = history_module.get_history(hours)
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/statistics/daily")
@@ -1291,7 +1343,7 @@ def api_statistics_daily():
         data = history_module.get_daily_summary(days)
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/reports")
@@ -1307,7 +1359,7 @@ def api_reports_monthly():
         data = history_module.get_monthly_reports(months)
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/reports/aggregate-now", methods=["POST"])
@@ -1317,7 +1369,7 @@ def api_reports_aggregate_now():
         _run_monthly_aggregation()
         return jsonify({"status": "ok"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/thermostat/diagnose/history")
@@ -1328,7 +1380,7 @@ def api_diagnose_history():
         data = history_module.get_diagnose_history(hours)
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/electricity")
@@ -1347,7 +1399,7 @@ def api_electricity_history():
             data = electricity_module.get_readings(weeks=weeks)
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/electricity/status")
@@ -1367,8 +1419,7 @@ def api_electricity_sync_now():
         result = electricity_module.fetch_new_readings(config.ELECTRICITY)
         return jsonify(result)
     except Exception as e:
-        logger.exception("Sync électricité manuelle échouée")
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/electricity/import-log")
@@ -1379,7 +1430,7 @@ def api_electricity_import_log():
         data = electricity_module.get_import_log(limit=limit)
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _internal_error(e)
 
 
 @app.route("/api/electricity/imap/test", methods=["POST"])
@@ -1389,8 +1440,8 @@ def api_electricity_imap_test():
         ok, message = imap_client.test_connection(config.ELECTRICITY)
         return jsonify({"status": "ok" if ok else "error", "message": message})
     except Exception as e:
-        logger.exception("Test connexion IMAP échoué")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        error_id = _log_internal_error(e)
+        return jsonify({"status": "error", "message": _internal_error_message(error_id), "error_id": error_id}), 500
 
 
 @app.route("/docs")
@@ -1405,9 +1456,41 @@ def config_page():
     return render_template("config.html", config=config, purchase=purchase)
 
 
+def _secret_rebind_error(data: dict) -> str | None:
+    """Refuse de réutiliser un secret enregistré pour un hôte qui a changé.
+
+    Un champ secret laissé vide conserve le secret existant : si l'hôte change en même temps,
+    ce secret partirait vers le nouvel hôte. On exige alors qu'il soit ressaisi.
+    """
+    def _norm(value) -> str:
+        return str(value or "").strip().rstrip("/").lower()
+
+    services = (
+        ("ha_url", config.HOME_ASSISTANT, "url", "ha_token", "token",
+         "L'URL Home Assistant a changé : ressaisissez le token d'accès"),
+        ("ntfy_url", config.NTFY, "url", "ntfy_token", "token",
+         "L'URL du serveur ntfy a changé : ressaisissez le token d'accès"),
+        ("smtp_host", config.EMAIL, "smtp_host", "app_password", "app_password",
+         "Le serveur SMTP a changé : ressaisissez le mot de passe d'application"),
+        ("imap_host", config.ELECTRICITY, "imap_host", "imap_password", "imap_password",
+         "Le serveur IMAP a changé : ressaisissez le mot de passe IMAP"),
+    )
+    for host_field, section, host_key, secret_field, secret_key, message in services:
+        if host_field not in data or not section.get(secret_key):
+            continue
+        if str(data.get(secret_field, "")).strip():
+            continue
+        if _norm(data[host_field]) != _norm(section.get(host_key)):
+            return f"{message} (le secret enregistré n'est jamais envoyé à un nouveau serveur)"
+    return None
+
+
 @app.route("/api/config", methods=["POST"])
 def api_config_save():
     data = request.get_json(force=True)
+    rebind_error = _secret_rebind_error(data)
+    if rebind_error:
+        return jsonify({"error": rebind_error}), 400
     try:
         nb_sacs = float(data.get("nb_sacs", 1))
         prix = float(data.get("prix_livraison", 0))
