@@ -92,6 +92,8 @@ THERMOSTAT = {
     "min_on_minutes": 90,                 # durée minimale ON avant extinction sur temp (poêle)
     "min_on_minutes_clim": 15,            # durée minimale ON avant extinction sur temp (clim)
     "end_of_schedule_grace_minutes": 45,  # durée minimale ON avant extinction fin de plage
+    "max_on_hours_without_sensor": 3,     # extinction de sécurité après N h de marche sans mesure de température valide (0 = désactivé)
+    "overheat_margin": 1.5,               # extinction forcée (même avant la durée min ON) si ressenti >= temp_off + cette marge (°C)
     "clim_to_poele_overlap_minutes": 20,  # maintien de la clim pendant la montée en température du poêle (clim → poêle)
     "check_interval_minutes": 10,         # fréquence de vérification
     "manual_off_suspend_hours": 4,        # suspension du thermostat après extinction manuelle (heures)

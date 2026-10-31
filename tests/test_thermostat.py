@@ -683,3 +683,159 @@ class TestTransitions:
         poele_off.assert_not_called()
         clim_on.assert_not_called()
         assert store["state"]["active_system"] == "poele"
+
+
+class TestTurnOffAll:
+    """R-04 : une extinction « forte » coupe aussi la clim maintenue en chevauchement clim → poêle."""
+
+    @pytest.fixture
+    def store(self):
+        data = {"state": {
+            "state": "on", "active_system": "poele", "sensor_failures": 0, "suspended_until": None,
+            "clim_overlap_until": "2025-01-06T10:15:00",
+            "system_history": {"poele": {"last_turned_on": "2025-01-06T09:55:00", "last_turned_off": None},
+                               "clim": {"last_turned_on": "2025-01-06T07:00:00", "last_turned_off": None}},
+        }}
+        with patch("modules.thermostat._load_state", side_effect=lambda: dict(data["state"])), \
+             patch("modules.thermostat._save_state", side_effect=lambda s: data.__setitem__("state", s)), \
+             freeze_time("2025-01-06 10:00:00"):
+            yield data
+
+    def _run(self, base_ha_cfg, base_thermostat_cfg, vacation=True, absence=False, clim_off_ok=True):
+        with patch("modules.thermostat.is_on_vacation", return_value=vacation), \
+             patch("modules.thermostat.is_in_absence_schedule", return_value=absence), \
+             patch("modules.homeassistant.turn_off", return_value=True) as poele_off, \
+             patch("modules.homeassistant.turn_off_clim", return_value=clim_off_ok) as clim_off, \
+             patch("modules.ntfy_push.send") as ntfy:
+            check_and_apply(base_ha_cfg, base_thermostat_cfg, "poele", ntfy_cfg={"enabled": True})
+        return poele_off, clim_off, ntfy
+
+    def test_vacation_during_overlap_turns_off_clim_too(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_off, clim_off, ntfy = self._run(base_ha_cfg, base_thermostat_cfg)
+        poele_off.assert_called_once()
+        clim_off.assert_called_once()
+        assert store["state"]["state"] == "off"
+        assert store["state"]["active_system"] is None
+        assert store["state"]["clim_overlap_until"] is None
+        assert store["state"]["system_history"]["clim"]["last_turned_off"]
+        assert store["state"]["system_history"]["poele"]["last_turned_off"]
+        assert "vacances" in ntfy.call_args[0][1]
+
+    def test_absence_schedule_during_overlap_turns_off_clim_too(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_off, clim_off, _ = self._run(base_ha_cfg, base_thermostat_cfg, vacation=False, absence=True)
+        poele_off.assert_called_once()
+        clim_off.assert_called_once()
+        assert store["state"]["state"] == "off"
+        assert store["state"]["clim_overlap_until"] is None
+
+    def test_vacation_overlap_clim_left_after_manual_poele_off(self, store, base_ha_cfg, base_thermostat_cfg):
+        # Poêle éteint à la main pendant le chevauchement : la clim tourne encore
+        store["state"] = {**store["state"], "state": "off", "active_system": None}
+        poele_off, clim_off, _ = self._run(base_ha_cfg, base_thermostat_cfg)
+        poele_off.assert_not_called()
+        clim_off.assert_called_once()
+        assert store["state"]["clim_overlap_until"] is None
+
+    def test_failed_overlap_clim_off_keeps_state_and_retries(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, _, ntfy = self._run(base_ha_cfg, base_thermostat_cfg, clim_off_ok=False)
+        assert store["state"]["state"] == "on"
+        assert store["state"]["clim_overlap_until"] == "2025-01-06T10:15:00"
+        assert store["state"]["command_failures"] == 1
+        assert not any("éteint" in c[0][0] for c in ntfy.call_args_list)
+        _, clim_off, _ = self._run(base_ha_cfg, base_thermostat_cfg)
+        clim_off.assert_called_once()
+        assert store["state"]["state"] == "off"
+        assert store["state"]["clim_overlap_until"] is None
+
+    def test_nothing_to_do_when_off_without_overlap(self, store, base_ha_cfg, base_thermostat_cfg):
+        store["state"] = {**store["state"], "state": "off", "active_system": None, "clim_overlap_until": None}
+        poele_off, clim_off, ntfy = self._run(base_ha_cfg, base_thermostat_cfg)
+        poele_off.assert_not_called()
+        clim_off.assert_not_called()
+        ntfy.assert_not_called()
+
+
+class TestSensorSafeguards:
+    """F-05 : garde-fous quand la sonde est HS ou que la température s'envole."""
+
+    @pytest.fixture
+    def store(self):
+        data = {"state": {
+            "state": "on", "active_system": "poele", "sensor_failures": 0, "suspended_until": None,
+            "system_history": {"poele": {"last_turned_on": "2025-01-06T07:00:00", "last_turned_off": None},
+                               "clim": {"last_turned_on": None, "last_turned_off": None}},
+        }}
+        with patch("modules.thermostat._load_state", side_effect=lambda: dict(data["state"])), \
+             patch("modules.thermostat._save_state", side_effect=lambda s: data.__setitem__("state", s)), \
+             patch("modules.thermostat.is_on_vacation", return_value=False), \
+             patch("modules.thermostat.is_in_absence_schedule", return_value=False), \
+             freeze_time("2025-01-06 10:00:00"):  # lundi, dans la plage
+            yield data
+
+    def _run(self, base_ha_cfg, cfg, indoor_temp=None):
+        indoor = {"temperature": indoor_temp, "humidity": 50.0} if indoor_temp is not None else None
+        with patch("modules.homeassistant.get_indoor_climate", return_value=indoor), \
+             patch("modules.homeassistant.is_clim_configured", return_value=False), \
+             patch("modules.homeassistant.get_state", return_value={"state": "heat"}), \
+             patch("modules.homeassistant.turn_off", return_value=True) as poele_off, \
+             patch("modules.ntfy_push.send") as ntfy:
+            check_and_apply(base_ha_cfg, cfg, "poele", ntfy_cfg={"enabled": True})
+        return poele_off, ntfy
+
+    def test_blind_ceiling_turns_off(self, store, base_ha_cfg, base_thermostat_cfg):
+        store["state"]["sensor_failure_since"] = "2025-01-06T06:30:00"
+        poele_off, ntfy = self._run(base_ha_cfg, base_thermostat_cfg)
+        poele_off.assert_called_once()
+        assert store["state"]["state"] == "off"
+        assert any("sans mesure" in c[0][1] for c in ntfy.call_args_list)
+
+    def test_blind_ceiling_counts_from_sensor_loss(self, store, base_ha_cfg, base_thermostat_cfg):
+        # Allumé depuis 3 h mais sonde perdue depuis 1 h seulement : la régulation était valide avant
+        store["state"]["sensor_failure_since"] = "2025-01-06T09:00:00"
+        poele_off, _ = self._run(base_ha_cfg, base_thermostat_cfg)
+        poele_off.assert_not_called()
+        assert store["state"]["state"] == "on"
+
+    def test_blind_ceiling_configurable_and_disableable(self, store, base_ha_cfg, base_thermostat_cfg):
+        store["state"]["sensor_failure_since"] = "2025-01-06T06:30:00"
+        poele_off, _ = self._run(base_ha_cfg, {**base_thermostat_cfg, "max_on_hours_without_sensor": 0})
+        poele_off.assert_not_called()
+        poele_off, _ = self._run(base_ha_cfg, {**base_thermostat_cfg, "max_on_hours_without_sensor": 4})
+        poele_off.assert_not_called()
+        poele_off, _ = self._run(base_ha_cfg, {**base_thermostat_cfg, "max_on_hours_without_sensor": 2})
+        poele_off.assert_called_once()
+
+    def test_first_failure_records_start_of_outage(self, store, base_ha_cfg, base_thermostat_cfg):
+        self._run(base_ha_cfg, base_thermostat_cfg)
+        assert store["state"]["sensor_failure_since"] == "2025-01-06T10:00:00"
+        assert store["state"]["state"] == "on"
+
+    def test_sensor_alert_sent_via_ntfy_and_recovery(self, store, base_ha_cfg, base_thermostat_cfg):
+        alerts = []
+        for _ in range(3):
+            _, ntfy = self._run(base_ha_cfg, base_thermostat_cfg)
+            alerts += [c for c in ntfy.call_args_list if "injoignable" in c[0][0]]
+        assert len(alerts) == 1
+        assert alerts[0][0][2] == {"enabled": True}
+        _, ntfy = self._run(base_ha_cfg, base_thermostat_cfg, indoor_temp=21.0)
+        assert any("de nouveau joignable" in c[0][0] for c in ntfy.call_args_list)
+        assert store["state"]["sensor_failures"] == 0
+        assert store["state"]["sensor_failure_since"] is None
+
+    def test_overheat_turns_off_before_min_on(self, store, base_ha_cfg, base_thermostat_cfg):
+        store["state"]["system_history"]["poele"]["last_turned_on"] = "2025-01-06T09:30:00"  # 30 min < 90
+        poele_off, ntfy = self._run(base_ha_cfg, base_thermostat_cfg, indoor_temp=24.5)  # ≥ 22.9 + 1.5
+        poele_off.assert_called_once()
+        assert store["state"]["state"] == "off"
+        assert "surchauffe" in ntfy.call_args[0][0]
+
+    def test_no_overheat_below_margin_before_min_on(self, store, base_ha_cfg, base_thermostat_cfg):
+        store["state"]["system_history"]["poele"]["last_turned_on"] = "2025-01-06T09:30:00"
+        poele_off, _ = self._run(base_ha_cfg, base_thermostat_cfg, indoor_temp=24.0)
+        poele_off.assert_not_called()
+        assert store["state"]["state"] == "on"
+
+    def test_overheat_margin_configurable(self, store, base_ha_cfg, base_thermostat_cfg):
+        store["state"]["system_history"]["poele"]["last_turned_on"] = "2025-01-06T09:30:00"
+        poele_off, _ = self._run(base_ha_cfg, {**base_thermostat_cfg, "overheat_margin": 1.0}, indoor_temp=24.0)
+        poele_off.assert_called_once()

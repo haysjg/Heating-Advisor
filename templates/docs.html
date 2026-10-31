@@ -303,6 +303,8 @@
           immédiatement mais la clim reste active pendant
           <strong>{{ config.THERMOSTAT.clim_to_poele_overlap_minutes }} min</strong>
           le temps que le poêle monte en température.
+          Une extinction complète (vacances, absence, horaire d'absence, fin de plage…)
+          coupe aussi cette clim sans attendre la fin du chevauchement.
         </div>
         <div class="rule-example">
           Exemple : recommandation passe à poêle à 8h00 → poêle allumé à 8h00,
@@ -323,6 +325,26 @@
           Exemple : poêle allumé, 20,8°C ressentis, recommandation passe à clim →
           poêle éteint et clim allumée aussitôt, sans attendre de redescendre
           sous {{ config.THERMOSTAT.temp_on }}°C.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Surchauffe : extinction forcée</div>
+        <div class="rule-desc">
+          Si la température atteint
+          <strong>{{ config.THERMOSTAT.temp_off }}°C + {{ config.THERMOSTAT.get('overheat_margin', 1.5) }}°C</strong>,
+          le système en marche est éteint immédiatement, même avant sa durée minimale d'allumage.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Sonde injoignable</div>
+        <div class="rule-desc">
+          Sans mesure de température, le thermostat ne régule plus : il n'allume rien,
+          éteint en fin de plage horaire et, au plus tard, après
+          <strong>{{ config.THERMOSTAT.get('max_on_hours_without_sensor', 3) }} h</strong>
+          de marche sans mesure valide (0 = pas de plafond). Une alerte part par email et ntfy
+          après 3 vérifications en échec, puis une autre au retour de la sonde.
         </div>
       </div>
 

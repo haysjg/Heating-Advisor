@@ -1552,6 +1552,8 @@ def api_config_save():
                 "min_on_minutes_clim": int(data.get("thermostat_min_on_clim", config.THERMOSTAT.get("min_on_minutes_clim", 15))),
                 "end_of_schedule_grace_minutes": int(data.get("thermostat_grace", config.THERMOSTAT.get("end_of_schedule_grace_minutes", 45))),
                 "manual_off_suspend_hours": float(data.get("thermostat_suspend_hours", config.THERMOSTAT.get("manual_off_suspend_hours", 4))),
+                "max_on_hours_without_sensor": max(0.0, float(data.get("thermostat_max_on_no_sensor", config.THERMOSTAT.get("max_on_hours_without_sensor", 3)))),
+                "overheat_margin": max(0.5, float(data.get("thermostat_overheat_margin", config.THERMOSTAT.get("overheat_margin", 1.5)))),
                 "presence_enabled": bool(data.get("thermostat_presence_enabled", config.THERMOSTAT.get("presence_enabled", False))),
                 "person_entities": [e.strip() for e in data.get("person_entities", config.THERMOSTAT.get("person_entities", [])) if e.strip()],
                 "nearby_zone_name": str(data.get("nearby_zone_name", config.THERMOSTAT.get("nearby_zone_name", "nearby"))).strip(),

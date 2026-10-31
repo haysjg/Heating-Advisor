@@ -533,6 +533,20 @@
           <span class="hint">Le thermostat ne rallume pas pendant cette durée</span>
         </div>
 
+        <div class="form-group">
+          <label>Marche max sans sonde (h)</label>
+          <input type="number" id="thermostat_max_on_no_sensor" min="0" max="12" step="0.5"
+                 value="{{ config.THERMOSTAT.get('max_on_hours_without_sensor', 3) }}">
+          <span class="hint">Extinction de sécurité si la sonde reste muette (0 = désactivé)</span>
+        </div>
+
+        <div class="form-group">
+          <label>Marge de surchauffe (°C)</label>
+          <input type="number" id="thermostat_overheat_margin" min="0.5" max="5" step="0.1"
+                 value="{{ config.THERMOSTAT.get('overheat_margin', 1.5) }}">
+          <span class="hint">Extinction immédiate si temp ≥ seuil d'extinction + marge, même avant la durée min</span>
+        </div>
+
       </div>
 
       <hr class="section-divider" style="margin:1rem 0">
@@ -909,6 +923,8 @@
       thermostat_min_on_clim: parseInt(getVal('thermostat_min_on_clim')),
       thermostat_grace:     parseInt(getVal('thermostat_grace')),
       thermostat_suspend_hours: parseFloat(getVal('thermostat_suspend_hours')),
+      thermostat_max_on_no_sensor: parseFloat(getVal('thermostat_max_on_no_sensor')),
+      thermostat_overheat_margin: parseFloat(getVal('thermostat_overheat_margin')),
       thermostat_presence_enabled: document.getElementById('thermostat_presence_enabled').checked,
       person_entities: [getVal('presence_person_1'), getVal('presence_person_2')].filter(v => v.trim() !== ''),
       nearby_zone_name: getVal('nearby_zone_name'),
@@ -1092,6 +1108,8 @@
       thermostat_min_on_clim: parseInt(getVal('thermostat_min_on_clim')),
       thermostat_grace:     parseInt(getVal('thermostat_grace')),
       thermostat_suspend_hours: parseFloat(getVal('thermostat_suspend_hours')),
+      thermostat_max_on_no_sensor: parseFloat(getVal('thermostat_max_on_no_sensor')),
+      thermostat_overheat_margin: parseFloat(getVal('thermostat_overheat_margin')),
       thermostat_presence_enabled: document.getElementById('thermostat_presence_enabled').checked,
       person_entities: [getVal('presence_person_1'), getVal('presence_person_2')].filter(v => v.trim() !== ''),
       nearby_zone_name: getVal('nearby_zone_name'),
@@ -1190,6 +1208,8 @@
         setVal('thermostat_min_on_clim', d.thermostat_min_on_clim);
         setVal('thermostat_grace',    d.thermostat_grace);
         setVal('thermostat_suspend_hours', d.thermostat_suspend_hours);
+        setVal('thermostat_max_on_no_sensor', d.thermostat_max_on_no_sensor);
+        setVal('thermostat_overheat_margin', d.thermostat_overheat_margin);
         setChk('thermostat_presence_enabled', d.thermostat_presence_enabled);
         if (Array.isArray(d.person_entities)) {
           setVal('presence_person_1', d.person_entities[0] || '');

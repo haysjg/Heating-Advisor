@@ -310,11 +310,16 @@ def _send_sensor_alert(email_cfg: dict, subject: str, message: str) -> None:
         logger.error("Échec envoi alerte thermostat : %s", e)
 
 
-def _handle_sensor_failure(state: dict, email_cfg: dict) -> dict:
-    """Incrémente le compteur d'échecs et envoie une alerte si nécessaire."""
+def _handle_sensor_failure(state: dict, email_cfg: dict, ntfy_cfg: dict | None = None,
+                           max_on_hours: float = 0) -> dict:
+    """Incrémente le compteur d'échecs et envoie une alerte (email + ntfy) si nécessaire."""
+    from modules.ntfy_push import send as ntfy_send
     failures = state.get("sensor_failures", 0) + 1
     last_alert = state.get("last_alert_sent")
     state = {**state, "sensor_failures": failures}
+    # Début de la panne : sert au plafond de marche sans mesure valide
+    if not state.get("sensor_failure_since"):
+        state["sensor_failure_since"] = datetime.now().isoformat()
 
     should_alert = failures >= ALERT_FAILURES_THRESHOLD
     if should_alert and last_alert:
@@ -323,13 +328,21 @@ def _handle_sensor_failure(state: dict, email_cfg: dict) -> dict:
 
     if should_alert:
         logger.warning("Thermostat : alerte sonde injoignable (%d échecs)", failures)
+        ceiling = f" ou au plus tard après {max_on_hours:g} h de marche sans mesure" if max_on_hours else ""
+        consequence = (
+            f"Le chauffage sera éteint en fin de plage horaire{ceiling} mais ne pourra pas être piloté "
+            "par la température tant que la sonde est hors ligne."
+        )
         _send_sensor_alert(
             email_cfg,
             "⚠️ Sonde température injoignable",
             f"La sonde de température intérieure n'est pas accessible depuis {failures} vérifications "
-            f"(~{failures * 10} min).<br><br>"
-            "Le poêle sera éteint aux horaires prévus mais ne pourra pas être piloté par la température "
-            "tant que la sonde est hors ligne.",
+            f"(~{failures * 10} min).<br><br>{consequence}",
+        )
+        ntfy_send(
+            "⚠️ Sonde température injoignable",
+            f"Sonde intérieure muette depuis {failures} vérifications (~{failures * 10} min). {consequence}",
+            ntfy_cfg,
         )
         state["last_alert_sent"] = datetime.now().isoformat()
 
@@ -337,19 +350,18 @@ def _handle_sensor_failure(state: dict, email_cfg: dict) -> dict:
     return state
 
 
-def _handle_sensor_recovery(state: dict, email_cfg: dict) -> dict:
-    """Réinitialise le compteur et envoie un email de retour à la normale si nécessaire."""
+def _handle_sensor_recovery(state: dict, email_cfg: dict, ntfy_cfg: dict | None = None) -> dict:
+    """Réinitialise le compteur et envoie un message de retour à la normale (email + ntfy) si nécessaire."""
+    from modules.ntfy_push import send as ntfy_send
     was_failing = state.get("sensor_failures", 0) >= ALERT_FAILURES_THRESHOLD
-    state = {**state, "sensor_failures": 0}
+    state = {**state, "sensor_failures": 0, "sensor_failure_since": None}
     _save_state(state)
     if was_failing:
         logger.info("Thermostat : sonde température de nouveau joignable")
-        _send_sensor_alert(
-            email_cfg,
-            "✅ Sonde température de nouveau joignable",
-            "La sonde de température intérieure est à nouveau accessible. "
-            "Le thermostat reprend son fonctionnement normal.",
-        )
+        message = ("La sonde de température intérieure est à nouveau accessible. "
+                   "Le thermostat reprend son fonctionnement normal.")
+        _send_sensor_alert(email_cfg, "✅ Sonde température de nouveau joignable", message)
+        ntfy_send("✅ Sonde température de nouveau joignable", message, ntfy_cfg)
     return state
 
 
@@ -448,6 +460,55 @@ def _turn_off_active_system(ha_client, ha_cfg: dict, active_system: str | None) 
         return ha_client.turn_off(ha_cfg)
 
 
+def _turn_off_all(ha_client, ha_cfg: dict, state: dict, ntfy_cfg: dict | None, **changes) -> dict | None:
+    """Extinction « forte » : éteint le système actif ET la clim maintenue en chevauchement clim → poêle.
+
+    Retourne le nouvel état sauvegardé (state="off", clim_overlap_until remis à zéro, `changes` appliqués),
+    ou None si une commande HA a échoué : l'échec est comptabilisé et l'état du système concerné reste
+    inchangé pour qu'un nouvel essai ait lieu au prochain check.
+    """
+    is_on = state.get("state") == "on"
+    active = state.get("active_system") or "poele"
+
+    # Clim encore allumée pour le chevauchement (inutile si c'est elle le système actif)
+    if state.get("clim_overlap_until"):
+        if is_on and active == "clim":
+            state = {**state, "clim_overlap_until": None}
+        elif ha_client.turn_off_clim(ha_cfg):
+            state = {**state, "clim_overlap_until": None}
+            _update_system_timestamp(state, "clim", "off")
+            _save_state(state)
+        else:
+            _record_command_failure(state, "extinction clim (chevauchement)", ntfy_cfg)
+            return None
+
+    if is_on:
+        if not _turn_off_active_system(ha_client, ha_cfg, active):
+            _record_command_failure(state, "extinction " + _system_label(active), ntfy_cfg)
+            return None
+        state = {**state, "state": "off", "active_system": None, **changes}
+        _update_system_timestamp(state, active, "off")
+    else:
+        state = {**state, **changes}
+    _save_state(state)
+    return state
+
+
+def _suspend_heating(ha_cfg: dict, ntfy_cfg: dict | None, icon: str, reason: str) -> None:
+    """Vacances / horaire d'absence : éteint tout ce que le thermostat a allumé (système actif + clim en chevauchement)."""
+    from modules.ntfy_push import send as ntfy_send
+    state = _load_state()
+    is_on = state.get("state") == "on"
+    if not is_on and not state.get("clim_overlap_until"):
+        return
+    import modules.homeassistant as ha_client
+    label = _system_label(state.get("active_system") or "poele") if is_on else "clim"
+    logger.info("Thermostat : extinction %s — %s", label, reason)
+    if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg) is None:
+        return
+    ntfy_send(f"{icon} {label.capitalize()} éteint", f"{reason.capitalize()} — thermostat suspendu.", ntfy_cfg)
+
+
 def _system_label(system: str | None) -> str:
     """Retourne le label français du système."""
     return {"poele": "poêle", "clim": "clim"}.get(system, system or "inconnu")
@@ -496,32 +557,10 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
     if not thermostat_cfg.get("enabled"):
         return
     if is_on_vacation():
-        state = _load_state()
-        if state.get("state") == "on":
-            import modules.homeassistant as ha_client
-            active = state.get("active_system", "poele")
-            logger.info("Thermostat : extinction %s — mode vacances actif", _system_label(active))
-            if not _turn_off_active_system(ha_client, ha_cfg, active):
-                _record_command_failure(state, "extinction " + _system_label(active), ntfy_cfg)
-                return
-            new_state = {**state, "state": "off", "active_system": None}
-            _update_system_timestamp(new_state, active, "off")
-            _save_state(new_state)
-            ntfy_send(f"✈️ {_system_label(active).capitalize()} éteint", "Mode vacances actif — thermostat suspendu.", ntfy_cfg)
+        _suspend_heating(ha_cfg, ntfy_cfg, "✈️", "mode vacances actif")
         return
     if is_in_absence_schedule():
-        state = _load_state()
-        if state.get("state") == "on":
-            import modules.homeassistant as ha_client
-            active = state.get("active_system", "poele")
-            logger.info("Thermostat : extinction %s — horaire d'absence actif", _system_label(active))
-            if not _turn_off_active_system(ha_client, ha_cfg, active):
-                _record_command_failure(state, "extinction " + _system_label(active), ntfy_cfg)
-                return
-            new_state = {**state, "state": "off", "active_system": None}
-            _update_system_timestamp(new_state, active, "off")
-            _save_state(new_state)
-            ntfy_send(f"🏠 {_system_label(active).capitalize()} éteint", "Horaire d'absence — thermostat suspendu.", ntfy_cfg)
+        _suspend_heating(ha_cfg, ntfy_cfg, "🏠", "horaire d'absence")
         return
     if not ha_cfg.get("enabled") or not ha_cfg.get("url") or not ha_cfg.get("token"):
         logger.warning("Thermostat : Home Assistant non configuré, skip")
@@ -561,38 +600,42 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
     if not sensor_ok:
         logger.warning("Thermostat : température intérieure indisponible")
-        state = _handle_sensor_failure(state, email_cfg)
+        max_blind_hours = thermostat_cfg.get("max_on_hours_without_sensor", 3)
+        state = _handle_sensor_failure(state, email_cfg, ntfy_cfg, max_blind_hours)
 
-        # ── Extinction de sécurité si hors plage horaire ──────
+        # ── Extinctions de sécurité sans mesure valide ────────
         if state.get("state") == "on":
-            in_schedule = is_in_schedule(thermostat_cfg)
-            if not in_schedule:
-                active = state.get("active_system", "poele")
-                last_on_str = _get_system_timestamp(state, active, "on")
-                last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
-                on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 9999
-                grace = thermostat_cfg.get("end_of_schedule_grace_minutes", 45)
-                if on_minutes >= grace:
-                    logger.info("Thermostat : extinction sécurité fin de plage (sonde HS) — %s", _system_label(active))
-                    if not _turn_off_active_system(ha_client, ha_cfg, active):
-                        _record_command_failure(state, "extinction " + _system_label(active), ntfy_cfg)
-                        return
-                    new_state = {
-                        **state,
-                        "state": "off",
-                        "active_system": None,
-                    }
-                    _update_system_timestamp(new_state, active, "off")
-                    _save_state(new_state)
-                    ntfy_send(
-                        f"⚠️ {_system_label(active).capitalize()} éteint",
-                        "Extinction sécurité — sonde hors service, fin de plage horaire.",
-                        ntfy_cfg,
-                    )
+            active = state.get("active_system") or "poele"
+            last_on_str = _get_system_timestamp(state, active, "on")
+            last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
+            on_minutes = (datetime.now() - last_on).total_seconds() / 60 if last_on else 9999
+            grace = thermostat_cfg.get("end_of_schedule_grace_minutes", 45)
+            # Marche « à l'aveugle » : depuis le dernier allumage ou le début de la panne (le plus récent)
+            blind_start = max(t for t in (last_on, datetime.fromisoformat(state["sensor_failure_since"])) if t)
+            blind_minutes = (datetime.now() - blind_start).total_seconds() / 60
+
+            reason = None
+            if not is_in_schedule(thermostat_cfg) and on_minutes >= grace:
+                logger.info("Thermostat : extinction sécurité fin de plage (sonde HS) — %s", _system_label(active))
+                reason = "fin de plage horaire"
+            elif max_blind_hours and blind_minutes >= max_blind_hours * 60:
+                logger.warning(
+                    "Thermostat : extinction sécurité %s — %.0f min de marche sans mesure valide (plafond %g h)",
+                    _system_label(active), blind_minutes, max_blind_hours,
+                )
+                reason = f"{max_blind_hours:g} h de marche sans mesure de température"
+            if reason:
+                if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg) is None:
+                    return
+                ntfy_send(
+                    f"⚠️ {_system_label(active).capitalize()} éteint",
+                    f"Extinction sécurité — sonde hors service, {reason}.",
+                    ntfy_cfg,
+                )
         return
 
     # Sonde OK — réinitialise le compteur d'échecs si nécessaire
-    state = _handle_sensor_recovery(state, email_cfg)
+    state = _handle_sensor_recovery(state, email_cfg, ntfy_cfg)
 
     temp = indoor["temperature"]
     humidity = indoor.get("humidity")
@@ -795,12 +838,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                         # Capturer le système actif AVANT de le mettre à None
                         prev_system = active_system
                         logger.info("Thermostat : extinction %s — zone proximité après %dh (grâce écoulée)", _system_label(prev_system), no_ignition_after)
-                        if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
-                            _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                        if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg) is None:
                             return
-                        new_state = {**state, "state": "off", "active_system": None}
-                        _update_system_timestamp(new_state, prev_system, "off")
-                        _save_state(new_state)
                     elif effective_temp < temp_on:
                         state = _maybe_send_no_ignition_notif(
                             state, "nearby_restricted",
@@ -834,12 +873,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     # Capturer le système actif AVANT de le mettre à None
                     prev_system = active_system
                     logger.info("Thermostat : extinction %s — absence confirmée", _system_label(prev_system))
-                    if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
-                        _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                    if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg, off_reason="absence") is None:
                         return
-                    new_state = {**state, "state": "off", "active_system": None, "off_reason": "absence"}
-                    _update_system_timestamp(new_state, prev_system, "off")
-                    _save_state(new_state)
                     ntfy_send(f"🚗 {_system_label(prev_system).capitalize()} éteint", "Tout le monde absent — thermostat en pause.", ntfy_cfg)
                 elif effective_temp < temp_on:
                     state = _maybe_send_no_ignition_notif(
@@ -951,6 +986,24 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 ntfy_cfg,
             )
     else:  # current == "on"
+        # ── Surchauffe : extinction forcée, même avant min_on et hors plage ──
+        overheat_margin = thermostat_cfg.get("overheat_margin", 1.5)
+        if effective_temp >= temp_off + overheat_margin:
+            prev_system = active_system
+            logger.warning(
+                "Thermostat : extinction forcée %s — surchauffe (ressenti %.1f°C >= %.1f°C + %.1f°C, allumé depuis %.0f min)",
+                _system_label(prev_system), effective_temp, temp_off, overheat_margin, on_minutes,
+            )
+            if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg) is None:
+                return
+            ntfy_send(
+                f"🌡️ {_system_label(prev_system).capitalize()} éteint — surchauffe",
+                f"Ressenti {effective_temp:.1f}°C (réel {temp:.1f}°C) ≥ {temp_off}°C + {overheat_margin:g}°C, "
+                f"allumé depuis {int(on_minutes)} min.",
+                ntfy_cfg,
+            )
+            return
+
         if in_schedule:
             # ── Transition : recommandation changée et min_on respecté ──
             if recommendation in ("poele", "clim") and recommendation != active_system and on_minutes >= min_on:
@@ -1071,16 +1124,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : extinction %s — recommandation=%s (allumé depuis %.0f min)",
                     _system_label(prev_system), recommendation, on_minutes,
                 )
-                if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
-                    _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg) is None:
                     return
-                new_state = {
-                    **state,
-                    "state": "off",
-                    "active_system": None,
-                }
-                _update_system_timestamp(new_state, prev_system, "off")
-                _save_state(new_state)
                 ntfy_send(
                     f"⏹ {_system_label(prev_system).capitalize()} éteint",
                     f"Recommandation : aucun chauffage (allumé depuis {int(on_minutes)} min).",
@@ -1096,16 +1141,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : extinction %s (ressenti %.1f°C >= %.1f°C, réel %.1f°C, allumé depuis %.0f min)",
                     _system_label(prev_system), effective_temp, temp_off, temp, on_minutes,
                 )
-                if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
-                    _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg) is None:
                     return
-                new_state = {
-                    **state,
-                    "state": "off",
-                    "active_system": None,
-                }
-                _update_system_timestamp(new_state, prev_system, "off")
-                _save_state(new_state)
                 ntfy_send(
                     f"✅ {_system_label(prev_system).capitalize()} éteint",
                     f"Température atteinte : {effective_temp:.1f}°C (cible {temp_off}°C), allumé depuis {int(on_minutes)} min.",
@@ -1119,14 +1156,6 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : extinction %s fin de plage (allumé depuis %.0f min >= %d min)",
                     _system_label(prev_system), on_minutes, grace,
                 )
-                if not _turn_off_active_system(ha_client, ha_cfg, prev_system):
-                    _record_command_failure(state, "extinction " + _system_label(prev_system), ntfy_cfg)
+                if _turn_off_all(ha_client, ha_cfg, state, ntfy_cfg) is None:
                     return
-                new_state = {
-                    **state,
-                    "state": "off",
-                    "active_system": None,
-                }
-                _update_system_timestamp(new_state, prev_system, "off")
-                _save_state(new_state)
                 ntfy_send(f"🌙 {_system_label(prev_system).capitalize()} éteint", "Fin de plage horaire.", ntfy_cfg)
