@@ -37,6 +37,7 @@
       border-radius: 12px;
       display: none;
       align-items: center;
+      flex-wrap: wrap;
       gap: 0.6rem;
       font-size: 0.92rem;
       font-weight: 500;
@@ -45,6 +46,20 @@
     .countdown-banner-schedule { background: rgba(59,130,246,0.08);  border: 1px solid rgba(59,130,246,0.3);  color: #60a5fa; }
     .countdown-banner-away     { background: rgba(100,116,139,0.10); border: 1px solid rgba(100,116,139,0.3); color: #94a3b8; }
     .countdown-timer { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.02em; }
+    .countdown-resume {
+      margin-left: auto;
+      background: none;
+      border: 1px solid currentColor;
+      color: inherit;
+      border-radius: 8px;
+      padding: 0.3rem 0.8rem;
+      font: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .countdown-resume:hover { background: rgba(251,146,60,0.15); }
+    .countdown-resume:disabled { opacity: 0.6; cursor: wait; }
     .thermostat-on  { background: rgba(251,146,60,0.15);  border: 1px solid #fb923c; color: #fb923c; }
     .thermostat-off { background: rgba(100,116,139,0.15); border: 1px solid #64748b; color: #64748b; }
   </style>
@@ -97,7 +112,8 @@
       const ms = new Date(currentSuspendedUntil).getTime() - now;
       if (ms > 0) {
         banner.className = 'countdown-banner countdown-banner-suspend';
-        banner.innerHTML = '⏸ Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
+        banner.innerHTML = '⏸ Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>'
+          + '<button class="countdown-resume" onclick="resumeThermostat(this)" title="Annuler la suspension : le thermostat reprend la main tout de suite">↺ Réarmer</button>';
         banner.style.display = 'flex';
         return;
       }
@@ -538,7 +554,7 @@
           {% if thermostat_state.suspended_until %}
             <p class="value-sub" style="color:#fb923c">
               ⏸ Suspendu jusqu'à <strong>{{ thermostat_state.suspended_until[:16] | replace("T", " ") }}</strong>
-              <button onclick="resumeThermostat()" style="margin-left:0.5rem;background:none;border:1px solid #fb923c;color:#fb923c;border-radius:6px;padding:0.1rem 0.5rem;cursor:pointer;font-size:0.8rem">Reprendre</button>
+              <button onclick="resumeThermostat(this)" style="margin-left:0.5rem;background:none;border:1px solid #fb923c;color:#fb923c;border-radius:6px;padding:0.1rem 0.5rem;cursor:pointer;font-size:0.8rem">↺ Réarmer</button>
             </p>
           {% endif %}
           {% if config.THERMOSTAT.presence_enabled %}
@@ -814,10 +830,17 @@
     .catch(() => {});
   {% endif %}
 
-  function resumeThermostat() {
+  function resumeThermostat(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Réarmement…'; }
     fetch('/api/thermostat/resume', { method: 'POST' })
       .then(r => r.json())
-      .then(d => { if (d.status === 'ok') location.reload(); });
+      .then(d => {
+        if (d.status === 'ok') {
+          showToast('Thermostat réarmé', 'success');
+          setTimeout(() => location.reload(), 1500);
+        }
+      })
+      .catch(() => { if (btn) { btn.disabled = false; btn.textContent = '↺ Réarmer'; } });
   }
 
   function toggleThermostat() {

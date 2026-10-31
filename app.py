@@ -1208,6 +1208,11 @@ def api_thermostat_resume():
     from modules.thermostat import _save_state
     _save_state(state)
     logger.info("Thermostat : suspension annulée manuellement")
+    # Contrôle immédiat plutôt qu'au prochain passage (jusqu'à 10 min)
+    try:
+        _scheduler.modify_job("thermostat_job", next_run_time=datetime.now(_scheduler.timezone))
+    except Exception:
+        pass
     return jsonify({"status": "ok"})
 
 
