@@ -70,7 +70,7 @@ Météo (météociel.fr / Open-Meteo)
 
 ### 1. Pas de chauffage la nuit
 
-Si `NO_HEATING_AT_NIGHT = True`, aucune recommandation n'est émise pendant les **Heures Creuses** (par défaut 22h–6h). Le thermostat respecte également ses propres plages horaires configurables.
+Le chauffage de nuit est borné par les **plages horaires du thermostat** (ex. 05:45–22:00), pas par la recommandation. `NO_HEATING_AT_NIGHT` n'est volontairement pas transmis au moteur de décision (`build_advisor_config`) : la règle renverrait « aucun chauffage » pendant toutes les Heures Creuses et bloquerait l'allumage de 05:45. Entre 05:45 et 06:00, la comparaison de coûts utilise le tarif réellement en vigueur (HC jusqu'à 06:00, puis HP).
 
 ### 2. Température extérieure ≥ température cible
 
@@ -113,6 +113,14 @@ Le système le moins cher est recommandé.
 | `analyze(weather, tempo, config)` | Point d'entrée pour l'analyse du jour courant. Orchestre les appels ci-dessus et calcule l'estimation journalière (sur les HP uniquement). |
 | `analyze_tomorrow(weather, tempo, config)` | Analyse simplifiée pour J+1 : utilise la température moyenne prévue et la couleur Tempo de demain. Retourne `tempo_unknown: True` si la couleur n'est pas encore publiée. |
 
+### `analysis.py` — Analyse courante et cache
+
+| Fonction | Description |
+|---|---|
+| `build_advisor_config(config)` | Configuration unique du moteur de décision (tarifs, clim, poêle, HP/HC, `TARGET_TEMP`), partagée par le dashboard, le thermostat et l'email du soir. |
+| `DataCache` | Cache des **données externes** (météo, Tempo, prévisions) en *stale-while-revalidate* : périmé après `REFRESH_INTERVAL_MINUTES`, à chaque bascule HP/HC et au changement de jour ; les données périmées restent servies pendant le rafraîchissement en arrière-plan. |
+| `compute_analysis(raw, cfg, now)` | Recalcule la décision à **chaque lecture** à partir des données en cache et de l'heure courante : période HP/HC et tarif toujours justes, sans appel réseau. `timestamp` = heure de récupération des données. |
+
 ### `weather.py` — Météo
 
 | Fonction | Description |
@@ -127,7 +135,8 @@ Le système le moins cher est recommandé.
 |---|---|
 | `get_tempo_info(hp_start, hp_end)` | Retourne la couleur Tempo d'aujourd'hui et de demain, la période courante (HP/HC) et l'heure. Utilise l'API communautaire `api-couleur-tempo.fr` ; une couleur publiée est mémorisée dans `data/tempo_cache.json` (elle ne change plus), ce qui protège d'une panne de l'API dans la journée. Couleur inconnue → `UNKNOWN` (les radiateurs ne sont alors ni éteints ni rallumés). |
 | `is_hp(hour, hp_start, hp_end)` | Retourne `True` si l'heure est en Heure Pleine. |
-| `get_current_period(hp_start, hp_end)` | Retourne `"HP"` ou `"HC"` selon l'heure actuelle. |
+| `get_current_period(hp_start, hp_end, now=None)` | Retourne `"HP"` ou `"HC"` selon l'heure (actuelle par défaut). |
+| `at_time(tempo, hp_start, hp_end, now=None)` | Copie des infos Tempo avec période HP/HC et heure recalculées (sans appel réseau). |
 
 ### `homeassistant.py` — Client Home Assistant
 

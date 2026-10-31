@@ -17,6 +17,7 @@ from modules.crypto import decrypt_password
 from modules.weather import get_tomorrow_weather
 from modules.tempo import get_tempo_info
 from modules.advisor import analyze_tomorrow
+from modules.analysis import build_advisor_config
 from modules.ntfy_push import send as send_ntfy
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -275,15 +276,8 @@ def main() -> bool:
     """Prépare et envoie la notification. Retourne True si succès."""
     logger.info("Préparation de la notification email…")
 
-    cfg_dict = {
-        "TEMPO_PRICES": config.TEMPO_PRICES,
-        "CLIM": config.CLIM,
-        "POELE": config.POELE,
-        "HP_START": config.HP_START,
-        "HP_END": config.HP_END,
-        "TARGET_TEMP": config.TARGET_TEMP,
-        "NO_HEATING_AT_NIGHT": config.NO_HEATING_AT_NIGHT,
-    }
+    # Même configuration que le dashboard et le thermostat
+    cfg_dict = build_advisor_config(config)
 
     tomorrow_weather = get_tomorrow_weather({
         **config.LOCATION,
