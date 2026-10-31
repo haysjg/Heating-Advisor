@@ -32,6 +32,7 @@ data/
   thermostat_state.json  # État persisté du thermostat automatique
   tempo_cache.json       # Couleurs Tempo publiées, par date (30 jours)
   *.bak                  # Version précédente de chaque fichier JSON (restaurée si le fichier est illisible)
+  backups/AAAA-MM-JJ/    # Sauvegarde nocturne locale de data/ (7 jours)
 modules/
   advisor.py             # Moteur de décision (comparaison des coûts)
   weather.py             # Récupération météo (météociel.fr + Open-Meteo)
@@ -569,3 +570,11 @@ python app.py
 ```
 
 Le répertoire `data/` est monté en volume Docker — la configuration, l'historique et l'état du thermostat sont **persistés entre les redémarrages**.
+
+### Sauvegardes
+
+Chaque nuit à 3h30, `modules/backup.py` copie le contenu de `data/` dans `data/backups/AAAA-MM-JJ/` : les bases SQLite via `sqlite3.Connection.backup()` (copie cohérente à chaud), les fichiers JSON et les clés (`secret.key`, `.secret_key`) tels quels. Dossiers en `0700`, fichiers en `0600`. Les sauvegardes de 7 jours et plus sont supprimées ; le résultat est journalisé (`Sauvegarde data/ → …`).
+
+Pour restaurer : arrêter le conteneur, recopier les fichiers voulus de `data/backups/AAAA-MM-JJ/` vers `data/` (supprimer d'éventuels `history.db-wal` / `history.db-shm`), relancer.
+
+> ⚠️ Ces copies sont sur le même disque que l'original : elles protègent d'une corruption ou d'une erreur de manipulation, **pas d'une panne du NAS**. Inclure `/volume1/docker/heating-advisor/data` dans une tâche **Hyper Backup** (vers un disque USB ou un stockage distant).

@@ -32,6 +32,7 @@ import modules.presence_watch as presence_watch
 from modules.stock import compute_stock_stats
 import modules.imap_client as imap_client
 import modules.electricity as electricity_module
+import modules.backup as backup_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -211,6 +212,12 @@ def api_change_password():
         return jsonify({"error": str(e)}), 500
     return jsonify({"status": "ok"})
 
+
+# ── Base SQLite : migrations appliquées une seule fois, avant le démarrage des jobs ──
+try:
+    history_module.init_db()
+except Exception as e:
+    logger.error("Migration de la base échouée : %s", e)
 
 # ── Scheduler de notification ─────────────────────────────────
 
@@ -522,6 +529,21 @@ _scheduler.add_job(
     misfire_grace_time=300,
 )
 logger.info("Historique : enregistrement toutes les 10 min, agrégation mensuelle à 2h30")
+
+
+# Sauvegarde locale nocturne de data/ (rotation 7 jours) à 3h30, après agrégation et purges
+def _run_backup():
+    try:
+        backup_module.run()
+    except Exception as e:
+        logger.error("Sauvegarde nocturne échouée : %s", e)
+
+_scheduler.add_job(
+    _run_backup,
+    CronTrigger(hour=3, minute=30, timezone="Europe/Paris"),
+    id="backup_job",
+    misfire_grace_time=3600,
+)
 
 # Cache simple en mémoire pour éviter de surcharger les APIs
 _cache: dict = {"data": None, "expires_at": None}

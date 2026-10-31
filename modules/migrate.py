@@ -174,6 +174,14 @@ def _migrate_006(conn):
     """)
 
 
+def _migrate_007(conn):
+    """Index sur readings(ts) et diagnose_log(ts) : toutes les lectures filtrent ou purgent par date."""
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings(ts);
+        CREATE INDEX IF NOT EXISTS idx_diagnose_log_ts ON diagnose_log(ts);
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -182,6 +190,7 @@ MIGRATIONS = [
     _migrate_004,
     _migrate_005,
     _migrate_006,
+    _migrate_007,
 ]
 
 
