@@ -3,6 +3,7 @@ Application Flask – Conseiller Chauffage
 Déployable via Docker sur NAS Synology
 """
 
+import hashlib
 import hmac
 import logging
 import os
@@ -163,12 +164,24 @@ def _check_password(password: str) -> bool:
     return check_password_hash(stored, password)
 
 
+def _auth_fingerprint() -> str:
+    """Empreinte des identifiants courants, gardée dans la session.
+
+    Elle change avec le mot de passe ou « Déconnecter tous les appareils » : les cookies de
+    session émis avant ne correspondent plus et sont rejetés.
+    """
+    material = f"{config.AUTH.get('password_hash', '')}|{config.AUTH.get('session_epoch', '')}"
+    return hashlib.sha256(material.encode()).hexdigest()[:16]
+
+
 @app.before_request
 def require_login():
     if request.path.startswith("/static"):
         return
     if request.endpoint in ("login", "logout"):
         return
+    if session.get("authenticated") and not hmac.compare_digest(session.get("auth_fp", ""), _auth_fingerprint()):
+        session.clear()  # session antérieure à un changement de mot de passe ou à « Déconnecter tous les appareils »
     # Mot de passe par défaut : il doit être changé avant toute autre action
     if session.get("must_change_password"):
         if not _uses_default_password():
@@ -197,6 +210,7 @@ def login():
         if _check_password(password):
             session.permanent = True
             session["authenticated"] = True
+            session["auth_fp"] = _auth_fingerprint()
             if _uses_default_password():
                 session["must_change_password"] = True
                 logger.warning("Connexion avec le mot de passe par défaut — changement exigé")
@@ -235,9 +249,21 @@ def api_change_password():
         _patch_override(lambda d: d.setdefault("AUTH", {}).__setitem__("password_hash", new_hash))
         config.AUTH["password_hash"] = new_hash
         session.pop("must_change_password", None)
-        logger.info("Mot de passe modifié")
+        session["auth_fp"] = _auth_fingerprint()  # cette session reste connectée, les autres non
+        logger.info("Mot de passe modifié — autres sessions déconnectées")
     except Exception as e:
         return _internal_error(e)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/auth/logout-all", methods=["POST"])
+def api_logout_all():
+    """Déconnecte tous les appareils sauf celui qui fait la demande."""
+    epoch = _secrets.token_hex(8)
+    _patch_override(lambda d: d.setdefault("AUTH", {}).__setitem__("session_epoch", epoch))
+    config.AUTH["session_epoch"] = epoch
+    session["auth_fp"] = _auth_fingerprint()
+    logger.info("Toutes les autres sessions ont été déconnectées")
     return jsonify({"status": "ok"})
 
 
