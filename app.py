@@ -1424,9 +1424,41 @@ def config_page():
     return render_template("config.html", config=config, purchase=purchase)
 
 
+def _secret_rebind_error(data: dict) -> str | None:
+    """Refuse de réutiliser un secret enregistré pour un hôte qui a changé.
+
+    Un champ secret laissé vide conserve le secret existant : si l'hôte change en même temps,
+    ce secret partirait vers le nouvel hôte. On exige alors qu'il soit ressaisi.
+    """
+    def _norm(value) -> str:
+        return str(value or "").strip().rstrip("/").lower()
+
+    services = (
+        ("ha_url", config.HOME_ASSISTANT, "url", "ha_token", "token",
+         "L'URL Home Assistant a changé : ressaisissez le token d'accès"),
+        ("ntfy_url", config.NTFY, "url", "ntfy_token", "token",
+         "L'URL du serveur ntfy a changé : ressaisissez le token d'accès"),
+        ("smtp_host", config.EMAIL, "smtp_host", "app_password", "app_password",
+         "Le serveur SMTP a changé : ressaisissez le mot de passe d'application"),
+        ("imap_host", config.ELECTRICITY, "imap_host", "imap_password", "imap_password",
+         "Le serveur IMAP a changé : ressaisissez le mot de passe IMAP"),
+    )
+    for host_field, section, host_key, secret_field, secret_key, message in services:
+        if host_field not in data or not section.get(secret_key):
+            continue
+        if str(data.get(secret_field, "")).strip():
+            continue
+        if _norm(data[host_field]) != _norm(section.get(host_key)):
+            return f"{message} (le secret enregistré n'est jamais envoyé à un nouveau serveur)"
+    return None
+
+
 @app.route("/api/config", methods=["POST"])
 def api_config_save():
     data = request.get_json(force=True)
+    rebind_error = _secret_rebind_error(data)
+    if rebind_error:
+        return jsonify({"error": rebind_error}), 400
     try:
         nb_sacs = float(data.get("nb_sacs", 1))
         prix = float(data.get("prix_livraison", 0))
