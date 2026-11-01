@@ -622,70 +622,194 @@
     <section class="card card-labeled">
       <div class="tomorrow-label">DEMAIN</div>
       <h3>📈 Prévision températures — demain <small>(Open-Meteo)</small></h3>
-      <div style="position:relative;height:180px">
+      <div class="temp-chart-meta" id="tempChartMeta" hidden>
+        <span class="temp-chart-day" id="tempChartDay"></span>
+        <span class="temp-chip temp-chip-min" id="tempChipMin"></span>
+        <span class="temp-chip temp-chip-max" id="tempChipMax"></span>
+        <span class="temp-chip temp-chip-hc">heures creuses</span>
+      </div>
+      <div class="temp-chart-canvas">
         <canvas id="tempChart"></canvas>
       </div>
     </section>
     <script>
     (function() {
       const allForecast = {{ data.hourly_forecast | tojson }};
+      const target  = {{ config.TARGET_TEMP }};
+      const hpStart = {{ config.HP_START }};
+      const hpEnd   = {{ config.HP_END }};
 
-      // Filtrer uniquement les heures de demain
+      // Date locale de demain (pas toISOString : décalage UTC après minuit)
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+      const pad = n => String(n).padStart(2, '0');
+      const tomorrowStr = tomorrow.getFullYear() + '-' + pad(tomorrow.getMonth() + 1) + '-' + pad(tomorrow.getDate());
       const forecast = allForecast.filter(d => d.time.startsWith(tomorrowStr));
+      if (forecast.length < 2) return;
 
-      const tomorrowLabel = tomorrow.toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long'});
-      const labels = forecast.map(d => new Date(d.time).getHours() + 'h');
-      const temps  = forecast.map(d => d.temp);
-      const target = {{ config.TARGET_TEMP }};
+      const hours = forecast.map(d => parseInt(d.time.slice(11, 13), 10));
+      const temps = forecast.map(d => d.temp);
+      const fmtT  = v => v.toLocaleString('fr-FR', {maximumFractionDigits: 1}) + '°';
+      const iMin  = temps.indexOf(Math.min(...temps));
+      const iMax  = temps.indexOf(Math.max(...temps));
+
+      document.getElementById('tempChartDay').textContent =
+        tomorrow.toLocaleDateString('fr-FR', {weekday: 'long', day: 'numeric', month: 'long'});
+      document.getElementById('tempChipMin').textContent = '❄ min ' + fmtT(temps[iMin]) + ' à ' + hours[iMin] + 'h';
+      document.getElementById('tempChipMax').textContent = '☀ max ' + fmtT(temps[iMax]) + ' à ' + hours[iMax] + 'h';
+      document.getElementById('tempChartMeta').hidden = false;
+
+      // Dégradé « thermique » calé sur l'axe Y : froid = bleu, doux = violet, chaud = orange
+      function thermalGradient(chart, alphaTop, alphaBottom) {
+        const {ctx, chartArea: area, scales: {y}} = chart;
+        if (!area) return null;
+        const g = ctx.createLinearGradient(0, area.bottom, 0, area.top);
+        const stops = [[0, '56,189,248'], [10, '129,140,248'], [16, '192,132,252'], [22, '249,115,22']];
+        const span = y.max - y.min || 1;
+        stops.forEach(([t, rgb]) => {
+          const pos = Math.min(1, Math.max(0, (t - y.min) / span));
+          const a = alphaBottom + (alphaTop - alphaBottom) * pos;
+          g.addColorStop(pos, 'rgba(' + rgb + ',' + a + ')');
+        });
+        return g;
+      }
+
+      // Bandes heures creuses, halo de la courbe, étiquettes min/max/cible, réticule au survol
+      const decor = {
+        id: 'tempDecor',
+        beforeDatasetsDraw(chart) {
+          const {ctx, chartArea: a, scales: {x}} = chart;
+          const step = (x.getPixelForValue(1) - x.getPixelForValue(0)) / 2;
+          ctx.save();
+          ctx.fillStyle = 'rgba(136,146,164,0.07)';
+          hours.forEach((h, i) => {
+            if (h >= hpStart && h < hpEnd) return;
+            const cx = x.getPixelForValue(i);
+            const left = Math.max(a.left, cx - step), right = Math.min(a.right, cx + step);
+            ctx.fillRect(left, a.top, right - left, a.bottom - a.top);
+          });
+          ctx.restore();
+        },
+        beforeDatasetDraw(chart, args) {
+          if (args.index !== 0) return;
+          const c = chart.ctx;
+          c.save();
+          c.shadowColor = 'rgba(129,140,248,0.6)';
+          c.shadowBlur = 14;
+          c.shadowOffsetY = 4;
+        },
+        afterDatasetDraw(chart, args) {
+          if (args.index === 0) chart.ctx.restore();
+        },
+        afterDatasetsDraw(chart) {
+          const {ctx, chartArea: a, scales: {x, y}} = chart;
+          ctx.save();
+          ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          ctx.textAlign = 'center';
+          [[iMax, -12, '#fdba74'], [iMin, 18, '#7dd3fc']].forEach(([i, dy, color]) => {
+            ctx.fillStyle = color;
+            ctx.fillText(fmtT(temps[i]), x.getPixelForValue(i), y.getPixelForValue(temps[i]) + dy);
+          });
+          ctx.textAlign = 'right';
+          ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          ctx.fillStyle = 'rgba(248,113,113,0.85)';
+          ctx.fillText('cible ' + fmtT(target), a.right - 2, y.getPixelForValue(target) - 5);
+
+          const active = chart.tooltip && chart.tooltip.getActiveElements();
+          if (active && active.length) {
+            const px = active[0].element.x;
+            ctx.strokeStyle = 'rgba(226,232,240,0.25)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(px, a.top);
+            ctx.lineTo(px, a.bottom);
+            ctx.stroke();
+          }
+          ctx.restore();
+        },
+      };
+
+      const lo = Math.min(...temps, target), hi = Math.max(...temps, target);
+      const pad2 = Math.max(1.5, (hi - lo) * 0.18);
 
       new Chart(document.getElementById('tempChart'), {
         type: 'line',
         data: {
-          labels,
+          labels: hours.map(h => h + 'h'),
           datasets: [
             {
-              label: 'Température (°C)',
+              label: 'Température',
               data: temps,
-              borderColor: '#3b82f6',
-              backgroundColor: 'rgba(59,130,246,0.08)',
-              borderWidth: 2,
-              pointRadius: 0,
-              tension: 0.3,
-              fill: true,
+              borderWidth: 3,
+              tension: 0.4,
+              fill: 'start',
+              borderColor: ctx => thermalGradient(ctx.chart, 1, 1) || '#818cf8',
+              backgroundColor: ctx => thermalGradient(ctx.chart, 0.32, 0) || 'rgba(129,140,248,0.1)',
+              pointRadius: ctx => (ctx.dataIndex === iMin || ctx.dataIndex === iMax) ? 4.5 : 0,
+              pointBackgroundColor: ctx => ctx.dataIndex === iMax ? '#f97316' : '#38bdf8',
+              pointBorderColor: '#1a1d27',
+              pointBorderWidth: 2,
+              pointHoverRadius: 6,
+              pointHoverBorderWidth: 2,
+              pointHoverBorderColor: '#e2e8f0',
+              pointHoverBackgroundColor: '#818cf8',
             },
             {
-              label: 'Cible ' + target + '°C',
-              data: Array(temps.length).fill(target),
-              borderColor: 'rgba(239,68,68,0.4)',
+              label: 'Cible',
+              data: temps.map(() => target),
+              borderColor: 'rgba(248,113,113,0.5)',
               borderWidth: 1,
-              borderDash: [6, 4],
+              borderDash: [6, 5],
               pointRadius: 0,
+              pointHoverRadius: 0,
               fill: false,
-            }
-          ]
+            },
+          ],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          layout: { padding: { top: 18, right: 4 } },
+          interaction: { mode: 'index', intersect: false },
+          animation: { duration: 1000, easing: 'easeOutQuart' },
           plugins: {
-            legend: { labels: { color: '#8892a4', boxWidth: 12, font: { size: 11 } } },
-            title: { display: true, text: tomorrowLabel, color: '#8892a4', font: { size: 11 }, padding: { bottom: 8 } },
+            legend: { display: false },
+            tooltip: {
+              filter: item => item.datasetIndex === 0,
+              displayColors: false,
+              backgroundColor: 'rgba(15,17,23,0.92)',
+              borderColor: 'rgba(129,140,248,0.45)',
+              borderWidth: 1,
+              titleColor: '#8892a4',
+              bodyColor: '#e2e8f0',
+              bodyFont: { size: 13, weight: '600' },
+              callbacks: {
+                title: items => items[0].label + (hours[items[0].dataIndex] >= hpStart && hours[items[0].dataIndex] < hpEnd ? ' · heure pleine' : ' · heure creuse'),
+                label: item => {
+                  const d = item.parsed.y - target;
+                  return fmtT(item.parsed.y) + '  (' + (d >= 0 ? '+' : '') + d.toLocaleString('fr-FR', {maximumFractionDigits: 1}) + '° vs cible)';
+                },
+              },
+            },
           },
           scales: {
             x: {
-              ticks: { color: '#8892a4', maxTicksLimit: 12, font: { size: 10 } },
-              grid:  { color: 'rgba(255,255,255,0.05)' }
+              grid: { display: false },
+              border: { display: false },
+              ticks: { color: '#8892a4', font: { size: 10 }, maxRotation: 0, autoSkip: false,
+                       callback: (v, i) => hours[i] % 3 === 0 ? hours[i] + 'h' : '' },
             },
             y: {
-              ticks: { color: '#8892a4', font: { size: 11 },
-                       callback: v => v + '°C' },
-              grid:  { color: 'rgba(255,255,255,0.05)' }
-            }
-          }
-        }
+              min: Math.floor(lo - pad2),
+              max: Math.ceil(hi + pad2),
+              border: { display: false },
+              grid: { color: 'rgba(255,255,255,0.04)' },
+              ticks: { color: '#8892a4', font: { size: 10 }, stepSize: 5, callback: v => v % 5 === 0 ? v + '°' : '' },
+            },
+          },
+        },
+        plugins: [decor],
       });
     })();
     </script>

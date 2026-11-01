@@ -762,3 +762,29 @@ main {
 @media (max-width: 600px) {
   .elec-layout { flex-direction: column; gap: 0.75rem; }
 }
+
+/* ── Graphe prévision températures ────────────────────────── */
+.temp-chart-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 0.6rem;
+}
+.temp-chart-day {
+  color: var(--text-sub);
+  font-size: 0.8rem;
+  margin-right: auto;
+}
+.temp-chart-day::first-letter { text-transform: uppercase; }
+.temp-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.temp-chip-min { color: #7dd3fc; background: rgba(56,189,248,0.1);  border-color: rgba(56,189,248,0.25); }
+.temp-chip-max { color: #fdba74; background: rgba(249,115,22,0.1);  border-color: rgba(249,115,22,0.25); }
+.temp-chip-hc  { color: var(--text-sub); background: rgba(136,146,164,0.1); border-color: rgba(136,146,164,0.2); font-weight: 500; }
+.temp-chart-canvas { position: relative; height: 200px; }
