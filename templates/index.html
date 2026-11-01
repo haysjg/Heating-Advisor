@@ -767,7 +767,7 @@
           <span class="source-badge source-real" id="electricity-delta"></span>
         </div>
         <a class="elec-trend" id="electricity-trend" href="/electricity" title="Voir l'historique complet" style="display:none">
-          <span class="elec-trend-caption" id="electricity-trend-caption">2 derniers mois</span>
+          <span class="elec-trend-caption" id="electricity-trend-caption">12 derniers mois</span>
           <div class="elec-trend-canvas"><canvas id="electricityTrendChart"></canvas></div>
         </a>
       </div>
@@ -847,12 +847,12 @@
     })
     .catch(() => {});
 
-  // Mini-graphe : évolution hebdomadaire sur les 2 derniers mois (~9 semaines)
-  fetch('/api/electricity/history?weeks=9')
+  // Mini-graphe : évolution hebdomadaire sur les 12 derniers mois (~53 semaines)
+  fetch('/api/electricity/history?weeks=53')
     .then(r => r.json())
     .then(rows => {
       const since = new Date();
-      since.setMonth(since.getMonth() - 2);
+      since.setMonth(since.getMonth() - 12);
       const sinceStr = since.toISOString().slice(0, 10);
       // period_start absent si le mail a été transféré : repli sur la date de réception
       const pts = rows
@@ -861,14 +861,15 @@
         .sort((a, b) => a.day.localeCompare(b.day));
       if (pts.length < 2) return;
 
-      const fmtDay = iso => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', {day: 'numeric', month: 'short'});
+      const fmtDay = iso => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', {day: 'numeric', month: 'short', year: 'numeric'});
+      const fmtMonth = iso => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', {month: 'short', year: 'numeric'});
       const fmtKwh = v => v.toLocaleString('fr-FR', {maximumFractionDigits: 1}) + ' kWh';
       const values = pts.map(r => r.kwh);
       const avg = values.reduce((a, b) => a + b, 0) / values.length;
       const last = values.length - 1;
 
       document.getElementById('electricity-trend-caption').textContent =
-        '2 derniers mois · moy. ' + fmtKwh(avg) + '/sem.';
+        '12 derniers mois · moy. ' + fmtKwh(avg) + '/sem.';
       document.getElementById('electricity-trend').style.display = '';
 
       const canvas = document.getElementById('electricityTrendChart');
@@ -959,10 +960,10 @@
               border: { display: false },
               ticks: {
                 color: '#8892a4', font: { size: 10 }, maxRotation: 0, autoSkip: false,
-                callback: (v, i) => (i === 0 || i === last) ? fmtDay(pts[i].day) : '',
+                callback: (v, i) => (i === 0 || i === last) ? fmtMonth(pts[i].day) : '',
               },
             },
-            y: { display: false, grace: '15%' },
+            y: { display: false, grace: '5%' },
           },
         },
         plugins: [glow],

@@ -403,7 +403,7 @@ Optionnelle, activée depuis `/config` → **🛡️ Double authentification** :
 
 Historise automatiquement la consommation électrique hebdomadaire à partir des emails "flash élec" envoyés par **[Lite](https://lite.eco)** (`bonjour@lite.eco`).
 
-Sur le tableau de bord, la carte **⚡ Consommation électrique** affiche le dernier relevé hebdomadaire et, à droite, un mini-graphe de l'évolution sur les 2 derniers mois (moyenne en pointillés, clic → `/electricity`).
+Sur le tableau de bord, la carte **⚡ Consommation électrique** affiche le dernier relevé hebdomadaire et, à droite, un mini-graphe de l'évolution sur les 12 derniers mois (moyenne en pointillés, clic → `/electricity`).
 
 Le compte Gmail personnel utilisé au quotidien est protégé par la **Protection avancée Google (APP)**, qui bloque tout accès OAuth aux scopes sensibles (dont `gmail.readonly`) pour les apps non vérifiées par Google — y compris ses propres apps OAuth en mode Test, sans possibilité de "continuer quand même". La vérification complète (CASA + domaine + politique de confidentialité) est disproportionnée pour un usage strictement personnel. La solution retenue : un **filtre Gmail transfère les mails Lite vers une boîte tierce** (ex. adresse FAI, non soumise à la Protection avancée), consultée en **IMAP standard** — sans OAuth, sans dépendance externe.
 

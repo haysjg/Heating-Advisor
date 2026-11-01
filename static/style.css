@@ -758,7 +758,7 @@ main {
   text-align: right;
   letter-spacing: 0.02em;
 }
-.elec-trend-canvas { position: relative; height: 90px; }
+.elec-trend-canvas { position: relative; height: 110px; }
 @media (max-width: 600px) {
   .elec-layout { flex-direction: column; gap: 0.75rem; }
 }
