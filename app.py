@@ -10,6 +10,7 @@ import os
 import secrets as _secrets
 from datetime import date, datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_limiter import Limiter
@@ -22,7 +23,8 @@ from modules.weather import get_current_temperature, get_tomorrow_weather, get_h
 from modules.tempo import get_tempo_info
 from modules.analysis import DataCache, build_advisor_config, compute_analysis, tariff_slot
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
-from modules.crypto import encrypt_password
+from modules.crypto import decrypt_password, encrypt_password
+from modules import mfa
 import modules.homeassistant as ha_client
 from modules import jsonstore
 import modules.thermostat as thermostat_module
@@ -170,15 +172,99 @@ def _auth_fingerprint() -> str:
     Elle change avec le mot de passe ou « Déconnecter tous les appareils » : les cookies de
     session émis avant ne correspondent plus et sont rejetés.
     """
-    material = f"{config.AUTH.get('password_hash', '')}|{config.AUTH.get('session_epoch', '')}"
+    material = (f"{config.AUTH.get('password_hash', '')}|{config.AUTH.get('session_epoch', '')}"
+                f"|{config.AUTH.get('totp_secret', '')}")
     return hashlib.sha256(material.encode()).hexdigest()[:16]
+
+
+# ── Double authentification (TOTP) ───────────────────────────
+# Après le mot de passe, la session est seulement « en attente MFA » : elle ne devient
+# authentifiée qu'avec un code TOTP ou un code de secours. Un appareil de confiance garde
+# un cookie signé qui dispense du code pendant TRUSTED_DEVICE_DAYS ; il porte l'empreinte
+# des identifiants, donc changer le mot de passe, la MFA ou « Déconnecter tous les
+# appareils » révoque tous les appareils de confiance.
+
+TRUSTED_DEVICE_COOKIE = "trusted_device"
+TRUSTED_DEVICE_DAYS = 30
+MFA_PENDING_MINUTES = 5
+_trust_serializer = URLSafeTimedSerializer(app.secret_key, salt="mfa-trusted-device")
+
+
+def _mfa_enabled() -> bool:
+    return bool(config.AUTH.get("totp_secret"))
+
+
+def _set_auth(**values) -> None:
+    """Enregistre des clés AUTH dans config_override.json et en mémoire (None = suppression)."""
+    def _apply(d):
+        auth = d.setdefault("AUTH", {})
+        for key, value in values.items():
+            if value is None:
+                auth.pop(key, None)
+            else:
+                auth[key] = value
+    _patch_override(_apply)
+    for key, value in values.items():
+        if value is None:
+            config.AUTH.pop(key, None)
+        else:
+            config.AUTH[key] = value
+
+
+def _check_mfa_code(code: str) -> str | None:
+    """Vérifie un code TOTP ou de secours (et le consomme). Renvoie "totp", "recovery" ou None."""
+    if mfa.is_totp_format(code):
+        secret = decrypt_password(config.AUTH.get("totp_secret", ""))
+        step = mfa.verify_totp(secret, code, int(config.AUTH.get("totp_last_step") or 0))
+        if step is None:
+            return None
+        _set_auth(totp_last_step=step)
+        return "totp"
+    remaining = mfa.consume_recovery_code(config.AUTH.get("recovery_codes", []), code)
+    if remaining is None:
+        return None
+    _set_auth(recovery_codes=remaining)
+    logger.warning("Code de secours MFA utilisé — %d restant(s)", len(remaining))
+    return "recovery"
+
+
+def _is_trusted_device() -> bool:
+    token = request.cookies.get(TRUSTED_DEVICE_COOKIE)
+    if not token:
+        return False
+    try:
+        data = _trust_serializer.loads(token, max_age=TRUSTED_DEVICE_DAYS * 86400)
+    except BadSignature:
+        return False
+    return isinstance(data, dict) and hmac.compare_digest(str(data.get("fp", "")), _auth_fingerprint())
+
+
+def _remember_device(resp) -> None:
+    token = _trust_serializer.dumps({"fp": _auth_fingerprint(), "id": _secrets.token_hex(8)})
+    resp.set_cookie(TRUSTED_DEVICE_COOKIE, token, max_age=TRUSTED_DEVICE_DAYS * 86400,
+                    httponly=True, samesite="Lax", secure=request.is_secure)
+
+
+def _safe_next(next_url: str | None) -> str:
+    next_url = next_url or "/"
+    # "//hote" ou "/\\hote" seraient interprétés comme une autre origine
+    if not next_url.startswith("/") or next_url.startswith(("//", "/\\")):
+        return "/"
+    return next_url
+
+
+def _start_session() -> None:
+    session.clear()
+    session.permanent = True
+    session["authenticated"] = True
+    session["auth_fp"] = _auth_fingerprint()
 
 
 @app.before_request
 def require_login():
     if request.path.startswith("/static"):
         return
-    if request.endpoint in ("login", "logout"):
+    if request.endpoint in ("login", "login_mfa", "logout"):
         return
     if session.get("authenticated") and not hmac.compare_digest(session.get("auth_fp", ""), _auth_fingerprint()):
         session.clear()  # session antérieure à un changement de mot de passe ou à « Déconnecter tous les appareils »
@@ -208,20 +294,46 @@ def login():
     if request.method == "POST":
         password = request.form.get("password", "")
         if _check_password(password):
-            session.permanent = True
-            session["authenticated"] = True
-            session["auth_fp"] = _auth_fingerprint()
+            next_url = _safe_next(request.args.get("next"))
             if _uses_default_password():
+                _start_session()
                 session["must_change_password"] = True
                 logger.warning("Connexion avec le mot de passe par défaut — changement exigé")
                 return redirect(url_for("change_password_page"))
-            next_url = request.args.get("next") or "/"
-            if not next_url.startswith("/"):
-                next_url = "/"
+            if _mfa_enabled() and not _is_trusted_device():
+                session.clear()
+                session["mfa_pending_fp"] = _auth_fingerprint()
+                session["mfa_pending_until"] = (datetime.now() + timedelta(minutes=MFA_PENDING_MINUTES)).timestamp()
+                session["mfa_next"] = next_url
+                return redirect(url_for("login_mfa"))
+            _start_session()
             return redirect(next_url)
         error = "Mot de passe incorrect"
         logger.warning("Tentative de connexion échouée depuis %s", request.remote_addr)
     return render_template("login.html", error=error)
+
+
+@app.route("/login/code", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
+def login_mfa():
+    pending_fp = session.get("mfa_pending_fp", "")
+    if (not pending_fp or not hmac.compare_digest(pending_fp, _auth_fingerprint())
+            or datetime.now().timestamp() > session.get("mfa_pending_until", 0)):
+        session.clear()
+        return redirect(url_for("login"))
+    error = None
+    if request.method == "POST":
+        method = _check_mfa_code(request.form.get("code", ""))
+        if method:
+            next_url = _safe_next(session.get("mfa_next"))
+            _start_session()
+            resp = redirect(next_url)
+            if request.form.get("remember"):
+                _remember_device(resp)
+            return resp
+        error = "Code incorrect ou déjà utilisé"
+        logger.warning("Code MFA refusé depuis %s", request.remote_addr)
+    return render_template("login_mfa.html", error=error, remember_days=TRUSTED_DEVICE_DAYS)
 
 
 @app.route("/logout")
@@ -265,6 +377,97 @@ def api_logout_all():
     session["auth_fp"] = _auth_fingerprint()
     logger.info("Toutes les autres sessions ont été déconnectées")
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/auth/mfa")
+def api_mfa_status():
+    return jsonify({
+        "enabled": _mfa_enabled(),
+        "recovery_remaining": len(config.AUTH.get("recovery_codes", [])) if _mfa_enabled() else 0,
+        "trusted_device": _is_trusted_device(),
+    })
+
+
+@app.route("/api/auth/mfa/setup", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_mfa_setup():
+    """Étape 1 : nouveau secret (pas encore actif), à scanner puis confirmer par un code."""
+    if _mfa_enabled():
+        return jsonify({"error": "Désactivez d'abord la double authentification en place"}), 400
+    data = request.get_json(force=True)
+    if not _check_password(data.get("password", "")):
+        return jsonify({"error": "Mot de passe incorrect"}), 403
+    secret = mfa.generate_secret()
+    session["mfa_setup_secret"] = encrypt_password(secret)
+    uri = mfa.provisioning_uri(secret)
+    return jsonify({"secret": secret, "qr_svg": mfa.qr_svg(uri)})
+
+
+@app.route("/api/auth/mfa/enable", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_mfa_enable():
+    """Étape 2 : le code prouve que l'application est bien configurée ; la MFA devient active."""
+    data = request.get_json(force=True)
+    pending = session.get("mfa_setup_secret")
+    if not pending:
+        return jsonify({"error": "Recommencez l'activation"}), 400
+    step = mfa.verify_totp(decrypt_password(pending), data.get("code", ""))
+    if step is None:
+        return jsonify({"error": "Code incorrect — vérifiez l'heure du téléphone"}), 400
+    codes, hashes = mfa.generate_recovery_codes()
+    try:
+        _set_auth(totp_secret=pending, totp_last_step=step, recovery_codes=hashes)
+    except Exception as e:
+        return _internal_error(e)
+    session.pop("mfa_setup_secret", None)
+    session["auth_fp"] = _auth_fingerprint()  # cette session reste connectée, les autres non
+    logger.info("Double authentification activée — autres sessions déconnectées")
+    return jsonify({"status": "ok", "recovery_codes": codes})
+
+
+def _reauth_mfa_error(data: dict):
+    """Désactiver la MFA ou refaire les codes de secours exige mot de passe + code."""
+    if not _check_password(data.get("password", "")):
+        return jsonify({"error": "Mot de passe incorrect"}), 403
+    if not _check_mfa_code(data.get("code", "")):
+        return jsonify({"error": "Code incorrect ou déjà utilisé"}), 403
+    return None
+
+
+@app.route("/api/auth/mfa/disable", methods=["POST"])
+@limiter.limit("5 per minute")
+def api_mfa_disable():
+    if not _mfa_enabled():
+        return jsonify({"status": "ok"})
+    data = request.get_json(force=True)
+    error = _reauth_mfa_error(data)
+    if error:
+        return error
+    try:
+        _set_auth(totp_secret=None, totp_last_step=None, recovery_codes=None)
+    except Exception as e:
+        return _internal_error(e)
+    session["auth_fp"] = _auth_fingerprint()
+    logger.warning("Double authentification désactivée")
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/auth/mfa/recovery-codes", methods=["POST"])
+@limiter.limit("5 per minute")
+def api_mfa_recovery_codes():
+    if not _mfa_enabled():
+        return jsonify({"error": "Double authentification inactive"}), 400
+    data = request.get_json(force=True)
+    error = _reauth_mfa_error(data)
+    if error:
+        return error
+    codes, hashes = mfa.generate_recovery_codes()
+    try:
+        _set_auth(recovery_codes=hashes)
+    except Exception as e:
+        return _internal_error(e)
+    logger.info("Codes de secours MFA régénérés")
+    return jsonify({"status": "ok", "recovery_codes": codes})
 
 
 # ── Base SQLite : migrations appliquées une seule fois, avant le démarrage des jobs ──

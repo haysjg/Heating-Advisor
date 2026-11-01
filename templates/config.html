@@ -872,6 +872,64 @@
       </div>
     </div>
 
+  {# ── Double authentification ── #}
+    <div class="card form-section" id="mfa-card">
+      <h3>🛡️ Double authentification (TOTP)</h3>
+      <p class="hint" id="mfa-status">Chargement…</p>
+
+      <div id="mfa-off" hidden>
+        <span class="hint">Après le mot de passe, un code à 6 chiffres de Google Authenticator (ou Aegis, Bitwarden…) sera demandé.</span>
+        <div class="form-grid" style="margin-top:0.75rem">
+          <div class="form-group">
+            <label>Mot de passe actuel</label>
+            <input type="password" id="mfa_setup_pwd" autocomplete="current-password">
+          </div>
+        </div>
+        <div style="margin-top:1rem">
+          <button type="button" class="btn-back" onclick="mfaSetup()">🛡️ Activer</button>
+        </div>
+      </div>
+
+      <div id="mfa-enroll" hidden>
+        <span class="hint">1. Scannez ce QR code avec l'application d'authentification.</span>
+        <div id="mfa-qr" style="margin:0.75rem 0;line-height:0"></div>
+        <span class="hint">Ou saisissez la clé à la main : <code id="mfa-secret" style="user-select:all;word-break:break-all"></code></span>
+        <div class="form-grid" style="margin-top:0.75rem">
+          <div class="form-group">
+            <label>2. Code affiché par l'application</label>
+            <input type="text" id="mfa_enroll_code" inputmode="numeric" autocomplete="one-time-code" maxlength="7">
+          </div>
+        </div>
+        <div style="margin-top:1rem">
+          <button type="button" class="btn-back" onclick="mfaEnable()">✓ Confirmer l'activation</button>
+        </div>
+      </div>
+
+      <div id="mfa-codes" hidden>
+        <span class="hint"><strong>Codes de secours</strong> — chacun ne sert qu'une fois si le téléphone est perdu. Notez-les maintenant (gestionnaire de mots de passe, papier) : ils ne seront plus affichés.</span>
+        <pre id="mfa-codes-list" style="margin:0.75rem 0;padding:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;user-select:all;font-size:0.95rem"></pre>
+        <button type="button" class="btn-back" onclick="mfaCopyCodes()">📋 Copier</button>
+      </div>
+
+      <div id="mfa-on" hidden>
+        <span class="hint">Pour désactiver la MFA ou générer de nouveaux codes de secours : mot de passe + code actuel (ou code de secours). « Déconnecter tous les appareils » oublie aussi les appareils de confiance.</span>
+        <div class="form-grid" style="margin-top:0.75rem">
+          <div class="form-group">
+            <label>Mot de passe actuel</label>
+            <input type="password" id="mfa_reauth_pwd" autocomplete="current-password">
+          </div>
+          <div class="form-group">
+            <label>Code de l'application</label>
+            <input type="text" id="mfa_reauth_code" inputmode="numeric" autocomplete="one-time-code" maxlength="11">
+          </div>
+        </div>
+        <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap">
+          <button type="button" class="btn-back" onclick="mfaRecoveryCodes()">🔁 Nouveaux codes de secours</button>
+          <button type="button" class="btn-back" onclick="mfaDisable()">Désactiver</button>
+        </div>
+      </div>
+    </div>
+
   {# ── Actions ── #}
   <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importConfig(this)">
   <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem; flex-wrap:wrap">
@@ -1107,6 +1165,108 @@
     })
     .catch(() => showToast('Erreur réseau', false));
   }
+
+  async function mfaPost(url, body) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'inconnue');
+    return d;
+  }
+
+  function mfaShow(panel) {
+    for (const id of ['mfa-off', 'mfa-enroll', 'mfa-on']) document.getElementById(id).hidden = id !== panel;
+  }
+
+  async function mfaRefresh() {
+    try {
+      const d = await (await fetch('/api/auth/mfa')).json();
+      const status = document.getElementById('mfa-status');
+      if (d.enabled) {
+        status.textContent = '✅ Active — ' + d.recovery_remaining + ' code(s) de secours restant(s)'
+          + (d.trusted_device ? ' · cet appareil est de confiance' : '');
+        mfaShow('mfa-on');
+      } else {
+        status.textContent = 'Inactive : seul le mot de passe protège l\'accès.';
+        mfaShow('mfa-off');
+      }
+    } catch (e) {
+      document.getElementById('mfa-status').textContent = 'État indisponible';
+    }
+  }
+
+  function mfaShowCodes(codes) {
+    document.getElementById('mfa-codes-list').textContent = codes.join('\n');
+    document.getElementById('mfa-codes').hidden = false;
+  }
+
+  function mfaCopyCodes() {
+    navigator.clipboard.writeText(document.getElementById('mfa-codes-list').textContent)
+      .then(() => showToast('✓ Codes copiés', true))
+      .catch(() => showToast('Copie impossible, sélectionnez le texte', false));
+  }
+
+  async function mfaSetup() {
+    const pwd = document.getElementById('mfa_setup_pwd');
+    if (!pwd.value) { showToast('Saisissez le mot de passe', false); return; }
+    try {
+      const d = await mfaPost('/api/auth/mfa/setup', { password: pwd.value });
+      pwd.value = '';
+      document.getElementById('mfa-qr').innerHTML = d.qr_svg;
+      document.getElementById('mfa-secret').textContent = d.secret.match(/.{1,4}/g).join(' ');
+      mfaShow('mfa-enroll');
+      document.getElementById('mfa_enroll_code').focus();
+    } catch (e) { showToast('Erreur : ' + e.message, false); }
+  }
+
+  async function mfaEnable() {
+    const code = document.getElementById('mfa_enroll_code');
+    try {
+      const d = await mfaPost('/api/auth/mfa/enable', { code: code.value });
+      code.value = '';
+      document.getElementById('mfa-qr').innerHTML = '';
+      showToast('✓ Double authentification activée', true);
+      mfaShowCodes(d.recovery_codes);
+      mfaRefresh();
+    } catch (e) { showToast('Erreur : ' + e.message, false); }
+  }
+
+  function mfaReauth() {
+    return {
+      password: document.getElementById('mfa_reauth_pwd').value,
+      code: document.getElementById('mfa_reauth_code').value,
+    };
+  }
+
+  function mfaClearReauth() {
+    document.getElementById('mfa_reauth_pwd').value = '';
+    document.getElementById('mfa_reauth_code').value = '';
+  }
+
+  async function mfaRecoveryCodes() {
+    try {
+      const d = await mfaPost('/api/auth/mfa/recovery-codes', mfaReauth());
+      mfaClearReauth();
+      mfaShowCodes(d.recovery_codes);
+      mfaRefresh();
+    } catch (e) { showToast('Erreur : ' + e.message, false); }
+  }
+
+  async function mfaDisable() {
+    if (!confirm('Désactiver la double authentification ? Le mot de passe seul protégera l\'accès.')) return;
+    try {
+      await mfaPost('/api/auth/mfa/disable', mfaReauth());
+      mfaClearReauth();
+      document.getElementById('mfa-codes').hidden = true;
+      showToast('Double authentification désactivée', true);
+      mfaRefresh();
+    } catch (e) { showToast('Erreur : ' + e.message, false); }
+  }
+
+  mfaRefresh();
 
   function exportConfig() {
     const notifyTimeParts = getVal('notify_time').split(':');

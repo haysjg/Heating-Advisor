@@ -385,6 +385,20 @@ Accessible via `/config` → section **🔔 Notifications push** :
 
 ---
 
+## Double authentification (TOTP)
+
+Optionnelle, activée depuis `/config` → **🛡️ Double authentification** : scanner le QR code avec Google Authenticator (ou Aegis, Bitwarden…), confirmer avec un code, puis noter les 8 codes de secours (affichés une seule fois, stockés hachés).
+
+- À la connexion, le mot de passe ouvre seulement la page `/login/code` (5 min, 5 essais/min) ; un code déjà utilisé est refusé.
+- « Se souvenir de cet appareil » : cookie signé valable 30 jours, révoqué par un changement de mot de passe, un changement de MFA ou « Déconnecter tous les appareils ».
+- Secret TOTP chiffré au repos (`modules/crypto.py`) dans `config_override.json`.
+- Téléphone perdu et plus de code de secours :
+  ```bash
+  sudo docker exec heating-advisor python scripts/disable_mfa.py && sudo docker restart heating-advisor
+  ```
+
+---
+
 ## Suivi électricité (IMAP)
 
 Historise automatiquement la consommation électrique hebdomadaire à partir des emails "flash élec" envoyés par **[Lite](https://lite.eco)** (`bonjour@lite.eco`).

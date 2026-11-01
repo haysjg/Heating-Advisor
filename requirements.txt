@@ -3,3 +3,5 @@ requests>=2.31
 APScheduler>=3.10
 cryptography>=42
 flask-limiter>=3.5
+pyotp>=2.9
+segno>=1.6
