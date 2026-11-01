@@ -625,7 +625,7 @@ def _fetch_external_data() -> dict:
     })
     return {
         "fetched_at": datetime.now().isoformat(),
-        "weather": get_current_temperature(config.LOCATION),
+        "weather": get_current_temperature(config.LOCATION, config.OBSERVATIONS),
         "tomorrow_weather": tomorrow_weather,
         "tempo": get_tempo_info(config.HP_START, config.HP_END),
         "hourly_forecast": get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48),
@@ -828,7 +828,9 @@ def api_dashboard_refresh():
             "indoor": data.get("indoor", {}),
             "outdoor": {
                 "temperature": weather.get("temperature"),
-                "source": weather.get("source", "météociel.fr")
+                "source": weather.get("source"),
+                "measured": weather.get("measured", False),
+                "observed_at": weather.get("observed_at"),
             },
             "recommendation": {
                 "system": rec.get("system"),
@@ -1527,6 +1529,24 @@ def api_config_save():
         else:
             final_imap_password = config.ELECTRICITY.get("imap_password", "")
 
+        # Identifiants des stations de mesure : idem, ne remplacer que si fournis
+        new_mf_app_id = str(data.get("meteofrance_application_id", "")).strip()
+        if new_mf_app_id:
+            final_mf_app_id = encrypt_password(new_mf_app_id)
+        else:
+            final_mf_app_id = config.OBSERVATIONS.get("meteofrance_application_id", "")
+        new_ic_token = str(data.get("infoclimat_token", "")).strip()
+        if new_ic_token:
+            final_ic_token = encrypt_password(new_ic_token)
+        else:
+            final_ic_token = config.OBSERVATIONS.get("infoclimat_token", "")
+
+        def _station_ids(field, key):
+            raw = data.get(field, config.OBSERVATIONS.get(key, []))
+            if isinstance(raw, str):
+                raw = raw.split(",")
+            return [str(s).strip() for s in raw if str(s).strip()]
+
         override = {
             "_poele_purchase": {"nb_sacs": nb_sacs, "prix_livraison": prix, "poids_sac": poids, "hours_per_bag": hours_per_bag},
             "TARGET_TEMP": float(data["target_temp"]),
@@ -1550,10 +1570,16 @@ def api_config_save():
                 "postal_code": str(data["postal_code"]),
                 "latitude": float(data["latitude"]),
                 "longitude": float(data["longitude"]),
-                "meteociel_url": str(data["meteociel_url"]),
                 "nas_ip": str(data["nas_ip"]),
                 "nas_port": int(data["nas_port"]),
                 "public_url": str(data.get("public_url", "")).strip(),
+            },
+            "OBSERVATIONS": {
+                "meteofrance_application_id": final_mf_app_id,
+                "meteofrance_stations": _station_ids("meteofrance_stations", "meteofrance_stations"),
+                "infoclimat_token": final_ic_token,
+                "infoclimat_stations": _station_ids("infoclimat_stations", "infoclimat_stations"),
+                "max_age_minutes": int(data.get("observation_max_age", config.OBSERVATIONS.get("max_age_minutes", 90))),
             },
             "TEMPO_PRICES": {
                 "BLUE":    {"HP": float(data["blue_hp"]),  "HC": float(data["blue_hc"])},

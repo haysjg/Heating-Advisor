@@ -8,13 +8,23 @@ LOCATION = {
     "postal_code": "91370",
     "latitude": 48.7484,
     "longitude": 2.2655,
-    # Station météociel la plus proche : Orsay (~5 km)
-    "meteociel_url": "https://www.meteociel.fr/temps-reel/obs_villes.php?code2=7149",
     # IP du NAS pour le lien dans les emails (accès local)
     "nas_ip": "192.168.1.2",
     "nas_port": 8888,
     # URL publique (si exposé sur Internet) — utilisée dans les emails si renseignée
     "public_url": "",
+}
+
+# ── Température extérieure mesurée ───────────────────────────
+# Stations essayées dans l'ordre ; Open-Meteo (modèle) seulement si aucune mesure récente.
+OBSERVATIONS = {
+    # 1. Infoclimat open data (infoclimat.fr/opendata)
+    "infoclimat_token": "",               # clé d'API (chiffrée)
+    "infoclimat_stations": ["ME113", "00089"],  # Massy Vilgénis (2 km), Villemoisson-sur-Orge (8 km)
+    # 2. Météo-France, API « Données d'observation » (portail-api.meteofrance.fr)
+    "meteofrance_application_id": "",     # « Application ID » du portail (chiffré)
+    "meteofrance_stations": ["78640001", "91027002"],  # Villacoublay (5 km), Orly (10 km)
+    "max_age_minutes": 90,                # mesure plus ancienne ignorée
 }
 
 # ── Tarifs EDF Tempo (€/kWh) – en vigueur au 1er février 2026 ─

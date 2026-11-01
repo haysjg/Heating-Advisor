@@ -342,8 +342,8 @@
         {% if data.weather.temperature is not none %}
           <p class="value-big" data-value="temperature">{{ "%.1f"|format(data.weather.temperature) }} °C</p>
           <p class="value-sub">Cible intérieure : {{ config.TARGET_TEMP }}°C</p>
-          {% if data.weather.source == "météociel.fr" %}
-            <span class="source-badge source-real" data-value="source">📡 {{ data.weather.source }} — mesure réelle</span>
+          {% if data.weather.measured %}
+            <span class="source-badge source-real" data-value="source">📡 {{ data.weather.source }} — mesure de {{ data.weather.observed_at }}</span>
           {% else %}
             <span class="source-badge source-model" data-value="source">🌐 {{ data.weather.source }} — modèle (fallback)</span>
           {% endif %}

@@ -1,6 +1,9 @@
-"""Tests de la récupération de la température extérieure (fallbacks)."""
+"""Tests de la récupération de la température extérieure (mesures de station, fallbacks)."""
 
+import io
+import json
 import urllib.error
+import urllib.parse
 from unittest.mock import patch
 
 import pytest
@@ -8,60 +11,241 @@ from freezegun import freeze_time
 
 import modules.weather as weather
 
-LOCATION = {
-    "city": "X", "postal_code": "00000", "latitude": 48.7, "longitude": 2.2,
-    "meteociel_url": "https://example.invalid/obs",
+LOCATION = {"city": "X", "postal_code": "00000", "latitude": 48.7, "longitude": 2.2}
+OBSERVATIONS = {
+    "meteofrance_application_id": "app-id",
+    "meteofrance_stations": ["91000001", "91000002"],
+    "infoclimat_token": "ic-token",
+    "infoclimat_stations": ["ME113", "00089"],
+    "max_age_minutes": 90,
 }
 
 
 @pytest.fixture(autouse=True)
 def reset_state():
-    weather._last_known = None
-    weather._meteociel_blocked_until = None
+    def _reset():
+        weather._last_known = None
+        weather._last_measured = None
+        weather._mf_token = None
+        weather._mf_station_names = {"91000001": "Station Un"}
+        weather._paused_until.clear()
+    _reset()
     yield
-    weather._last_known = None
-    weather._meteociel_blocked_until = None
+    _reset()
 
 
-class TestLastKnownFallback:
-    def test_reuses_recent_value_when_sources_fail(self):
-        with freeze_time("2026-10-31 10:07:00"), \
-             patch("modules.weather.get_temperature_meteociel", return_value=None), \
-             patch("modules.weather.get_temperature_openmeteo", return_value=10.4):
-            assert weather.get_current_temperature(LOCATION)["temperature"] == 10.4
-        with freeze_time("2026-10-31 10:27:00"), \
-             patch("modules.weather.get_temperature_meteociel", return_value=None), \
-             patch("modules.weather.get_temperature_openmeteo", return_value=None):
-            result = weather.get_current_temperature(LOCATION)
+def _response(payload):
+    return io.BytesIO(json.dumps(payload).encode())
+
+
+def _http_error(code):
+    return urllib.error.HTTPError("https://example.invalid", code, "err", {}, None)
+
+
+def _obs(temp, observed_utc):
+    return {"temperature": temp, "observed_at": weather._parse_utc(observed_utc)}
+
+
+def _sources(mf=None, ic=None, openmeteo=None):
+    """Simule les trois sources : mf = {station: obs|None}, ic = {station: obs}."""
+    mf = mf or {}
+    return (
+        patch("modules.weather.get_temperature_meteofrance", side_effect=lambda sid, app_id: mf.get(sid)),
+        patch("modules.weather.get_temperatures_infoclimat", return_value=ic or {}),
+        patch("modules.weather.get_temperature_openmeteo", return_value=openmeteo),
+    )
+
+
+def _current(mf=None, ic=None, openmeteo=None, observations=OBSERVATIONS):
+    p_mf, p_ic, p_om = _sources(mf, ic, openmeteo)
+    with p_mf as mf_mock, p_ic, p_om:
+        result = weather.get_current_temperature(LOCATION, observations)
+    return result, mf_mock
+
+
+class TestSourceOrder:
+    @freeze_time("2026-11-01 08:00:00")
+    def test_infoclimat_first(self):
+        ic = {"ME113": {**_obs(6.1, "2026-11-01 07:50:00"), "name": "Massy"}}
+        result, mf = _current(mf={"91000001": _obs(8.2, "2026-11-01T07:48:00Z")}, ic=ic, openmeteo=12.0)
+        assert result["temperature"] == 6.1
+        assert result["measured"] is True
+        assert result["source"] == "Infoclimat Massy"
+        assert result["observed_at"]
+        mf.assert_not_called()  # Météo-France sollicité seulement si Infoclimat n'a rien donné
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_meteofrance_when_infoclimat_down(self):
+        result, _ = _current(mf={"91000001": _obs(9.4, "2026-11-01T07:48:00Z")}, openmeteo=12.0)
+        assert result["temperature"] == 9.4
+        assert result["source"] == "Météo-France Station Un"
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_second_station_when_first_down(self):
+        result, _ = _current(mf={"91000002": _obs(9.1, "2026-11-01T07:54:00Z")})
+        assert result["source"] == "Météo-France 91000002"  # nom inconnu : identifiant
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_second_infoclimat_station_before_meteofrance(self):
+        ic = {"00089": {**_obs(9.8, "2026-11-01 07:50:00"), "name": "Villemoisson-sur-Orge"}}
+        result, _ = _current(mf={"91000001": _obs(8.2, "2026-11-01T07:48:00Z")}, ic=ic, openmeteo=12.0)
+        assert result["temperature"] == 9.8
+        assert result["measured"] is True
+        assert result["source"] == "Infoclimat Villemoisson-sur-Orge"
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_stale_measurement_ignored(self):
+        result, _ = _current(mf={"91000001": _obs(5.0, "2026-11-01T05:00:00Z"),
+                                 "91000002": _obs(9.1, "2026-11-01T07:54:00Z")})
+        assert result["temperature"] == 9.1
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_openmeteo_when_no_measurement(self):
+        result, _ = _current(openmeteo=12.0)
+        assert result["temperature"] == 12.0
+        assert result["measured"] is False
+        assert result["source"] == "Open-Meteo"
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_unconfigured_sources_skipped(self):
+        result, mf = _current(openmeteo=12.0, observations={})
+        assert result["source"] == "Open-Meteo"
+        mf.assert_not_called()
+
+
+class TestFallbacks:
+    def test_last_measurement_preferred_over_model(self):
+        with freeze_time("2026-11-01 08:00:00"):
+            _current(mf={"91000001": _obs(9.4, "2026-11-01T07:48:00Z")})
+        with freeze_time("2026-11-01 08:30:00"):
+            result, _ = _current(openmeteo=12.0)
+        assert result["temperature"] == 9.4
+        assert result["measured"] is True
+        assert "dernière mesure" in result["source"]
+
+    def test_model_after_one_hour_without_measurement(self):
+        with freeze_time("2026-11-01 08:00:00"):
+            _current(mf={"91000001": _obs(9.4, "2026-11-01T07:48:00Z")})
+        with freeze_time("2026-11-01 09:10:00"):
+            result, _ = _current(openmeteo=12.0)
+        assert result["source"] == "Open-Meteo"
+
+    def test_reuses_recent_value_when_all_sources_fail(self):
+        with freeze_time("2026-10-31 10:07:00"):
+            _current(openmeteo=10.4)
+        with freeze_time("2026-10-31 10:27:00"):
+            result, _ = _current()
         assert result["temperature"] == 10.4
+        assert result["measured"] is False
         assert "dernière valeur" in result["source"]
 
     def test_stale_value_not_reused(self):
-        with freeze_time("2026-10-31 06:00:00"), \
-             patch("modules.weather.get_temperature_meteociel", return_value=8.0):
-            weather.get_current_temperature(LOCATION)
-        with freeze_time("2026-10-31 09:30:00"), \
-             patch("modules.weather.get_temperature_meteociel", return_value=None), \
-             patch("modules.weather.get_temperature_openmeteo", return_value=None):
-            result = weather.get_current_temperature(LOCATION)
+        with freeze_time("2026-10-31 06:00:00"):
+            _current(openmeteo=8.0)
+        with freeze_time("2026-10-31 09:30:00"):
+            result, _ = _current()
         assert result["temperature"] is None
         assert result["error"]
 
 
-class TestMeteocielBackoff:
-    def test_429_pauses_scraping(self):
-        err = urllib.error.HTTPError(LOCATION["meteociel_url"], 429, "Too Many Requests", {}, None)
-        with freeze_time("2026-10-31 10:00:00"), \
-             patch("urllib.request.urlopen", side_effect=err) as urlopen:
-            assert weather.get_temperature_meteociel("X", "0", LOCATION["meteociel_url"]) is None
-            assert weather.get_temperature_meteociel("X", "0", LOCATION["meteociel_url"]) is None
-        assert urlopen.call_count == 1
+class TestMeteoFrance:
+    TOKEN = {"access_token": "jwt-1", "token_type": "Bearer", "expires_in": 3600}
+    OBS = [{"validity_time": "2026-11-01T07:42:00Z", "t": 282.0},
+           {"validity_time": "2026-11-01T07:48:00Z", "t": 282.55}]
 
-    def test_scraping_resumes_after_pause(self):
-        err = urllib.error.HTTPError(LOCATION["meteociel_url"], 429, "Too Many Requests", {}, None)
-        with freeze_time("2026-10-31 10:00:00"), patch("urllib.request.urlopen", side_effect=err):
-            weather.get_temperature_meteociel("X", "0", LOCATION["meteociel_url"])
-        with freeze_time("2026-10-31 11:01:00"), \
-             patch("urllib.request.urlopen", side_effect=err) as urlopen:
-            weather.get_temperature_meteociel("X", "0", LOCATION["meteociel_url"])
+    @freeze_time("2026-11-01 08:00:00")
+    def test_parses_latest_kelvin_measurement(self):
+        with patch("urllib.request.urlopen", side_effect=[_response(self.TOKEN), _response(self.OBS)]) as urlopen:
+            obs = weather.get_temperature_meteofrance("91000001", "app-id")
+        assert obs["temperature"] == 9.4
+        assert obs["observed_at"].strftime("%H:%M") == "07:48"
+        token_req, obs_req = (c.args[0] for c in urlopen.call_args_list)
+        assert token_req.get_header("Authorization") == "Basic app-id"
+        assert obs_req.get_header("Authorization") == "Bearer jwt-1"
+        assert "id_station=91000001" in obs_req.full_url
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_token_reused_until_expiry(self):
+        with patch("urllib.request.urlopen",
+                   side_effect=[_response(self.TOKEN), _response(self.OBS), _response(self.OBS)]) as urlopen:
+            weather.get_temperature_meteofrance("91000001", "app-id")
+            weather.get_temperature_meteofrance("91000001", "app-id")
+        assert urlopen.call_count == 3
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_token_renewed_on_401(self):
+        renewed = {**self.TOKEN, "access_token": "jwt-2"}
+        with patch("urllib.request.urlopen", side_effect=[
+            _response(self.TOKEN), _http_error(401), _response(renewed), _response(self.OBS),
+        ]) as urlopen:
+            obs = weather.get_temperature_meteofrance("91000001", "app-id")
+        assert obs["temperature"] == 9.4
+        assert urlopen.call_args_list[-1].args[0].get_header("Authorization") == "Bearer jwt-2"
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_missing_temperature_returns_none(self):
+        with patch("urllib.request.urlopen",
+                   side_effect=[_response(self.TOKEN), _response([{"validity_time": "2026-11-01T07:48:00Z", "t": None}])]):
+            assert weather.get_temperature_meteofrance("91000001", "app-id") is None
+
+    def test_429_pauses_source(self):
+        with freeze_time("2026-11-01 08:00:00"), \
+             patch("urllib.request.urlopen", side_effect=[_response(self.TOKEN), _http_error(429)]) as urlopen:
+            assert weather.get_temperature_meteofrance("91000001", "app-id") is None
+            assert weather.get_temperature_meteofrance("91000002", "app-id") is None
+        assert urlopen.call_count == 2
+        with freeze_time("2026-11-01 09:01:00"), \
+             patch("urllib.request.urlopen", side_effect=[_response(self.TOKEN), _response(self.OBS)]):
+            assert weather.get_temperature_meteofrance("91000001", "app-id") is not None
+
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_station_names_read_once(self):
+        weather._mf_station_names = None
+        csv_body = "Id_station;Id_omm;Nom_usuel;Latitude;Longitude;Altitude;Date_ouverture;Pack\n" \
+                   "78640001;07147;VILLACOUBLAY;48.77;2.20;174;1940-07-01;RADOME\n"
+        with patch("urllib.request.urlopen",
+                   side_effect=[_response(self.TOKEN), io.BytesIO(csv_body.encode("iso-8859-1"))]) as urlopen:
+            assert weather.meteofrance_station_name("78640001", "app-id") == "Villacoublay"
+            assert weather.meteofrance_station_name("99999999", "app-id") == "99999999"
+        assert urlopen.call_count == 2
+
+
+class TestInfoclimat:
+    ANSWER = {
+        "status": "OK", "errors": [],
+        "stations": [{"id": "ME113", "name": "Massy - Lycée Parc de Vilgénis"}],
+        "hourly": {
+            "ME113": [
+                {"id_station": "ME113", "dh_utc": "2026-11-01 07:40:00", "temperature": "9.6"},
+                {"id_station": "ME113", "dh_utc": "2026-11-01 07:50:00", "temperature": "9.8"},
+                {"id_station": "ME113", "dh_utc": "2026-11-01 08:00:00", "temperature": None},
+            ],
+            "00089": [],
+            "_params": ["temperature"],
+        },
+    }
+
+    @freeze_time("2026-11-01 08:05:00")
+    def test_one_request_for_all_stations(self):
+        with patch("urllib.request.urlopen", return_value=_response(self.ANSWER)) as urlopen:
+            found = weather.get_temperatures_infoclimat(["ME113", "00089"], "secret-token")
         assert urlopen.call_count == 1
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(urlopen.call_args.args[0].full_url).query)
+        assert query["stations[]"] == ["ME113", "00089"]
+        assert query["start"] == ["2026-10-31"] and query["end"] == ["2026-11-01"]
+        assert set(found) == {"ME113"}
+        assert found["ME113"]["temperature"] == 9.8
+        assert found["ME113"]["observed_at"].strftime("%H:%M") == "07:50"
+        assert found["ME113"]["name"] == "Massy - Lycée Parc de Vilgénis"
+
+    def test_api_error_returns_nothing(self):
+        answer = {"errors": ["No account found for this token"]}
+        with patch("urllib.request.urlopen", return_value=_response(answer)):
+            assert weather.get_temperatures_infoclimat(["ME113"], "bad") == {}
+
+    def test_token_never_logged(self, caplog):
+        with patch("urllib.request.urlopen", side_effect=_http_error(400)):
+            weather.get_temperatures_infoclimat(["ME113"], "secret-token")
+        assert "secret-token" not in caplog.text
+        assert "HTTP 400" in caplog.text

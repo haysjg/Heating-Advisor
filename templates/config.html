@@ -268,11 +268,6 @@
           <input type="text" id="postal_code" value="{{ config.LOCATION.postal_code }}">
         </div>
 
-        <div class="form-group" style="grid-column: 1 / -1">
-          <label>URL station météociel.fr</label>
-          <input type="text" id="meteociel_url" value="{{ config.LOCATION.meteociel_url }}">
-        </div>
-
         <div class="form-group">
           <label>IP du NAS</label>
           <input type="text" id="nas_ip" value="{{ config.LOCATION.nas_ip }}">
@@ -311,6 +306,51 @@
         </div>
       </details>
 
+    </div>
+
+    <hr class="section-divider">
+
+    {# ── Stations de mesure (température extérieure) ── #}
+    <div class="card form-section">
+      <h3>📡 Stations de mesure <small style="font-weight:400;font-size:0.8em">(température extérieure)</small></h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>Infoclimat — clé d'API</label>
+          <input type="password" id="infoclimat_token"
+                 placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.OBSERVATIONS.infoclimat_token else 'Coller la clé ici' }}">
+          <span class="hint">infoclimat.fr/opendata → Authentification</span>
+        </div>
+
+        <div class="form-group">
+          <label>Infoclimat — stations</label>
+          <input type="text" id="infoclimat_stations"
+                 value="{{ config.OBSERVATIONS.infoclimat_stations | join(', ') }}">
+          <span class="hint">Ex : ME113, 00089 — essayées en premier, par ordre de préférence</span>
+        </div>
+
+        <div class="form-group">
+          <label>Météo-France — Application ID</label>
+          <input type="password" id="meteofrance_application_id"
+                 placeholder="{{ 'Déjà configuré — laisser vide pour conserver' if config.OBSERVATIONS.meteofrance_application_id else 'Coller l’Application ID ici' }}">
+          <span class="hint">portail-api.meteofrance.fr → Mes applications (API « Données d'observation »)</span>
+        </div>
+
+        <div class="form-group">
+          <label>Météo-France — stations</label>
+          <input type="text" id="meteofrance_stations"
+                 value="{{ config.OBSERVATIONS.meteofrance_stations | join(', ') }}">
+          <span class="hint">Identifiants à 8 chiffres — secours si Infoclimat ne répond pas</span>
+        </div>
+
+        <div class="form-group">
+          <label>Âge max d'une mesure (min)</label>
+          <input type="number" id="observation_max_age" min="10" max="360"
+                 value="{{ config.OBSERVATIONS.max_age_minutes }}">
+          <span class="hint">Sans mesure plus récente : modèle Open-Meteo</span>
+        </div>
+
+      </div>
     </div>
 
     <hr class="section-divider">
@@ -890,10 +930,12 @@
       postal_code:          getVal('postal_code'),
       latitude:             parseFloat(getVal('latitude')),
       longitude:            parseFloat(getVal('longitude')),
-      meteociel_url:        getVal('meteociel_url'),
       nas_ip:               getVal('nas_ip'),
       nas_port:             parseInt(getVal('nas_port')),
       public_url:           getVal('public_url'),
+      meteofrance_stations: getVal('meteofrance_stations'),
+      infoclimat_stations:  getVal('infoclimat_stations'),
+      observation_max_age:  parseInt(getVal('observation_max_age')),
       blue_hp:              parseFloat(getVal('blue_hp')),
       blue_hc:              parseFloat(getVal('blue_hc')),
       white_hp:             parseFloat(getVal('white_hp')),
@@ -907,6 +949,8 @@
       ha_enabled:           document.getElementById('ha_enabled').checked,
       ha_url:               getVal('ha_url'),
       ha_token:             getVal('ha_token'),
+      meteofrance_application_id: getVal('meteofrance_application_id'),
+      infoclimat_token:     getVal('infoclimat_token'),
       ha_entity_id:         getVal('ha_entity_id'),
       ha_clim_entity_id:    getVal('ha_clim_entity_id'),
       email_enabled:        document.getElementById('email_enabled').checked,
@@ -1078,10 +1122,12 @@
       postal_code:          getVal('postal_code'),
       latitude:             parseFloat(getVal('latitude')),
       longitude:            parseFloat(getVal('longitude')),
-      meteociel_url:        getVal('meteociel_url'),
       nas_ip:               getVal('nas_ip'),
       nas_port:             parseInt(getVal('nas_port')),
       public_url:           getVal('public_url'),
+      meteofrance_stations: getVal('meteofrance_stations'),
+      infoclimat_stations:  getVal('infoclimat_stations'),
+      observation_max_age:  parseInt(getVal('observation_max_age')),
       blue_hp:              parseFloat(getVal('blue_hp')),
       blue_hc:              parseFloat(getVal('blue_hc')),
       white_hp:             parseFloat(getVal('white_hp')),
@@ -1177,7 +1223,9 @@
         setVal('postal_code',        d.postal_code);
         setVal('latitude',           d.latitude);
         setVal('longitude',          d.longitude);
-        setVal('meteociel_url',      d.meteociel_url);
+        setVal('meteofrance_stations', d.meteofrance_stations);
+        setVal('infoclimat_stations', d.infoclimat_stations);
+        setVal('observation_max_age', d.observation_max_age);
         setVal('nas_ip',             d.nas_ip);
         setVal('nas_port',           d.nas_port);
         setVal('public_url',         d.public_url);

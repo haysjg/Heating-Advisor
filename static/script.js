@@ -470,10 +470,10 @@ const DashboardRefresh = {
     if (outdoor.source) {
       const sourceEl = card.querySelector('[data-value="source"]');
       if (sourceEl) {
-        const isReal = outdoor.source === 'météociel.fr';
+        const isReal = !!outdoor.measured;
         sourceEl.className = isReal ? 'source-badge source-real' : 'source-badge source-model';
         sourceEl.textContent = isReal
-          ? `📡 ${outdoor.source} — mesure réelle`
+          ? `📡 ${outdoor.source} — mesure de ${outdoor.observed_at}`
           : `🌐 ${outdoor.source} — modèle (fallback)`;
       }
     }

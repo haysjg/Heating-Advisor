@@ -35,7 +35,7 @@ data/
   backups/AAAA-MM-JJ/    # Sauvegarde nocturne locale de data/ (7 jours)
 modules/
   advisor.py             # Moteur de décision (comparaison des coûts)
-  weather.py             # Récupération météo (météociel.fr + Open-Meteo)
+  weather.py             # Récupération météo (stations Infoclimat / Météo-France + Open-Meteo)
   tempo.py               # Couleur EDF Tempo (api-couleur-tempo.fr)
   thermostat.py          # Pilotage automatique du poêle
   homeassistant.py       # Client API REST Home Assistant
@@ -51,7 +51,7 @@ modules/
 **Flux de données principal :**
 
 ```
-Météo (météociel.fr / Open-Meteo)
+Météo (Infoclimat / Météo-France / Open-Meteo)
         ↓
     weather.py → température extérieure
         ↓
@@ -125,7 +125,7 @@ Le système le moins cher est recommandé.
 
 | Fonction | Description |
 |---|---|
-| `get_current_temperature(config)` | Récupère la température extérieure actuelle. Essaie d'abord **météociel.fr** (scraping HTML), puis bascule sur **Open-Meteo** en cas d'échec (météociel mis en pause 1 h après un HTTP 429). Si les deux échouent, resservit la dernière valeur connue de moins de 3 h ; sans aucune valeur, la recommandation vaut `unknown` et le thermostat garde le système en cours (jamais de bascule poêle par défaut). |
+| `get_current_temperature(config, observations)` | Récupère la température extérieure **mesurée** : stations Infoclimat (une seule requête), puis stations Météo-France (API DPObs v2, OAuth2), chacune dans l'ordre configuré. Une mesure plus vieille que `max_age_minutes` est ignorée. Sans mesure récente : dernière mesure obtenue il y a moins de 1 h, puis modèle **Open-Meteo** (badge « modèle »), puis dernière valeur connue de moins de 3 h ; sans aucune valeur, la recommandation vaut `unknown` et le thermostat garde le système en cours. Une source est mise en pause 1 h après un HTTP 429. |
 | `get_tomorrow_weather(config)` | Récupère la température moyenne prévue pour demain via Open-Meteo. |
 | `get_hourly_forecast(lat, lon, hours)` | Récupère les prévisions horaires sur N heures via Open-Meteo (utilisé pour le graphique du dashboard). |
 
@@ -459,9 +459,17 @@ Tous les paramètres sont modifiables via l'interface `/config` sans rebuild Doc
 |---|---|
 | `city`, `postal_code` | Ville et code postal |
 | `latitude`, `longitude` | Coordonnées GPS |
-| `meteociel_url` | URL de la station météociel.fr la plus proche |
 | `nas_ip`, `nas_port` | Adresse du NAS pour les liens dans les emails |
 | `public_url` | URL publique si exposé sur Internet |
+
+**`OBSERVATIONS`** — Stations de mesure de la température extérieure
+| Clé | Description |
+|---|---|
+| `meteofrance_application_id` | « Application ID » du portail API Météo-France (chiffré) |
+| `meteofrance_stations` | Identifiants de stations à 8 chiffres, par ordre de préférence |
+| `infoclimat_token` | Clé d'API open data Infoclimat (chiffrée) |
+| `infoclimat_stations` | Identifiants de stations Infoclimat (ex. `ME113`, `00089`) |
+| `max_age_minutes` | Âge maximal d'une mesure acceptée (défaut 90) |
 
 **`CLIM`** — Climatisation réversible
 | Clé | Description |
