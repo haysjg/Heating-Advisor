@@ -344,6 +344,13 @@
         </div>
 
         <div class="form-group">
+          <label>Météo-France — fin d'abonnement</label>
+          <input type="date" id="meteofrance_subscription_end"
+                 value="{{ config.OBSERVATIONS.get('meteofrance_subscription_end', '') }}">
+          <span class="hint">Rappel ntfy 30 j et 7 j avant — portail-api.meteofrance.fr → Mes API</span>
+        </div>
+
+        <div class="form-group">
           <label>Âge max d'une mesure (min)</label>
           <input type="number" id="observation_max_age" min="10" max="360"
                  value="{{ config.OBSERVATIONS.max_age_minutes }}">
@@ -936,6 +943,7 @@
       meteofrance_stations: getVal('meteofrance_stations'),
       infoclimat_stations:  getVal('infoclimat_stations'),
       observation_max_age:  parseInt(getVal('observation_max_age')),
+      meteofrance_subscription_end: getVal('meteofrance_subscription_end'),
       blue_hp:              parseFloat(getVal('blue_hp')),
       blue_hc:              parseFloat(getVal('blue_hc')),
       white_hp:             parseFloat(getVal('white_hp')),
@@ -1128,6 +1136,7 @@
       meteofrance_stations: getVal('meteofrance_stations'),
       infoclimat_stations:  getVal('infoclimat_stations'),
       observation_max_age:  parseInt(getVal('observation_max_age')),
+      meteofrance_subscription_end: getVal('meteofrance_subscription_end'),
       blue_hp:              parseFloat(getVal('blue_hp')),
       blue_hc:              parseFloat(getVal('blue_hc')),
       white_hp:             parseFloat(getVal('white_hp')),
@@ -1226,6 +1235,7 @@
         setVal('meteofrance_stations', d.meteofrance_stations);
         setVal('infoclimat_stations', d.infoclimat_stations);
         setVal('observation_max_age', d.observation_max_age);
+        setVal('meteofrance_subscription_end', d.meteofrance_subscription_end);
         setVal('nas_ip',             d.nas_ip);
         setVal('nas_port',           d.nas_port);
         setVal('public_url',         d.public_url);

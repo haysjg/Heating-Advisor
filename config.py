@@ -24,6 +24,7 @@ OBSERVATIONS = {
     # 2. Météo-France, API « Données d'observation » (portail-api.meteofrance.fr)
     "meteofrance_application_id": "",     # « Application ID » du portail (chiffré)
     "meteofrance_stations": ["78640001", "91027002"],  # Villacoublay (5 km), Orly (10 km)
+    "meteofrance_subscription_end": "2028-11-01",      # rappel ntfy 30 j et 7 j avant
     "max_age_minutes": 90,                # mesure plus ancienne ignorée
 }
 

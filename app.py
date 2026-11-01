@@ -8,7 +8,7 @@ import hmac
 import logging
 import os
 import secrets as _secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -29,6 +29,7 @@ import modules.thermostat as thermostat_module
 import modules.history as history_module
 import modules.radiateurs as radiateurs_module
 import modules.presence_watch as presence_watch
+import modules.source_watch as source_watch
 from modules.stock import compute_stock_stats
 import modules.imap_client as imap_client
 import modules.electricity as electricity_module
@@ -545,6 +546,15 @@ _scheduler.add_job(
     minutes=30,
     id="presence_watch_job",
     misfire_grace_time=300,
+)
+# Surveillance des sources de température mesurée + rappel abonnement Météo-France (alerte ntfy)
+_scheduler.add_job(
+    lambda: source_watch.check(config.OBSERVATIONS, config.NTFY),
+    "interval",
+    hours=source_watch.CHECK_INTERVAL_HOURS,
+    next_run_time=datetime.now() + timedelta(minutes=2),
+    id="source_watch_job",
+    misfire_grace_time=600,
 )
 # Purge hebdomadaire des données > 30 jours
 _scheduler.add_job(
@@ -1541,6 +1551,12 @@ def api_config_save():
         else:
             final_ic_token = config.OBSERVATIONS.get("infoclimat_token", "")
 
+        def _subscription_end(d):
+            raw = str(d.get("meteofrance_subscription_end", config.OBSERVATIONS.get("meteofrance_subscription_end", ""))).strip()
+            if raw:
+                date.fromisoformat(raw)  # ValueError → 400
+            return raw
+
         def _station_ids(field, key):
             raw = data.get(field, config.OBSERVATIONS.get(key, []))
             if isinstance(raw, str):
@@ -1580,6 +1596,7 @@ def api_config_save():
                 "infoclimat_token": final_ic_token,
                 "infoclimat_stations": _station_ids("infoclimat_stations", "infoclimat_stations"),
                 "max_age_minutes": int(data.get("observation_max_age", config.OBSERVATIONS.get("max_age_minutes", 90))),
+                "meteofrance_subscription_end": _subscription_end(data),
             },
             "TEMPO_PRICES": {
                 "BLUE":    {"HP": float(data["blue_hp"]),  "HC": float(data["blue_hc"])},

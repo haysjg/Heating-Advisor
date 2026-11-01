@@ -249,3 +249,64 @@ class TestInfoclimat:
             weather.get_temperatures_infoclimat(["ME113"], "secret-token")
         assert "secret-token" not in caplog.text
         assert "HTTP 400" in caplog.text
+
+
+class TestErrorClassification:
+    def _http_error_body(self, code, body):
+        return urllib.error.HTTPError("https://example.invalid", code, "err", {}, io.BytesIO(body.encode()))
+
+    def test_infoclimat_wrong_ip_is_auth(self):
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(b"Wrong ip address")):
+            with pytest.raises(weather.SourceError) as exc:
+                weather.fetch_infoclimat(["ME113"], "secret-token")
+        assert exc.value.auth is True
+
+    def test_infoclimat_unknown_token_is_auth_and_masked(self):
+        err = self._http_error_body(400, '{"errors":["No account found for this token: \'secret-token\'"]}')
+        with patch("urllib.request.urlopen", side_effect=err):
+            with pytest.raises(weather.SourceError) as exc:
+                weather.fetch_infoclimat(["ME113"], "secret-token")
+        assert exc.value.auth is True
+        assert "secret-token" not in str(exc.value)
+
+    def test_infoclimat_server_error_is_not_auth(self):
+        with patch("urllib.request.urlopen", side_effect=self._http_error_body(502, "Bad Gateway")):
+            with pytest.raises(weather.SourceError) as exc:
+                weather.fetch_infoclimat(["ME113"], "secret-token")
+        assert exc.value.auth is False
+
+    def test_meteofrance_rejected_app_id_is_auth(self):
+        with patch("urllib.request.urlopen", side_effect=_http_error(401)):
+            with pytest.raises(weather.SourceError) as exc:
+                weather.fetch_meteofrance("91000001", "bad-id")
+        assert exc.value.auth is True
+
+    @freeze_time("2026-11-01 08:00:00")
+    def test_meteofrance_forbidden_after_renew_is_auth(self):
+        token = {"access_token": "jwt", "expires_in": 3600}
+        with patch("urllib.request.urlopen", side_effect=[
+            _response(token), _http_error(401), _response(token), _http_error(403),
+        ]):
+            with pytest.raises(weather.SourceError) as exc:
+                weather.fetch_meteofrance("91000001", "app-id")
+        assert exc.value.auth is True
+
+    def test_timeout_is_not_auth(self):
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("timed out")):
+            with pytest.raises(weather.SourceError) as exc:
+                weather.fetch_meteofrance("91000001", "app-id")
+        assert exc.value.auth is False
+
+
+class TestProbeSources:
+    def test_probes_backup_source_too(self):
+        with patch("modules.weather.fetch_infoclimat", return_value={"ME113": {}}) as ic, \
+             patch("modules.weather.fetch_meteofrance", side_effect=weather.SourceError("HTTP 403", auth=True)) as mf:
+            results = weather.probe_sources(OBSERVATIONS)
+        ic.assert_called_once()
+        mf.assert_called_once_with("91000001", "app-id")
+        assert results["Infoclimat"] is None
+        assert results["Météo-France"].auth is True
+
+    def test_unconfigured_sources_absent(self):
+        assert weather.probe_sources({}) == {}

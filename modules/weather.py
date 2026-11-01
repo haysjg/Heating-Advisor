@@ -52,17 +52,30 @@ def _is_paused(source: str) -> bool:
     return False
 
 
+class SourceError(Exception):
+    """Échec d'une source de mesure. auth=True : identifiants refusés (clé, IP, abonnement)."""
+
+    def __init__(self, message: str, auth: bool = False):
+        super().__init__(message)
+        self.auth = auth
+
+
+def _source_error(source: str, e: Exception) -> SourceError:
+    """Traduit une exception réseau en SourceError, sans jamais l'URL (Infoclimat y met la clé)."""
+    if isinstance(e, SourceError):
+        return e
+    if isinstance(e, urllib.error.HTTPError):
+        if e.code == 429:
+            _paused_until[source] = datetime.now() + timedelta(minutes=RATE_LIMIT_BACKOFF_MINUTES)
+            return SourceError(f"HTTP 429 — pause jusqu'à {_paused_until[source].strftime('%Hh%M')}")
+        return SourceError(f"HTTP {e.code}", auth=e.code in (401, 403))
+    if isinstance(e, urllib.error.URLError):
+        return SourceError(str(e.reason))
+    return SourceError(type(e).__name__)
+
+
 def _log_http_failure(source: str, e: Exception) -> None:
-    """Journalise un échec sans jamais l'URL (Infoclimat y met la clé)."""
-    if isinstance(e, urllib.error.HTTPError) and e.code == 429:
-        _paused_until[source] = datetime.now() + timedelta(minutes=RATE_LIMIT_BACKOFF_MINUTES)
-        logger.warning("%s : HTTP 429 — pause jusqu'à %s", source, _paused_until[source].strftime("%Hh%M"))
-    elif isinstance(e, urllib.error.HTTPError):
-        logger.warning("%s échoué : HTTP %d", source, e.code)
-    elif isinstance(e, urllib.error.URLError):
-        logger.warning("%s échoué : %s", source, e.reason)
-    else:
-        logger.warning("%s échoué : %s", source, type(e).__name__)
+    logger.warning("%s échoué : %s", source, _source_error(source, e))
 
 
 def _parse_utc(value: str) -> datetime:
@@ -99,8 +112,13 @@ def _meteofrance_token(application_id: str, renew: bool = False) -> str:
         headers={**API_HEADERS, "Authorization": f"Basic {application_id}",
                  "Content-Type": "application/x-www-form-urlencoded"},
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 401, 403):
+            raise SourceError(f"Application ID refusé (HTTP {e.code})", auth=True) from None
+        raise
     lifetime = int(data.get("expires_in", 3600))
     _mf_token = {
         "value": data["access_token"],
@@ -129,10 +147,11 @@ def meteofrance_station_name(station_id: str, application_id: str) -> str:
     return _mf_station_names.get(station_id, station_id)
 
 
-def get_temperature_meteofrance(station_id: str, application_id: str) -> dict | None:
-    """Dernière mesure d'une station Météo-France : {"temperature", "observed_at" (UTC)}."""
-    if _is_paused("Météo-France"):
-        return None
+def fetch_meteofrance(station_id: str, application_id: str) -> dict:
+    """Dernière mesure d'une station Météo-France : {"temperature", "observed_at" (UTC)}.
+
+    Lève SourceError (auth=True si l'Application ID ou l'abonnement est refusé).
+    """
     url = f"{METEOFRANCE_OBS_URL}?{urllib.parse.urlencode({'id_station': station_id, 'format': 'json'})}"
     try:
         for attempt in range(2):
@@ -145,20 +164,31 @@ def get_temperature_meteofrance(station_id: str, application_id: str) -> dict | 
             except urllib.error.HTTPError as e:
                 if e.code == 401 and attempt == 0:
                     continue  # jeton expiré ou révoqué : on en redemande un
+                if e.code in (401, 403):
+                    raise SourceError(f"accès refusé (HTTP {e.code}) — abonnement expiré ?", auth=True) from None
                 raise
-
-        rows = data if isinstance(data, list) else [data]
-        rows = [r for r in rows if isinstance(r, dict) and r.get("t") is not None and r.get("validity_time")]
-        if not rows:
-            logger.warning("Météo-France %s : aucune température dans la réponse", station_id)
-            return None
-        latest = max(rows, key=lambda r: r["validity_time"])
-        temp = round(float(latest["t"]) - 273.15, 1)
-        observed_at = _parse_utc(latest["validity_time"])
-        logger.info("Météo-France %s : %.1f°C (mesure %s UTC)", station_id, temp, observed_at.strftime("%Hh%M"))
-        return {"temperature": temp, "observed_at": observed_at}
     except Exception as e:
-        _log_http_failure("Météo-France", e)
+        raise _source_error("Météo-France", e) from None
+
+    rows = data if isinstance(data, list) else [data]
+    rows = [r for r in rows if isinstance(r, dict) and r.get("t") is not None and r.get("validity_time")]
+    if not rows:
+        raise SourceError(f"station {station_id} : aucune température dans la réponse")
+    latest = max(rows, key=lambda r: r["validity_time"])
+    temp = round(float(latest["t"]) - 273.15, 1)
+    observed_at = _parse_utc(latest["validity_time"])
+    logger.info("Météo-France %s : %.1f°C (mesure %s UTC)", station_id, temp, observed_at.strftime("%Hh%M"))
+    return {"temperature": temp, "observed_at": observed_at}
+
+
+def get_temperature_meteofrance(station_id: str, application_id: str) -> dict | None:
+    """Comme fetch_meteofrance, mais None en cas d'échec (journalisé)."""
+    if _is_paused("Météo-France"):
+        return None
+    try:
+        return fetch_meteofrance(station_id, application_id)
+    except SourceError as e:
+        logger.warning("Météo-France échoué : %s", e)
     return None
 
 
@@ -175,10 +205,23 @@ def get_temperature_meteofrance(station_id: str, application_id: str) -> dict | 
 INFOCLIMAT_URL = "https://www.infoclimat.fr/opendata/"
 
 
-def get_temperatures_infoclimat(station_ids: list[str], token: str) -> dict:
-    """Dernière mesure de chaque station : {id: {"temperature", "observed_at" (UTC), "name"}}."""
-    if not station_ids or _is_paused("Infoclimat"):
-        return {}
+# Refus de clé : « Could not authenticate request » (sans clé), « No account found for this
+# token: '…' » (clé inconnue, HTTP 400), « Wrong ip address » (clé liée à une autre IP)
+_INFOCLIMAT_AUTH_RE = re.compile(r"authenticate|token|ip address|unauthori|forbidden", re.IGNORECASE)
+
+
+def _infoclimat_error(body: str, token: str, status: int | None = None) -> SourceError:
+    text = " ".join(body.replace(token, "<clé>").split())[:120] if token else body[:120]
+    if status in (401, 403) or _INFOCLIMAT_AUTH_RE.search(body):
+        return SourceError(f"clé refusée ({text or f'HTTP {status}'})", auth=True)
+    return SourceError(text or f"HTTP {status}")
+
+
+def fetch_infoclimat(station_ids: list[str], token: str) -> dict:
+    """Dernière mesure de chaque station : {id: {"temperature", "observed_at" (UTC), "name"}}.
+
+    Lève SourceError (auth=True si la clé est refusée, par exemple après un changement d'IP).
+    """
     today = datetime.now(timezone.utc).date()
     params = [("version", "2"), ("method", "get"), ("format", "json")]
     params += [("stations[]", sid) for sid in station_ids]
@@ -186,13 +229,24 @@ def get_temperatures_infoclimat(station_ids: list[str], token: str) -> dict:
     req = urllib.request.Request(f"{INFOCLIMAT_URL}?{urllib.parse.urlencode(params)}", headers=API_HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
+            body = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raise _source_error("Infoclimat", e) from None
+        try:
+            body = e.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        raise _infoclimat_error(body, token, e.code) from None
     except Exception as e:
-        _log_http_failure("Infoclimat", e)
-        return {}
+        raise _source_error("Infoclimat", e) from None
+    try:
+        data = json.loads(body)
+    except ValueError:
+        raise _infoclimat_error(body, token) from None
     if not isinstance(data, dict) or data.get("errors") or data.get("status", "OK") != "OK":
-        logger.warning("Infoclimat : réponse en erreur (%s)", "; ".join(map(str, (data or {}).get("errors") or [])) or "statut inattendu")
-        return {}
+        errors = "; ".join(map(str, (data or {}).get("errors") or [])) if isinstance(data, dict) else ""
+        raise _infoclimat_error(errors or "statut inattendu", token)
 
     names = {
         str(s.get("id", "")).lower(): s.get("name") or s.get("libelle")
@@ -218,6 +272,44 @@ def get_temperatures_infoclimat(station_ids: list[str], token: str) -> dict:
         result[sid] = {"temperature": temp, "observed_at": observed_at, "name": names.get(sid.lower())}
         logger.info("Infoclimat %s : %.1f°C (mesure %s UTC)", sid, temp, observed_at.strftime("%Hh%M"))
     return result
+
+
+def get_temperatures_infoclimat(station_ids: list[str], token: str) -> dict:
+    """Comme fetch_infoclimat, mais {} en cas d'échec (journalisé)."""
+    if not station_ids or _is_paused("Infoclimat"):
+        return {}
+    try:
+        return fetch_infoclimat(station_ids, token)
+    except SourceError as e:
+        logger.warning("Infoclimat échoué : %s", e)
+    return {}
+
+
+def probe_sources(observations: dict) -> dict[str, SourceError | None]:
+    """Teste chaque source configurée, même celle qui ne sert qu'en secours.
+
+    Retourne {source: None si elle répond, SourceError sinon}. Une source en pause (429)
+    ou non configurée est absente du résultat.
+    """
+    results: dict[str, SourceError | None] = {}
+    ic_token = decrypt_password(observations.get("infoclimat_token", ""))
+    ic_stations = observations.get("infoclimat_stations") or []
+    if ic_token and ic_stations and not _is_paused("Infoclimat"):
+        try:
+            found = fetch_infoclimat(ic_stations, ic_token)
+            results["Infoclimat"] = None if found else SourceError("aucune mesure pour les stations configurées")
+        except SourceError as e:
+            results["Infoclimat"] = e
+
+    mf_id = decrypt_password(observations.get("meteofrance_application_id", ""))
+    mf_stations = observations.get("meteofrance_stations") or []
+    if mf_id and mf_stations and not _is_paused("Météo-France"):
+        try:
+            fetch_meteofrance(mf_stations[0], mf_id)
+            results["Météo-France"] = None
+        except SourceError as e:
+            results["Météo-France"] = e
+    return results
 
 
 # ── Open-Meteo (fallback) ─────────────────────────────────────

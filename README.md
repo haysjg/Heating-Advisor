@@ -280,6 +280,15 @@ Une entité `person` dont le téléphone n'envoie plus de position reste figée 
 
 Causes habituelles : localisation de l'app Home Assistant non réglée sur « Toujours autoriser », optimisation de batterie Android, app déconnectée du serveur. Un redémarrage de Home Assistant remet `last_updated` à jour pour toutes les entités : un traqueur figé peut alors être signalé « actif » à tort, puis de nouveau figé après le délai.
 
+### Surveillance des sources de température mesurée
+
+Météo-France ne servant qu'en secours d'Infoclimat, une clé refusée sur l'une ou l'autre passerait inaperçue. Toutes les 6 h (et 2 min après le démarrage), `modules/source_watch.py` teste chaque source configurée :
+- identifiants refusés (clé Infoclimat liée à une IP publique qui a changé, Application ID ou abonnement Météo-France refusé) : notification ntfy « 🔑 … refuse les identifiants » immédiate, avec la marche à suivre ;
+- autre panne : « ⚠️ … ne répond plus » si elle dure 2 tests de suite ;
+- une seule alerte par épisode, puis « ✅ … répond de nouveau ».
+
+Rappel « 📅 Abonnement Météo-France à renouveler » 30 j et 7 j avant `OBSERVATIONS.meteofrance_subscription_end`. État mémorisé dans `data/source_alerts.json`.
+
 ---
 
 ## Mode Absence
@@ -467,6 +476,7 @@ Tous les paramètres sont modifiables via l'interface `/config` sans rebuild Doc
 |---|---|
 | `meteofrance_application_id` | « Application ID » du portail API Météo-France (chiffré) |
 | `meteofrance_stations` | Identifiants de stations à 8 chiffres, par ordre de préférence |
+| `meteofrance_subscription_end` | Fin de l'abonnement à l'API (AAAA-MM-JJ) : rappel ntfy 30 j et 7 j avant |
 | `infoclimat_token` | Clé d'API open data Infoclimat (chiffrée) |
 | `infoclimat_stations` | Identifiants de stations Infoclimat (ex. `ME113`, `00089`) |
 | `max_age_minutes` | Âge maximal d'une mesure acceptée (défaut 90) |
