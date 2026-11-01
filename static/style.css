@@ -11,22 +11,41 @@
   --green: #22c55e;
   --yellow: #f59e0b;
   --red: #ef4444;
+  --warm: #fb923c;
+  --cool: #60a5fa;
   --radius: 12px;
-  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --surface-top: #1e2230;
+  --highlight: rgba(255,255,255,0.045);
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px -6px rgba(0,0,0,0.45);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(900px 520px at 0% -10%, rgba(251,146,60,0.07), transparent 70%),
+    radial-gradient(900px 520px at 100% -10%, rgba(96,165,250,0.07), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
+:focus-visible { outline: 2px solid var(--cool); outline-offset: 2px; }
 
 /* ── Header ───────────────────────────────────────────────── */
 header {
-  background: var(--bg2);
-  border-bottom: 1px solid var(--border);
+  position: relative;
+  background: linear-gradient(180deg, #1c1f2b, rgba(26,29,39,0.85));
   padding: 1rem 2rem;
+}
+/* Filet chaud → froid : le poêle d'un côté, la clim de l'autre */
+header::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(251,146,60,0.6) 30%, rgba(96,165,250,0.6) 70%, transparent);
 }
 .header-inner {
   max-width: 960px;
@@ -38,19 +57,26 @@ header {
 }
 .header-icon { font-size: 2rem; flex-shrink: 0; }
 .header-title-block { width: 260px; flex-shrink: 0; overflow: hidden; }
-h1 { font-size: 1.4rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header-sub { color: var(--text-sub); font-size: 0.85rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn-refresh {
-  background: var(--border);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: rgba(148,163,184,0.06);
+  color: var(--text-sub);
+  border: 1px solid rgba(148,163,184,0.12);
   border-radius: 8px;
   padding: 0.5rem 1rem;
   cursor: pointer;
   font-size: 0.9rem;
-  transition: background 0.2s;
+  font-family: inherit;
+  transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out);
 }
-.btn-refresh:hover { background: #3a3d54; }
+.btn-refresh:hover { background: rgba(148,163,184,0.14); border-color: rgba(148,163,184,0.28); color: var(--text); }
+.btn-refresh[aria-current="page"] {
+  color: var(--text);
+  background: rgba(148,163,184,0.16);
+  border-color: rgba(148,163,184,0.35);
+  box-shadow: inset 0 1px 0 var(--highlight);
+}
 .nav-links {
   display: flex;
   flex-wrap: wrap;
@@ -90,11 +116,11 @@ main {
 .sidebar-sticky {
   position: sticky;
   top: 1rem;
-  background: var(--bg2);
+  background: linear-gradient(180deg, var(--surface-top), var(--bg2) 120px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1rem;
-  box-shadow: var(--shadow);
+  box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
 }
 
 .sidebar-title {
@@ -114,28 +140,38 @@ main {
 }
 
 /* ── Cards ────────────────────────────────────────────────── */
+/* --tone : couleur d'état de la carte (lueur d'angle, bordure, halo d'icône) */
 .card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
+  --tone: var(--border);
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, var(--tone) 11%, transparent), transparent 60%),
+    linear-gradient(180deg, var(--surface-top), var(--bg2) 140px);
+  border: 1px solid color-mix(in oklab, var(--tone) 55%, var(--border));
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
-  box-shadow: var(--shadow);
+  box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
+  transition: border-color 0.25s var(--ease-out);
 }
-.card h3 { font-size: 1rem; color: var(--text-sub); margin-bottom: 0.75rem; }
+.card:hover { border-color: color-mix(in oklab, var(--tone) 70%, #3a3e54); }
+.card h3 { font-size: 0.95rem; font-weight: 600; color: var(--text-sub); margin-bottom: 0.75rem; letter-spacing: 0.005em; }
+.card h3 small { font-weight: 400; opacity: 0.8; }
 
 /* Recommendation card variants */
-.card-success  { border-color: var(--green); }
-.card-warning  { border-color: var(--yellow); }
-.card-danger   { border-color: var(--red); background: #1f0f0f; }
-.card-info     { border-color: var(--blue); }
-.card-error    { border-color: var(--red); }
-.card-night    { border-color: #4a5568; background: #13161f; }
+.card-success  { --tone: var(--green); }
+.card-warning  { --tone: var(--yellow); }
+.card-danger   { --tone: var(--red); }
+.card-info     { --tone: var(--blue); }
+.card-error    { --tone: var(--red); }
+.card-night    { --tone: #64748b; }
 
 /* Tempo color */
-.card-tempo-blue  { border-color: var(--blue); }
-.card-tempo-white { border-color: #cbd5e1; }
-.card-tempo-red   { border-color: var(--red); background: #1f0f0f; }
-.card-tempo-unknown { border-color: var(--border); }
+.card-tempo-blue  { --tone: var(--blue); }
+.card-tempo-white { --tone: #cbd5e1; }
+.card-tempo-red   { --tone: var(--red); }
+.card-tempo-unknown { --tone: var(--border); }
+.card-tempo-blue  .value-big { color: #93c5fd; }
+.card-tempo-white .value-big { color: #f1f5f9; }
+.card-tempo-red   .value-big { color: #fca5a5; }
 
 /* ── Seuils thermostat (widget) ───────────────────────────── */
 .thresholds-head {
@@ -258,21 +294,31 @@ main {
   align-items: flex-start;
   gap: 1.25rem;
 }
-.rec-icon { font-size: 3rem; line-height: 1; flex-shrink: 0; }
-.rec-icon-sm { font-size: 2rem; line-height: 1; flex-shrink: 0; }
-.rec-content h2 { font-size: 1.3rem; margin-bottom: 0.4rem; }
+.rec-icon, .rec-icon-sm {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  line-height: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in oklab, var(--tone) 22%, transparent), transparent 70%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tone) 30%, transparent);
+}
+.rec-icon    { font-size: 2.6rem; width: 4.5rem; height: 4.5rem; }
+.rec-icon-sm { font-size: 1.7rem; width: 3.2rem; height: 3.2rem; }
+.rec-content h2 { font-size: 1.3rem; margin-bottom: 0.4rem; letter-spacing: -0.01em; }
 .rec-content p  { color: var(--text-sub); line-height: 1.5; }
 .badge {
   display: inline-block;
   margin-top: 0.5rem;
   margin-right: 0.4rem;
-  background: rgba(255,255,255,0.08);
-  border-radius: 6px;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.22);
+  border-radius: 999px;
   padding: 0.2rem 0.6rem;
   font-size: 0.8rem;
   color: var(--green);
 }
-.badge-gray { color: var(--text-sub); }
+.badge-gray { color: var(--text-sub); background: rgba(148,163,184,0.08); border-color: rgba(148,163,184,0.16); }
 
 /* ── Today / Tomorrow labels ──────────────────────────────── */
 .card-tomorrow {
@@ -287,15 +333,16 @@ main {
   position: absolute;
   top: -1px;
   right: 1rem;
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 0 0 6px 6px;
-  color: #fff;
+  letter-spacing: 0.12em;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0 0 8px 8px;
+  border: 1px solid transparent;
+  border-top: none;
 }
-.today-label    { background: var(--text-sub); }
-.tomorrow-label { background: var(--blue); }
+.today-label    { background: #2a2f40; border-color: #3a4054; color: #b4bdcc; }
+.tomorrow-label { background: rgba(59,130,246,0.18); border-color: rgba(59,130,246,0.45); color: #93c5fd; }
 
 /* ── Grid ─────────────────────────────────────────────────── */
 .grid-2 {
@@ -318,23 +365,41 @@ main {
 }
 
 /* ── Values ───────────────────────────────────────────────── */
-.value-big  { font-size: 2.2rem; font-weight: 700; margin: 0.3rem 0; }
+.value-big  { font-size: 2.3rem; font-weight: 700; margin: 0.3rem 0; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .value-sub  { color: var(--text-sub); font-size: 0.85rem; margin-top: 4px; }
 .error-text { color: var(--red); font-size: 0.9rem; }
 
 /* ── Cost blocks ──────────────────────────────────────────── */
 .cost-block {
-  background: var(--bg);
+  position: relative;
+  background: rgba(15,17,23,0.6);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem;
 }
 .cost-block h4 { font-size: 0.95rem; margin-bottom: 0.5rem; }
 .cost-block h4 small { font-weight: 400; color: var(--text-sub); }
-.cost-value { font-size: 1.8rem; font-weight: 700; color: var(--text); }
+.cost-value { font-size: 1.8rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .cost-winner {
-  border-color: var(--green);
-  background: rgba(34, 197, 94, 0.06);
+  border-color: rgba(34,197,94,0.55);
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(34,197,94,0.12), transparent 65%),
+    rgba(15,17,23,0.6);
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.08), 0 8px 24px -10px rgba(34,197,94,0.35);
+}
+.cost-winner::after {
+  content: "✓ moins cher";
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--green);
+  background: rgba(34,197,94,0.12);
+  border: 1px solid rgba(34,197,94,0.3);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
 }
 .cost-winner .cost-value { color: var(--green); }
 
@@ -347,13 +412,14 @@ main {
 .source-badge {
   display: inline-block;
   margin-top: 6px;
-  border-radius: 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
   padding: 0.2rem 0.6rem;
   font-size: 0.78rem;
   font-weight: 600;
 }
-.source-real  { background: rgba(34,197,94,0.12);  color: #22c55e; }
-.source-model { background: rgba(245,158,11,0.12); color: #f59e0b; }
+.source-real  { background: rgba(34,197,94,0.1);  border-color: rgba(34,197,94,0.25);  color: #4ade80; }
+.source-model { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.25); color: #fbbf24; }
 
 .comfort-warning {
   font-size: 0.82rem;
@@ -389,7 +455,30 @@ main {
   border-bottom: 1px solid var(--border);
 }
 .tarif-table tbody tr:last-child td { border-bottom: none; }
-.tarif-table td:not(:first-child) { font-weight: 700; font-family: monospace; font-size: 0.95rem; }
+.tarif-table td:not(:first-child) { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 0.95rem; color: var(--text-sub); }
+.tarif-table tbody tr { transition: background 0.2s var(--ease-out); }
+.tarif-table tbody tr:hover { background: rgba(148,163,184,0.04); }
+/* Jour Tempo en cours, et la période (HP/HC) qui s'applique maintenant */
+.tarif-table tr.is-today { background: rgba(148,163,184,0.07); }
+.tarif-table tr.is-today td { color: var(--text); }
+.tarif-table tr.is-today td:first-child::after {
+  content: "aujourd'hui";
+  margin-left: 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-sub);
+}
+.tarif-now {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  margin-left: -0.55rem;
+  border-radius: 999px;
+  background: rgba(251,146,60,0.14);
+  box-shadow: inset 0 0 0 1px rgba(251,146,60,0.4);
+  color: #fdba74;
+}
 .tarif-blue td:first-child  { color: var(--blue); }
 .tarif-white td:first-child { color: #cbd5e1; }
 .tarif-red td:first-child   { color: var(--red); }

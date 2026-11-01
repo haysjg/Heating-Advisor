@@ -910,20 +910,20 @@
           </tr>
         </thead>
         <tbody>
-          <tr class="tarif-blue">
+          <tr class="tarif-blue{% if data.tempo.today.color == 'BLUE' %} is-today{% endif %}">
             <td>🔵 Bleu</td>
-            <td>{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HP) }} €/kWh</td>
-            <td>{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HC) }} €/kWh</td>
+            <td>{% if data.tempo.today.color == 'BLUE' and data.tempo.current_period == 'HP' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HP) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HP) }} €/kWh{% endif %}</td>
+            <td>{% if data.tempo.today.color == 'BLUE' and data.tempo.current_period == 'HC' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HC) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HC) }} €/kWh{% endif %}</td>
           </tr>
-          <tr class="tarif-white">
+          <tr class="tarif-white{% if data.tempo.today.color == 'WHITE' %} is-today{% endif %}">
             <td>⚪ Blanc</td>
-            <td>{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HP) }} €/kWh</td>
-            <td>{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HC) }} €/kWh</td>
+            <td>{% if data.tempo.today.color == 'WHITE' and data.tempo.current_period == 'HP' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HP) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HP) }} €/kWh{% endif %}</td>
+            <td>{% if data.tempo.today.color == 'WHITE' and data.tempo.current_period == 'HC' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HC) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HC) }} €/kWh{% endif %}</td>
           </tr>
-          <tr class="tarif-red">
+          <tr class="tarif-red{% if data.tempo.today.color == 'RED' %} is-today{% endif %}">
             <td>🔴 Rouge</td>
-            <td>{{ "%.4f"|format(config.TEMPO_PRICES.RED.HP) }} €/kWh</td>
-            <td>{{ "%.4f"|format(config.TEMPO_PRICES.RED.HC) }} €/kWh</td>
+            <td>{% if data.tempo.today.color == 'RED' and data.tempo.current_period == 'HP' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.RED.HP) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.RED.HP) }} €/kWh{% endif %}</td>
+            <td>{% if data.tempo.today.color == 'RED' and data.tempo.current_period == 'HC' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.RED.HC) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.RED.HC) }} €/kWh{% endif %}</td>
           </tr>
         </tbody>
       </table>
