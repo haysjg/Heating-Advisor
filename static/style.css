@@ -146,12 +146,12 @@ main {
   gap: 0.25rem 0.75rem;
 }
 .next-check {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   color: var(--text-sub);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-#next-check-value { color: var(--text); font-weight: 600; }
+#next-check-value { color: var(--text); font-size: 1rem; font-weight: 600; }
 @media (max-width: 480px) { .next-check-label { display: none; } }
 .thresholds-help {
   color: var(--text-sub);
