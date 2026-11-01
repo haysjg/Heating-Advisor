@@ -760,9 +760,17 @@
     <section class="card card-labeled" id="electricity-card" style="display:none">
       <div class="today-label">SEMAINE</div>
       <h3>⚡ Consommation électrique</h3>
-      <p class="value-big" id="electricity-kwh">—</p>
-      <p class="value-sub" id="electricity-period"></p>
-      <span class="source-badge source-real" id="electricity-delta"></span>
+      <div class="elec-layout">
+        <div class="elec-summary">
+          <p class="value-big" id="electricity-kwh">—</p>
+          <p class="value-sub" id="electricity-period"></p>
+          <span class="source-badge source-real" id="electricity-delta"></span>
+        </div>
+        <a class="elec-trend" id="electricity-trend" href="/electricity" title="Voir l'historique complet" style="display:none">
+          <span class="elec-trend-caption" id="electricity-trend-caption">2 derniers mois</span>
+          <div class="elec-trend-canvas"><canvas id="electricityTrendChart"></canvas></div>
+        </a>
+      </div>
     </section>
     {% endif %}
 
@@ -836,6 +844,129 @@
         badge.remove();
       }
       card.style.display = '';
+    })
+    .catch(() => {});
+
+  // Mini-graphe : évolution hebdomadaire sur les 2 derniers mois (~9 semaines)
+  fetch('/api/electricity/history?weeks=9')
+    .then(r => r.json())
+    .then(rows => {
+      const since = new Date();
+      since.setMonth(since.getMonth() - 2);
+      const sinceStr = since.toISOString().slice(0, 10);
+      // period_start absent si le mail a été transféré : repli sur la date de réception
+      const pts = rows
+        .map(r => ({ day: (r.period_start || r.fetched_at || '').slice(0, 10), kwh: r.kwh }))
+        .filter(r => r.day && r.day >= sinceStr && r.kwh != null)
+        .sort((a, b) => a.day.localeCompare(b.day));
+      if (pts.length < 2) return;
+
+      const fmtDay = iso => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', {day: 'numeric', month: 'short'});
+      const fmtKwh = v => v.toLocaleString('fr-FR', {maximumFractionDigits: 1}) + ' kWh';
+      const values = pts.map(r => r.kwh);
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      const last = values.length - 1;
+
+      document.getElementById('electricity-trend-caption').textContent =
+        '2 derniers mois · moy. ' + fmtKwh(avg) + '/sem.';
+      document.getElementById('electricity-trend').style.display = '';
+
+      const canvas = document.getElementById('electricityTrendChart');
+      // Halo lumineux sous la courbe (ombre portée appliquée au seul tracé)
+      const glow = {
+        id: 'elecGlow',
+        beforeDatasetDraw(chart, args) {
+          if (args.index !== 0) return;
+          const c = chart.ctx;
+          c.save();
+          c.shadowColor = 'rgba(245,158,11,0.55)';
+          c.shadowBlur = 12;
+          c.shadowOffsetY = 4;
+        },
+        afterDatasetDraw(chart, args) {
+          if (args.index === 0) chart.ctx.restore();
+        },
+      };
+
+      new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: pts.map(r => r.day),
+          datasets: [
+            {
+              data: values,
+              borderWidth: 2.5,
+              tension: 0.4,
+              fill: true,
+              borderColor: ctx => {
+                const area = ctx.chart.chartArea;
+                if (!area) return '#f59e0b';
+                const g = ctx.chart.ctx.createLinearGradient(area.left, 0, area.right, 0);
+                g.addColorStop(0, '#fbbf24');
+                g.addColorStop(1, '#f97316');
+                return g;
+              },
+              backgroundColor: ctx => {
+                const area = ctx.chart.chartArea;
+                if (!area) return 'rgba(245,158,11,0.15)';
+                const g = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+                g.addColorStop(0, 'rgba(245,158,11,0.35)');
+                g.addColorStop(1, 'rgba(245,158,11,0)');
+                return g;
+              },
+              pointRadius: ctx => ctx.dataIndex === last ? 4 : 0,
+              pointHoverRadius: 5,
+              pointBackgroundColor: '#f97316',
+              pointBorderColor: '#1a1d27',
+              pointBorderWidth: 2,
+            },
+            {
+              data: values.map(() => avg),
+              borderColor: 'rgba(136,146,164,0.45)',
+              borderWidth: 1,
+              borderDash: [4, 4],
+              pointRadius: 0,
+              pointHoverRadius: 0,
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 8, right: 6, bottom: 2, left: 6 } },
+          interaction: { mode: 'index', intersect: false },
+          animation: { duration: 900, easing: 'easeOutQuart' },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              filter: item => item.datasetIndex === 0,
+              displayColors: false,
+              backgroundColor: 'rgba(15,17,23,0.92)',
+              borderColor: 'rgba(245,158,11,0.4)',
+              borderWidth: 1,
+              titleColor: '#8892a4',
+              bodyColor: '#e2e8f0',
+              callbacks: {
+                title: items => fmtDay(items[0].label),
+                label: item => fmtKwh(item.parsed.y),
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              border: { display: false },
+              ticks: {
+                color: '#8892a4', font: { size: 10 }, maxRotation: 0, autoSkip: false,
+                callback: (v, i) => (i === 0 || i === last) ? fmtDay(pts[i].day) : '',
+              },
+            },
+            y: { display: false, grace: '15%' },
+          },
+        },
+        plugins: [glow],
+      });
     })
     .catch(() => {});
   {% endif %}

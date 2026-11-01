@@ -729,3 +729,36 @@ main {
     to   { transform: translateY(0);    opacity: 1; }
   }
 }
+
+/* ── Carte électricité : résumé + mini-graphe ─────────────── */
+.elec-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 1.25rem;
+}
+.elec-summary { flex: 0 0 auto; min-width: 0; }
+.elec-trend {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 4px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(245,158,11,0.06), rgba(245,158,11,0));
+  border: 1px solid rgba(245,158,11,0.15);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.2s;
+}
+.elec-trend:hover { border-color: rgba(245,158,11,0.4); }
+.elec-trend-caption {
+  font-size: 0.72rem;
+  color: var(--text-sub);
+  text-align: right;
+  letter-spacing: 0.02em;
+}
+.elec-trend-canvas { position: relative; height: 90px; }
+@media (max-width: 600px) {
+  .elec-layout { flex-direction: column; gap: 0.75rem; }
+}
