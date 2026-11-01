@@ -138,6 +138,21 @@ main {
 .card-tempo-unknown { border-color: var(--border); }
 
 /* ── Seuils thermostat (widget) ───────────────────────────── */
+.thresholds-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.next-check {
+  font-size: 0.75rem;
+  color: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#next-check-value { color: var(--text); font-weight: 600; }
+@media (max-width: 480px) { .next-check-label { display: none; } }
 .thresholds-help {
   color: var(--text-sub);
   font-size: 0.85rem;

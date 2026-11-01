@@ -131,3 +131,16 @@ def test_deconnecter_tous_les_appareils(app_module, client):
     assert resp.status_code == 200
     assert autre.get("/api/thermostat/state").status_code == 401
     assert client.get("/api/thermostat/state").status_code != 401
+
+
+# ── Compte à rebours du thermostat ────────────────────────────────────────
+
+def test_etat_thermostat_donne_prochaine_evaluation(client, app_module, monkeypatch):
+    from datetime import datetime, timezone
+    job = mock.Mock(next_run_time=datetime(2026, 11, 1, 18, 20, tzinfo=timezone.utc))
+    monkeypatch.setattr(app_module._scheduler, "get_job", lambda job_id: job if job_id == "thermostat_job" else None)
+    _login(client)
+    assert client.get("/api/thermostat/state").get_json()["next_check"] == "2026-11-01T18:20:00+00:00"
+
+    monkeypatch.setattr(app_module._scheduler, "get_job", lambda job_id: None)
+    assert client.get("/api/thermostat/state").get_json()["next_check"] is None

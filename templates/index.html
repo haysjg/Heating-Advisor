@@ -379,7 +379,15 @@
     {% if config.HOME_ASSISTANT.enabled %}
     <section class="card thresholds-card" id="thresholds-card"
              data-temp-on="{{ config.THERMOSTAT.temp_on }}" data-temp-off="{{ config.THERMOSTAT.temp_off }}">
-      <h3>🎯 Température de confort</h3>
+      <div class="thresholds-head">
+        <h3>🎯 Température de confort</h3>
+        {% if config.THERMOSTAT.enabled %}
+        <span class="next-check" id="next-check" data-next-check="{{ next_check or '' }}"
+              title="Prochaine vérification de la température par le thermostat" hidden>
+          ⏱ <span class="next-check-label">Prochaine évaluation</span> <span id="next-check-value"></span>
+        </span>
+        {% endif %}
+      </div>
       <p class="thresholds-help">
         Le thermostat allume le chauffage recommandé (poêle ou clim) quand la température ressentie
         passe sous le seuil d'allumage, et l'éteint quand elle atteint le seuil d'extinction

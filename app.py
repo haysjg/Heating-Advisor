@@ -927,7 +927,8 @@ def index():
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
                                next_schedule_start=next_start, radiateurs_info=radiateurs_info,
                                weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
-                               poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL)
+                               poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL,
+                               next_check=_next_thermostat_check())
     except Exception as e:
         error = _internal_error_message(_log_internal_error(e))
         return render_template("index.html", data=None, error=error, config=config, thermostat_state={},
@@ -1343,11 +1344,20 @@ def api_thermostat_diagnose():
     })
 
 
+def _next_thermostat_check() -> str | None:
+    """Heure ISO (avec fuseau) du prochain passage du thermostat, ou None s'il n'est pas planifié."""
+    job = _scheduler.get_job("thermostat_job")
+    if not job or not job.next_run_time:
+        return None
+    return job.next_run_time.isoformat()
+
+
 @app.route("/api/thermostat/state")
 def api_thermostat_state():
     state = thermostat_module.get_state()
     return jsonify({
         **state,
+        "next_check": _next_thermostat_check(),
         "enabled": config.THERMOSTAT.get("enabled", False),
         "in_schedule": thermostat_module.is_in_schedule(config.THERMOSTAT),
         "temp_on": config.THERMOSTAT.get("temp_on"),

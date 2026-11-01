@@ -655,6 +655,48 @@ const DashboardRefresh = {
   }
 })();
 
+// ── Compte à rebours jusqu'à la prochaine évaluation du thermostat ──
+(function initNextCheckCountdown() {
+  const pill = document.getElementById('next-check');
+  if (!pill) return;
+  const value = document.getElementById('next-check-value');
+  let target = Date.parse(pill.dataset.nextCheck) || null;
+  let syncing = false;
+  let lastSync = Date.now();
+
+  async function sync() {
+    if (syncing) return;
+    syncing = true;
+    try {
+      const response = await fetch('/api/thermostat/state');
+      if (response.ok) target = Date.parse((await response.json()).next_check) || null;
+    } catch (e) { /* on garde l'ancienne échéance */ }
+    lastSync = Date.now();
+    syncing = false;
+  }
+
+  function render() {
+    if (!target) { pill.hidden = true; return; }
+    pill.hidden = false;
+    const remaining = Math.round((target - Date.now()) / 1000);
+    if (remaining <= 0) {
+      value.textContent = 'en cours…';
+      // Le passage vient de démarrer : la nouvelle échéance est connue quelques secondes après
+      if (Date.now() - lastSync > 5000) sync();
+      return;
+    }
+    const m = Math.floor(remaining / 60);
+    const sec = String(remaining % 60).padStart(2, '0');
+    value.textContent = `${m}:${sec}`;
+    // Resynchronisation régulière : relance manuelle, changement d'intervalle dans /config…
+    if (Date.now() - lastSync > 5 * 60 * 1000) sync();
+  }
+
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) sync().then(render); });
+  render();
+  setInterval(render, 1000);
+})();
+
 // ── Seuils du thermostat (widget page principale) ────────────────
 const THRESHOLD_LIMITS = { on: [10, 25], off: [10, 30] };
 
