@@ -692,6 +692,27 @@ const DashboardRefresh = {
     if (Date.now() - lastSync > 5 * 60 * 1000) sync();
   }
 
+  const nowBtn = document.getElementById('next-check-now');
+  nowBtn.addEventListener('click', async () => {
+    nowBtn.disabled = true;
+    try {
+      const response = await fetch('/api/thermostat/check-now', { method: 'POST' });
+      if (response.ok) {
+        // Passage lancé : « en cours… » puis nouvelle échéance relue quelques secondes après
+        target = Date.now();
+        lastSync = Date.now();
+        render();
+        showToast('Évaluation du thermostat lancée', 'success');
+      } else {
+        showToast((await response.json().catch(() => ({}))).error || 'Erreur', 'error');
+      }
+    } catch (e) {
+      showToast('Erreur réseau', 'error');
+    } finally {
+      setTimeout(() => { nowBtn.disabled = false; }, 5000);
+    }
+  });
+
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sync().then(render); });
   render();
   setInterval(render, 1000);

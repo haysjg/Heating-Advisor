@@ -457,6 +457,7 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `GET /api/thermostat/diagnose` | Diagnostic complet (temp, sonde, présence, scheduler) |
 | `POST /api/thermostat/toggle` | Active/désactive le thermostat |
 | `POST /api/thermostat/resume` | Annule la suspension du thermostat |
+| `POST /api/thermostat/check-now` | Force une évaluation immédiate du thermostat |
 | `POST /api/thermostat/thresholds` | Modifie les seuils `{ "temp_on": 19.5, "temp_off": 21 }` (widget « Température de confort » du dashboard) |
 | `GET /api/thermostat/vacation` | Dates d'absence programmées |
 | `POST /api/thermostat/vacation` | Programme une absence |

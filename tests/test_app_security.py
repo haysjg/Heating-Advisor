@@ -144,3 +144,16 @@ def test_etat_thermostat_donne_prochaine_evaluation(client, app_module, monkeypa
 
     monkeypatch.setattr(app_module._scheduler, "get_job", lambda job_id: None)
     assert client.get("/api/thermostat/state").get_json()["next_check"] is None
+
+
+def test_evaluation_forcee_avance_le_passage(client, app_module, monkeypatch):
+    calls = []
+    monkeypatch.setattr(app_module._scheduler, "get_job", lambda job_id: mock.Mock() if job_id == "thermostat_job" else None)
+    monkeypatch.setattr(app_module._scheduler, "modify_job", lambda job_id, **kw: calls.append((job_id, kw)))
+    _login(client)
+    resp = client.post("/api/thermostat/check-now", headers=FETCH)
+    assert resp.status_code == 200
+    assert calls and calls[0][0] == "thermostat_job" and "next_run_time" in calls[0][1]
+
+    monkeypatch.setattr(app_module._scheduler, "get_job", lambda job_id: None)
+    assert client.post("/api/thermostat/check-now", headers=FETCH).status_code == 409

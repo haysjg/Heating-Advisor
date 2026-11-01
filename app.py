@@ -1365,6 +1365,16 @@ def api_thermostat_state():
     })
 
 
+@app.route("/api/thermostat/check-now", methods=["POST"])
+def api_thermostat_check_now():
+    """Avance le prochain passage du thermostat à maintenant (bouton « Évaluer maintenant »)."""
+    if not _scheduler.get_job("thermostat_job"):
+        return jsonify({"error": "Thermostat non planifié"}), 409
+    _scheduler.modify_job("thermostat_job", next_run_time=datetime.now(_scheduler.timezone))
+    logger.info("Thermostat : évaluation forcée manuellement")
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/thermostat/vacation", methods=["GET"])
 def api_thermostat_vacation_get():
     vac = thermostat_module.get_vacation()

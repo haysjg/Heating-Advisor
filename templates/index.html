@@ -382,10 +382,12 @@
       <div class="thresholds-head">
         <h3>🎯 Température de confort</h3>
         {% if config.THERMOSTAT.enabled %}
-        <span class="next-check" id="next-check" data-next-check="{{ next_check or '' }}"
-              title="Prochaine vérification de la température par le thermostat" hidden>
-          ⏱ <span class="next-check-label">Prochaine évaluation</span> <span id="next-check-value"></span>
-        </span>
+        <div class="next-check" id="next-check" data-next-check="{{ next_check or '' }}" hidden>
+          <span title="Prochaine vérification de la température par le thermostat">
+            ⏱ <span class="next-check-label">Prochaine évaluation</span> <span id="next-check-value"></span>
+          </span>
+          <button type="button" class="next-check-now" id="next-check-now">↻ Évaluer maintenant</button>
+        </div>
         {% endif %}
       </div>
       <p class="thresholds-help">
