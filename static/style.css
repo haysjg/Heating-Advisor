@@ -37,7 +37,7 @@ body {
 header {
   position: relative;
   background: linear-gradient(180deg, #1c1f2b, rgba(26,29,39,0.85));
-  padding: 1rem 2rem;
+  padding: 1rem 2rem 0;
 }
 /* Filet chaud → froid : le poêle d'un côté, la clim de l'autre */
 header::after {
@@ -47,16 +47,29 @@ header::after {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(251,146,60,0.6) 30%, rgba(96,165,250,0.6) 70%, transparent);
 }
+/* Ligne 1 : marque + actions ; ligne 2 : onglets de navigation */
 .header-inner {
-  max-width: 960px;
+  max-width: 1400px;
   margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1rem;
+  column-gap: 0.85rem;
 }
-.header-icon { font-size: 2rem; flex-shrink: 0; }
-.header-title-block { width: 260px; flex-shrink: 0; overflow: hidden; }
+.header-icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.6rem;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(251,146,60,0.22), transparent 60%),
+    radial-gradient(circle at 75% 80%, rgba(96,165,250,0.22), transparent 60%),
+    #232736;
+  box-shadow: inset 0 1px 0 var(--highlight), inset 0 0 0 1px rgba(148,163,184,0.12);
+}
+.header-title-block { min-width: 0; overflow: hidden; }
 h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header-sub { color: var(--text-sub); font-size: 0.85rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn-refresh {
@@ -78,19 +91,47 @@ h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; white-space: 
   box-shadow: inset 0 1px 0 var(--highlight);
 }
 .nav-links {
+  grid-column: 1 / -1;
+  grid-row: 2;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem;
-  margin-left: auto;
+  align-items: stretch;
+  gap: 0.15rem;
+  margin-top: 0.85rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
 }
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links .btn-refresh {
+  position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  padding: 0.55rem 0.85rem 0.7rem;
+  font-size: 0.88rem;
+}
+.nav-links .btn-refresh:hover { background: rgba(148,163,184,0.07); }
+.nav-links .btn-refresh[aria-current="page"] { background: none; box-shadow: none; color: var(--text); font-weight: 600; }
+.nav-links .btn-refresh[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0.6rem; right: 0.6rem; bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--warm), var(--cool));
+}
+.nav-links a[href="/logout"] { margin-left: auto; }
 .nav-actions {
+  grid-column: 3;
+  grid-row: 1;
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 1rem;
-  padding-left: 1rem;
-  border-left: 1px solid var(--border);
+  gap: 0.5rem;
 }
 
 /* ── Layout ───────────────────────────────────────────────── */
@@ -358,10 +399,10 @@ main {
 @media (max-width: 600px) {
   .grid-2 { grid-template-columns: 1fr; }
   .grid-3 { grid-template-columns: 1fr; }
-  .header-inner { flex-wrap: wrap; }
-  .nav-links { margin-left: 0; }
-  .nav-actions { border-left: none; padding-left: 0; }
-  .header-title-block { width: auto; }
+  header { padding: 0.85rem 1rem 0; }
+  .header-inner { grid-template-columns: auto minmax(0, 1fr); row-gap: 0.6rem; }
+  .nav-actions { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
+  .nav-links { grid-row: 3; margin-top: 0.25rem; }
 }
 
 /* ── Values ───────────────────────────────────────────────── */
@@ -877,3 +918,63 @@ main {
 .temp-chip-max { color: #fdba74; background: rgba(249,115,22,0.1);  border-color: rgba(249,115,22,0.25); }
 .temp-chip-hc  { color: var(--text-sub); background: rgba(136,146,164,0.1); border-color: rgba(136,146,164,0.2); font-weight: 500; }
 .temp-chart-canvas { position: relative; height: 200px; }
+
+/* ── Jauge de confort (seuils thermostat) ─────────────────── */
+.comfort-gauge { margin: 2rem 0 1.4rem; }
+.comfort-gauge[hidden] { display: none; }
+.cg-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(56,189,248,0.35), rgba(129,140,248,0.25) 45%, rgba(249,115,22,0.35));
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+}
+.cg-band {
+  position: absolute;
+  top: -3px; bottom: -3px;
+  border-radius: 999px;
+  background: rgba(34,197,94,0.28);
+  box-shadow: inset 0 0 0 1.5px rgba(74,222,128,0.85), 0 0 14px rgba(34,197,94,0.35);
+}
+.cg-band::before, .cg-band::after {
+  position: absolute;
+  top: -1.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cg-band::before { content: attr(data-on);  left: 0;  transform: translateX(-50%); color: #7dd3fc; }
+.cg-band::after  { content: attr(data-off); right: 0; transform: translateX(50%);  color: #fdba74; }
+.cg-marker {
+  position: absolute;
+  top: 50%;
+  width: 16px; height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 3px var(--bg2), 0 0 0 4px rgba(226,232,240,0.35), 0 2px 8px rgba(0,0,0,0.5);
+}
+.cg-marker[hidden] { display: none; }
+.cg-marker-label {
+  position: absolute;
+  top: 1.35rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cg-scale {
+  position: relative;
+  height: 1rem;
+  margin-top: 0.4rem;
+  font-size: 0.66rem;
+  color: #5d6678;
+  font-variant-numeric: tabular-nums;
+}
+.cg-scale span { position: absolute; transform: translateX(-50%); }
+.comfort-gauge.has-marker .cg-scale { visibility: hidden; }
+.comfort-gauge.has-marker { margin-bottom: 1.6rem; }

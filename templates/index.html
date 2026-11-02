@@ -395,6 +395,14 @@
         passe sous le seuil d'allumage, et l'éteint quand elle atteint le seuil d'extinction
         — qui sert aussi de consigne à la clim.
       </p>
+      {% set _felt = data.indoor.felt_temperature if data.indoor and data.indoor.felt_temperature is defined and data.indoor.felt_temperature is not none else (data.indoor.temperature if data.indoor else none) %}
+      <div class="comfort-gauge" id="comfort-gauge" data-current="{{ _felt if _felt is not none else '' }}" aria-hidden="true">
+        <div class="cg-track">
+          <div class="cg-band" id="cg-band"></div>
+          <div class="cg-marker" id="cg-marker" hidden><span class="cg-marker-label" id="cg-marker-label"></span></div>
+        </div>
+        <div class="cg-scale" id="cg-scale"></div>
+      </div>
       <div class="thresholds-grid">
         <div class="threshold">
           <label for="threshold-on">Allumage sous</label>

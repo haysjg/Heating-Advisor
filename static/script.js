@@ -433,6 +433,13 @@ const DashboardRefresh = {
   },
 
   updateIndoorTemp(indoor) {
+    const gauge = document.getElementById('comfort-gauge');
+    if (gauge && indoor) {
+      const current = indoor.felt_temperature ?? indoor.temperature;
+      gauge.dataset.current = current ?? '';
+      renderComfortGauge();
+    }
+
     const card = document.querySelector('[data-refresh="indoor"]');
     if (!card || !indoor) return;
 
@@ -750,7 +757,49 @@ function onThresholdInput() {
   msg.className = 'thresholds-msg' + (error ? ' thresholds-msg-error' : '');
   document.getElementById('thresholds-save').disabled = !dirty || !!error;
   document.getElementById('thresholds-cancel').hidden = !dirty;
+  renderComfortGauge();
 }
+
+// Jauge : plage allumage → extinction et température ressentie actuelle
+function renderComfortGauge() {
+  const gauge = document.getElementById('comfort-gauge');
+  if (!gauge) return;
+  const on = parseFloat(_thresholdInput('on').value);
+  const off = parseFloat(_thresholdInput('off').value);
+  if (isNaN(on) || isNaN(off) || on >= off) { gauge.hidden = true; return; }
+  gauge.hidden = false;
+
+  const current = parseFloat(gauge.dataset.current);
+  const hasCurrent = !isNaN(current);
+  const lo = Math.floor(Math.min(on, hasCurrent ? current : on) - 2);
+  const hi = Math.ceil(Math.max(off, hasCurrent ? current : off) + 2);
+  const pct = v => ((v - lo) / (hi - lo) * 100) + '%';
+  const fmt = v => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + '°';
+
+  const band = document.getElementById('cg-band');
+  band.style.left = pct(on);
+  band.style.right = 'calc(100% - ' + pct(off) + ')';
+  band.dataset.on = fmt(on);
+  band.dataset.off = fmt(off);
+
+  const marker = document.getElementById('cg-marker');
+  marker.hidden = !hasCurrent;
+  gauge.classList.toggle('has-marker', hasCurrent);
+  if (hasCurrent) {
+    marker.style.left = pct(current);
+    document.getElementById('cg-marker-label').textContent = 'ressenti ' + fmt(current);
+  }
+
+  const scale = document.getElementById('cg-scale');
+  scale.innerHTML = '';
+  for (let t = lo; t <= hi; t += 2) {
+    const tick = document.createElement('span');
+    tick.style.left = pct(t);
+    tick.textContent = t + '°';
+    scale.appendChild(tick);
+  }
+}
+document.addEventListener('DOMContentLoaded', renderComfortGauge);
 
 function stepThreshold(kind, delta) {
   const input = _thresholdInput(kind);
