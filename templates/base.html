@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Heating Advisor{% endblock %} – {{ config.LOCATION.city }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap">
   <link rel="stylesheet" href="/static/style.css">
   <script>
     // Protection CSRF : en-tête ajouté à toute requête fetch vers l'appli, exigé par le serveur
@@ -26,6 +29,35 @@
       return String(value ?? '').replace(/[&<>"']/g, c => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
       })[c]);
+    }
+
+    // ── Ambiance de fond ──
+    // Teinte selon l'appareil qui tourne / Tempo rouge (calculée sur l'accueil, reprise sur les autres pages)
+    // et ciel étoilé la nuit. Posée avant le premier rendu pour éviter un changement de couleur visible.
+    (function () {
+      try {
+        const amb = localStorage.getItem('ambiance');
+        if (amb) document.documentElement.dataset.ambiance = amb;
+      } catch (e) { /* stockage indisponible : fond neutre */ }
+      const h = new Date().getHours();
+      if (h >= 22 || h < 6) document.documentElement.dataset.night = '';
+    })();
+
+    // Cartes en verre : reflet qui suit la souris (ordinateur uniquement)
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      let raf = 0, last = null;
+      document.addEventListener('pointermove', e => {
+        last = e;
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          const card = last.target.closest && last.target.closest('.card');
+          if (!card) return;
+          const r = card.getBoundingClientRect();
+          card.style.setProperty('--mx', `${last.clientX - r.left}px`);
+          card.style.setProperty('--my', `${last.clientY - r.top}px`);
+        });
+      }, { passive: true });
     }
 
     // ── Animations ──

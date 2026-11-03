@@ -334,6 +334,55 @@ def get_temperature_openmeteo(lat: float, lon: float) -> float | None:
     return None
 
 
+# Ciel actuel (illustration de la carte météo) : change lentement, une requête par quart d'heure suffit
+CONDITIONS_CACHE_MINUTES = 15
+_conditions_cache: dict | None = None
+
+
+def _sky_kind(code: int) -> str:
+    """Code météo WMO → type de ciel affiché : clear, partly, cloudy, fog, rain, snow, storm."""
+    if code in (0, 1):
+        return "clear"
+    if code == 2:
+        return "partly"
+    if code == 3:
+        return "cloudy"
+    if code in (45, 48):
+        return "fog"
+    if code in (71, 73, 75, 77, 85, 86):
+        return "snow"
+    if code >= 95:
+        return "storm"
+    if 51 <= code <= 82:
+        return "rain"
+    return "cloudy"
+
+
+def get_current_conditions(lat: float, lon: float) -> dict | None:
+    """État du ciel via Open-Meteo : {"sky", "is_day", "code"}, ou None si indisponible."""
+    global _conditions_cache
+    now = datetime.now()
+    if _conditions_cache and now - _conditions_cache["at"] < timedelta(minutes=CONDITIONS_CACHE_MINUTES):
+        return _conditions_cache["data"]
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&current=weather_code,is_day"
+        f"&timezone=Europe%2FParis"
+    )
+    try:
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            current = json.loads(resp.read())["current"]
+        code = int(current["weather_code"])
+        data = {"sky": _sky_kind(code), "is_day": bool(current["is_day"]), "code": code}
+    except Exception as e:
+        logger.warning("Open-Meteo conditions échouées : %s", e)
+        return _conditions_cache["data"] if _conditions_cache else None
+    _conditions_cache = {"data": data, "at": now}
+    return data
+
+
 def get_tomorrow_forecast_openmeteo(lat: float, lon: float, hp_start: int = 6, hp_end: int = 22) -> dict | None:
     """
     Récupère les prévisions de demain via Open-Meteo.

@@ -19,7 +19,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import config
-from modules.weather import get_current_temperature, get_tomorrow_weather, get_hourly_forecast
+from modules.weather import get_current_conditions, get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_tempo_info
 from modules.analysis import DataCache, build_advisor_config, compute_analysis, tariff_slot
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
@@ -1561,6 +1561,15 @@ def absence_page():
 @app.route("/statistics")
 def statistics_page():
     return render_template("statistics.html", config=config)
+
+
+@app.route("/api/weather/conditions")
+def api_weather_conditions():
+    """État du ciel pour l'illustration de la carte météo (Open-Meteo, cache 15 min)."""
+    data = get_current_conditions(config.LOCATION["latitude"], config.LOCATION["longitude"])
+    if data is None:
+        return jsonify({"error": "Conditions météo indisponibles"}), 503
+    return jsonify(data)
 
 
 @app.route("/api/statistics")

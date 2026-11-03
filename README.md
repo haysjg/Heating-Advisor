@@ -459,6 +459,7 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `GET /api/refresh` | Force le rechargement des données |
 | `GET /api/statistics?hours=N` | Historique des N dernières heures |
 | `GET /api/statistics/daily?days=N` | Résumé journalier sur N jours |
+| `GET /api/weather/conditions` | État du ciel (Open-Meteo, cache 15 min) pour l'illustration de la carte météo |
 | `GET /api/thermostat/state` | État courant du thermostat |
 | `GET /api/thermostat/diagnose` | Diagnostic complet (temp, sonde, présence, scheduler) |
 | `POST /api/thermostat/toggle` | Active/désactive le thermostat |

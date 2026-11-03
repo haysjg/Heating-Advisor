@@ -29,6 +29,7 @@ function setDeviceState(key, state) {
       row.querySelector('.device-state').textContent = !known ? 'Indisponible' : (isOn ? 'Allumé' : 'Éteint') + e;
     }
   });
+  updateAmbiance();
 }
 
 function _setDeviceBusy(key, busy, label) {
@@ -381,6 +382,11 @@ const DashboardRefresh = {
       gauge.dataset.current = current ?? '';
       renderComfortGauge();
     }
+    const dial = document.getElementById('indoor-dial');
+    if (dial && indoor) {
+      dial.dataset.felt = indoor.felt_temperature ?? indoor.temperature ?? '';
+      renderDial();
+    }
 
     const card = document.querySelector('[data-refresh="indoor"]');
     if (!card || !indoor) return;
@@ -414,6 +420,7 @@ const DashboardRefresh = {
     if (outdoor.temperature !== null && outdoor.temperature !== undefined) {
       const tempEl = card.querySelector('[data-value="temperature"]');
       setAnimatedText(tempEl, `${outdoor.temperature.toFixed(1)} °C`);
+      card.classList.toggle('wx-frost', outdoor.temperature < 0);
     }
 
     if (outdoor.source) {
@@ -475,6 +482,7 @@ const DashboardRefresh = {
     card.classList.toggle('thermo-running', !!running);
     card.classList.toggle('thermo-poele', running === 'poele');
     card.classList.toggle('thermo-clim', running === 'clim');
+    updateAmbiance();
 
     const poeleBadgeEl = card.querySelector('[data-value="poele-badge"]');
     if (poeleBadgeEl) {
@@ -808,6 +816,8 @@ async function saveThresholds() {
       const card = document.getElementById('thresholds-card');
       card.dataset.tempOn = data.temp_on;
       card.dataset.tempOff = data.temp_off;
+      const dial = document.getElementById('indoor-dial');
+      if (dial) { dial.dataset.on = data.temp_on; dial.dataset.off = data.temp_off; renderDial(); }
       _thresholdInput('on').value = data.temp_on;
       _thresholdInput('off').value = data.temp_off;
       document.querySelectorAll('[data-value="temp-on"]').forEach(el => el.textContent = `${data.temp_on}°C`);
@@ -830,3 +840,117 @@ async function saveThresholds() {
     onThresholdInput();
   }
 }
+
+// ── Habillage de l'accueil : ambiance, cadran, ciel, mini-courbes ─────────
+
+// Ambiance de fond : appareil qui tourne > Tempo rouge > neutre (nuit gérée par base.html).
+// Mémorisée pour que les autres pages gardent la même teinte.
+function updateAmbiance() {
+  if (!document.getElementById('recommendation')) return;  // uniquement sur l'accueil
+  const running = key =>
+    !!document.querySelector(`.device[data-device="${key}"].is-on`) ||
+    !!document.querySelector(`[data-refresh="thermostat"].thermo-running.thermo-${key}`);
+  const stove = running('poele');
+  const amb = stove ? 'poele' : running('clim') ? 'clim'
+    : document.querySelector('.card-tempo-red') ? 'tempo-red' : '';
+  const root = document.documentElement;
+  if (amb) root.dataset.ambiance = amb; else delete root.dataset.ambiance;
+  if (stove) root.dataset.stove = 'on'; else delete root.dataset.stove;
+  try { localStorage.setItem('ambiance', amb); } catch (e) { /* stockage indisponible */ }
+}
+
+// Cadran intérieur : arc sur 270°, plage de confort (seuils) et repère sur le ressenti
+function renderDial() {
+  const dial = document.getElementById('indoor-dial');
+  if (!dial) return;
+  const on = parseFloat(dial.dataset.on);
+  const off = parseFloat(dial.dataset.off);
+  const felt = parseFloat(dial.dataset.felt);
+  const vals = [on, off, felt].filter(v => !isNaN(v));
+  const lo = Math.floor(Math.min(14, ...vals.map(v => v - 2)));
+  const hi = Math.ceil(Math.max(26, ...vals.map(v => v + 2)));
+  const deg = v => Math.min(1, Math.max(0, (v - lo) / (hi - lo))) * 270;
+  if (!isNaN(on) && !isNaN(off) && on < off) {
+    dial.style.setProperty('--b0', `${deg(on)}deg`);
+    dial.style.setProperty('--b1', `${deg(off)}deg`);
+  }
+  dial.classList.toggle('no-value', isNaN(felt));
+  if (!isNaN(felt)) {
+    // Premier affichage : le repère part du début de l'arc
+    requestAnimationFrame(() => dial.style.setProperty('--a', `${deg(felt) - 135}deg`));
+  }
+  dial.querySelector('.dial-min').textContent = `${lo}°`;
+  dial.querySelector('.dial-max').textContent = `${hi}°`;
+}
+
+// Ciel illustré d'après /api/weather/conditions (code météo Open-Meteo)
+async function renderWeatherScene() {
+  const scene = document.getElementById('wx-scene');
+  if (!scene) return;
+  let c;
+  try {
+    const response = await fetch('/api/weather/conditions');
+    if (!response.ok) return;
+    c = await response.json();
+  } catch (e) {
+    return;
+  }
+  const star = c.is_day ? '<span class="wx-sun"></span>' : '<span class="wx-moon"></span>';
+  const cloud = n => n === 2 ? '<span class="wx-cloud c2"></span><span class="wx-cloud c1"></span>' : '<span class="wx-cloud c1"></span>';
+  const drops = '<span class="wx-drops">' + '<i></i>'.repeat(6) + '</span>';
+  const scenes = {
+    clear: star,
+    partly: star + cloud(1),
+    cloudy: cloud(2),
+    fog: '<span class="wx-fog f1"></span><span class="wx-fog f2"></span><span class="wx-fog f3"></span>',
+    rain: cloud(2) + drops,
+    snow: cloud(2) + drops,
+    storm: cloud(2) + drops,
+  };
+  scene.className = `wx-scene wx-${c.sky}${['rain', 'storm'].includes(c.sky) ? ' wx-dark' : ''}`;
+  scene.innerHTML = scenes[c.sky] || '';
+}
+
+// Mini-courbes 24 h en filigrane derrière les températures
+async function renderSparklines() {
+  const svgs = document.querySelectorAll('svg.spark[data-series]');
+  if (!svgs.length) return;
+  let rows;
+  try {
+    const response = await fetch('/api/statistics?hours=24');
+    if (!response.ok) return;
+    rows = await response.json();
+  } catch (e) {
+    return;
+  }
+  svgs.forEach((svg, n) => {
+    const values = rows.map(r => r[svg.dataset.series]).filter(v => v != null);
+    if (values.length < 2) return;
+    const min = Math.min(...values), max = Math.max(...values);
+    const span = (max - min) || 1;
+    const W = 100, H = 40;
+    const pts = values.map((v, i) => [
+      (i / (values.length - 1)) * W,
+      H - 3 - ((v - min) / span) * (H - 8),
+    ].map(x => x.toFixed(2)).join(','));
+    const line = 'M' + pts.join(' L');
+    const id = `spark-fill-${n}`;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.innerHTML = `
+      <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="currentColor" stop-opacity="0.22"/>
+        <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${line} L${W},${H} L0,${H} Z" fill="url(#${id})"/>
+      <path class="spark-line" d="${line}" stroke="currentColor" stroke-opacity="0.55" pathLength="1"/>`;
+    svg.classList.add('is-ready');
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  updateAmbiance();
+  renderDial();
+  renderWeatherScene();
+  renderSparklines();
+});

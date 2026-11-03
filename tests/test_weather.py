@@ -310,3 +310,35 @@ class TestProbeSources:
 
     def test_unconfigured_sources_absent(self):
         assert weather.probe_sources({}) == {}
+
+
+# ── Ciel actuel (illustration de la carte météo) ──────────────────
+
+@pytest.fixture
+def no_conditions_cache():
+    weather._conditions_cache = None
+    yield
+    weather._conditions_cache = None
+
+
+@pytest.mark.parametrize("code, sky", [
+    (0, "clear"), (1, "clear"), (2, "partly"), (3, "cloudy"), (45, "fog"),
+    (61, "rain"), (81, "rain"), (73, "snow"), (86, "snow"), (95, "storm"),
+])
+def test_type_de_ciel_selon_code_wmo(code, sky):
+    assert weather._sky_kind(code) == sky
+
+
+def test_conditions_mises_en_cache(no_conditions_cache):
+    payload = {"current": {"weather_code": 61, "is_day": 0}}
+    with patch("urllib.request.urlopen", return_value=_response(payload)) as urlopen:
+        first = weather.get_current_conditions(48.7, 2.2)
+        second = weather.get_current_conditions(48.7, 2.2)
+    assert first == {"sky": "rain", "is_day": False, "code": 61}
+    assert second == first
+    assert urlopen.call_count == 1
+
+
+def test_conditions_indisponibles_sans_cache(no_conditions_cache):
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("hs")):
+        assert weather.get_current_conditions(48.7, 2.2) is None
