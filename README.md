@@ -157,7 +157,7 @@ Le système le moins cher est recommandé.
 
 Le job radiateurs (toutes les 50 min, heures pleines) éteint les radiateurs configurés un jour rouge, puis rallume le premier jour non rouge **uniquement ceux qu'il a lui-même éteints** (`data/radiateurs_managed_off.json`). Un arrêt manuel depuis l'appli retire le radiateur de cette liste : il n'est jamais rallumé automatiquement.
 
-Les radiateurs de `RADIATEURS_TEMPO_ROUGE.weekend_restricted_entities` (par défaut le radiateur des combles) ne sont **jamais rallumés automatiquement le week-end** : le rallumage est reporté au lundi. L'interrupteur « Auto le week-end » de leur commande sur le dashboard lève cette restriction (réglage permanent, `data/radiateurs_weekend.json`). Les boutons ON/OFF restent toujours utilisables.
+Les radiateurs de `RADIATEURS_TEMPO_ROUGE.weekend_restricted_entities` (par défaut le radiateur des combles) ne sont **jamais rallumés automatiquement le week-end** : le rallumage est reporté au lundi. L'interrupteur « Auto le week-end » de leur commande sur le dashboard lève cette restriction (réglage permanent, `data/radiateurs_weekend.json`). Les interrupteurs du panneau Contrôles restent toujours utilisables.
 
 | Fonction | Description |
 |---|---|

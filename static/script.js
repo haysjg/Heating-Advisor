@@ -11,109 +11,89 @@ function refresh() {
 
 // ── Manual Control Functions ────────────────────────────
 
-async function controlPoele(action) {
+// Lignes du panneau (barre latérale + tiroir mobile) pour un appareil : 'poele', 'clim' ou entity_id
+function _deviceRows(key) {
+  return document.querySelectorAll(`.device[data-device="${CSS.escape(key)}"]`);
+}
+
+// Affiche l'état réel d'un appareil : interrupteur, libellé, teinte
+function setDeviceState(key, state) {
+  const known = state != null && !['unknown', 'unavailable'].includes(state);
+  const isOn = state === 'heat' || state === 'on';
+  _deviceRows(key).forEach(row => {
+    row.classList.toggle('is-on', isOn);
+    row.classList.toggle('is-unknown', !known);
+    row.querySelector('.device-switch').setAttribute('aria-checked', String(isOn));
+    if (!row.classList.contains('is-busy')) {
+      const e = row.classList.contains('device-clim') ? 'e' : '';
+      row.querySelector('.device-state').textContent = !known ? 'Indisponible' : (isOn ? 'Allumé' : 'Éteint') + e;
+    }
+  });
+}
+
+function _setDeviceBusy(key, busy, label) {
+  _deviceRows(key).forEach(row => {
+    row.classList.toggle('is-busy', busy);
+    row.querySelector('.device-switch').disabled = busy;
+    if (label) row.querySelector('.device-state').textContent = label;
+  });
+}
+
+// Clic sur un interrupteur : demande l'état inverse de l'état affiché
+function toggleDevice(btn) {
+  const row = btn.closest('.device');
+  const key = row.dataset.device;
+  const action = row.classList.contains('is-on') ? 'off' : 'on';
+  if (key === 'poele') controlPoele(action);
+  else if (key === 'clim') controlClim(action);
+  else controlRadiateur(key, action);
+}
+
+// Commande manuelle commune : endpoint HA, toast, puis relecture de l'état réel
+async function _controlDevice(key, endpoint, action, label, onSuccess) {
+  const previous = _deviceRows(key)[0]?.querySelector('.device-state').textContent;
+  _setDeviceBusy(key, true, action === 'on' ? 'Allumage…' : 'Extinction…');
+  try {
+    const response = await fetch(`${endpoint}?manual=true`, { method: 'POST' });
+    const data = await response.json();
+    if (response.ok && data.status === 'ok') {
+      showToast(`${label} ${action === 'on' ? 'allumé' : 'éteint'}${label === 'Clim' ? 'e' : ''}`, 'success');
+      _setDeviceBusy(key, false);
+      setDeviceState(key, action);
+      onSuccess();
+      return;
+    }
+    showToast(data.error || 'Erreur', 'error');
+  } catch (error) {
+    console.error(`Erreur contrôle ${label}:`, error);
+    showToast('Erreur réseau', 'error');
+  }
+  _setDeviceBusy(key, false, previous);
+}
+
+function controlPoele(action) {
   const endpoint = action === 'on' ? '/api/ha/turn_on' : '/api/ha/turn_off';
-  const btn = document.getElementById(`btn-poele-${action}`);
-  const otherBtn = document.getElementById(`btn-poele-${action === 'on' ? 'off' : 'on'}`);
-
-  if (!btn) return;
-
-  btn.disabled = true;
-  const originalText = btn.textContent;
-  btn.textContent = action === 'on' ? '⏳ Allumage…' : '⏳ Extinction…';
-
-  try {
-    const response = await fetch(`${endpoint}?manual=true`, { method: 'POST' });
-    const data = await response.json();
-
-    if (response.ok && data.status === 'ok') {
-      showToast(`Poêle ${action === 'on' ? 'allumé' : 'éteint'}`, 'success');
-      updatePoeleStatus();
-      setTimeout(() => location.reload(), 1500);
-    } else {
-      showToast(data.error || 'Erreur', 'error');
-      btn.textContent = originalText;
-      btn.disabled = false;
-    }
-  } catch (error) {
-    console.error('Erreur contrôle poêle:', error);
-    showToast('Erreur réseau', 'error');
-    btn.textContent = originalText;
-    btn.disabled = false;
-  }
+  return _controlDevice('poele', endpoint, action, 'Poêle', () => {
+    updatePoeleStatus();
+    setTimeout(() => location.reload(), 1500);
+  });
 }
 
-async function controlClim(action) {
+function controlClim(action) {
   const endpoint = action === 'on' ? '/api/ha/clim/turn_on' : '/api/ha/clim/turn_off';
-  const btn = document.getElementById(`btn-clim-${action}`);
-
-  if (!btn) return;
-
-  btn.disabled = true;
-  const originalText = btn.textContent;
-  btn.textContent = action === 'on' ? '⏳ Allumage…' : '⏳ Extinction…';
-
-  try {
-    const response = await fetch(`${endpoint}?manual=true`, { method: 'POST' });
-    const data = await response.json();
-
-    if (response.ok && data.status === 'ok') {
-      showToast(`Clim ${action === 'on' ? 'allumée' : 'éteinte'}`, 'success');
-      updateClimStatus();
-      setTimeout(() => location.reload(), 1500);
-    } else {
-      showToast(data.error || 'Erreur', 'error');
-      btn.textContent = originalText;
-      btn.disabled = false;
-    }
-  } catch (error) {
-    console.error('Erreur contrôle clim:', error);
-    showToast('Erreur réseau', 'error');
-    btn.textContent = originalText;
-    btn.disabled = false;
-  }
+  return _controlDevice('clim', endpoint, action, 'Clim', () => {
+    updateClimStatus();
+    setTimeout(() => location.reload(), 1500);
+  });
 }
 
-async function controlRadiateur(entityId, action) {
+function controlRadiateur(entityId, action) {
   const endpoint = `/api/radiateurs/turn_${action}/${encodeURIComponent(entityId)}`;
-  const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
-  const compact = statusDiv ? statusDiv.closest('.control-compact') : null;
-  const buttons = compact ? compact.querySelectorAll('.btn-compact') : [];
-
-  buttons.forEach(btn => btn.disabled = true);
-
-  try {
-    const response = await fetch(`${endpoint}?manual=true`, { method: 'POST' });
-    const data = await response.json();
-
-    if (response.ok && data.status === 'ok') {
-      showToast(`Radiateur ${action === 'on' ? 'allumé' : 'éteint'}`, 'success');
-      updateRadiateurStatus(entityId);
-    } else {
-      showToast(data.error || 'Erreur', 'error');
-    }
-  } catch (error) {
-    console.error('Erreur contrôle radiateur:', error);
-    showToast('Erreur réseau', 'error');
-  } finally {
-    buttons.forEach(btn => btn.disabled = false);
-  }
+  return _controlDevice(entityId, endpoint, action, 'Radiateur', () => updateRadiateurStatus(entityId));
 }
 
 function renderPoeleStatus(state) {
-  const isOn = state === 'heat' || state === 'on';
-
-  // Sidebar + drawer icons
-  ['poele-status-icon', 'mob-poele-status-icon'].forEach(id => {
-    const icon = document.getElementById(id);
-    if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-  });
-
-  const btnOn = document.getElementById('btn-poele-on');
-  const btnOff = document.getElementById('btn-poele-off');
-
-  if (btnOn) btnOn.classList.toggle('active', isOn);
-  if (btnOff) btnOff.classList.toggle('active', !isOn);
+  setDeviceState('poele', state);
 }
 
 async function updatePoeleStatus() {
@@ -126,19 +106,7 @@ async function updatePoeleStatus() {
 }
 
 function renderClimStatus(state) {
-  const isOn = state === 'heat' || state === 'on';
-
-  // Sidebar + drawer icons
-  ['clim-status-icon', 'mob-clim-status-icon'].forEach(id => {
-    const icon = document.getElementById(id);
-    if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-  });
-
-  const btnOn = document.getElementById('btn-clim-on');
-  const btnOff = document.getElementById('btn-clim-off');
-
-  if (btnOn) btnOn.classList.toggle('active', isOn);
-  if (btnOff) btnOff.classList.toggle('active', !isOn);
+  setDeviceState('clim', state);
 }
 
 async function updateClimStatus() {
@@ -151,34 +119,7 @@ async function updateClimStatus() {
 }
 
 function renderRadiateurStatus(entityId, state) {
-  const isOn = state === 'on' || state === 'heat';
-
-  // Sidebar
-  const statusDiv = document.querySelector(`[data-entity-id="${entityId}"]`);
-  if (statusDiv) {
-    const radiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-entity-id]'));
-    const index = radiateurs.findIndex(r => r.getAttribute('data-entity-id') === entityId);
-    if (index >= 0) {
-      const icon = document.getElementById(`radiateur-${index}-icon`);
-      const compact = statusDiv.closest('.control-compact');
-      const btnOn = compact ? compact.querySelector('.btn-compact-on') : null;
-      const btnOff = compact ? compact.querySelector('.btn-compact-off') : null;
-      if (icon) icon.textContent = isOn ? '🟢' : '⚫';
-      if (btnOn) btnOn.classList.toggle('active', isOn);
-      if (btnOff) btnOff.classList.toggle('active', !isOn);
-    }
-  }
-
-  // Drawer (mobile)
-  const mobStatusDiv = document.querySelector(`[data-mob-entity-id="${entityId}"]`);
-  if (mobStatusDiv) {
-    const mobRadiateurs = Array.from(document.querySelectorAll('.control-compact-status[data-mob-entity-id]'));
-    const mobIndex = mobRadiateurs.findIndex(r => r.getAttribute('data-mob-entity-id') === entityId);
-    if (mobIndex >= 0) {
-      const mobIcon = document.getElementById(`mob-radiateur-${mobIndex}-icon`);
-      if (mobIcon) mobIcon.textContent = isOn ? '🟢' : '⚫';
-    }
-  }
+  setDeviceState(entityId, state);
 }
 
 async function updateRadiateurStatus(entityId) {
