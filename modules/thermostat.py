@@ -404,6 +404,16 @@ def sync_clim_setpoint(ha_client, ha_cfg: dict, temp_off: float) -> bool | None:
     return ha_client.set_clim_temperature(ha_cfg, temp_off)
 
 
+def minutes_until_schedule_end(cfg: dict) -> float | None:
+    """Minutes restantes avant la fin de la plage du jour, None hors plage."""
+    if not is_in_schedule(cfg):
+        return None
+    now = datetime.now()
+    end_h, end_m = map(int, cfg["schedule"][DAY_KEYS[now.weekday()]]["end"].split(":"))
+    end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    return (end - now).total_seconds() / 60
+
+
 def felt_temperature(temp: float, humidity: float, cfg: dict) -> float:
     """Calcule la température ressentie en tenant compte de l'humidité."""
     if not cfg.get("use_felt_temperature") or humidity is None:
@@ -548,10 +558,14 @@ def _maybe_send_no_ignition_notif(
 
 
 def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, email_cfg: dict = None,
-                    ntfy_cfg: dict = None, outdoor_temp: float = None) -> None:
+                    ntfy_cfg: dict = None, outdoor_temp: float = None,
+                    comfort_min_temp: float = None, clim_fallback_ok: bool = True) -> None:
     """
     Vérifie la température intérieure et pilote le poêle et/ou la clim.
     recommendation : 'poele', 'clim', 'none', None
+    comfort_min_temp : seuil de confort clim (°C extérieur), pour l'hystérésis poêle → clim
+    clim_fallback_ok : la clim peut remplacer le poêle en fin de plage (False un jour rouge
+                       ou si la clim n'est pas opérationnelle)
     """
     from modules.ntfy_push import send as ntfy_send
     if not thermostat_cfg.get("enabled"):
@@ -758,6 +772,33 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             recommendation = "clim" if clim_available else "poele"
         logger.warning("Thermostat : recommandation indéterminée (temp. extérieure indisponible) → %s", recommendation)
 
+    # Hystérésis du seuil de confort clim : le poêle, choisi sous le seuil, reste en place
+    # tant que la température extérieure n'est pas remontée de la marge au-dessus du seuil
+    comfort_hysteresis = thermostat_cfg.get("clim_comfort_hysteresis", 1.0)
+    if (recommendation == "clim" and current == "on" and active_system == "poele"
+            and comfort_min_temp is not None and outdoor_temp is not None
+            and outdoor_temp < comfort_min_temp + comfort_hysteresis):
+        logger.info(
+            "Thermostat : poêle maintenu — %.1f°C dehors < seuil confort clim %.1f°C + hystérésis %.1f°C",
+            outdoor_temp, comfort_min_temp, comfort_hysteresis,
+        )
+        recommendation = "poele"
+
+    # Fin de plage proche : pas de nouvel allumage du poêle (cycle trop court),
+    # la clim prend le relais si elle le peut, sinon rien
+    poele_late_window = thermostat_cfg.get("poele_no_start_before_end_minutes", 60)
+    minutes_left = minutes_until_schedule_end(thermostat_cfg)
+    poele_blocked_late = (
+        recommendation == "poele" and not (current == "on" and active_system == "poele")
+        and minutes_left is not None and minutes_left <= poele_late_window
+    )
+    if poele_blocked_late:
+        recommendation = "clim" if clim_available and clim_fallback_ok else "none"
+        logger.info(
+            "Thermostat : pas d'allumage du poêle à %d min de la fin de plage (≤ %d min) → %s",
+            int(minutes_left), poele_late_window, recommendation,
+        )
+
     # Récupérer le timestamp du système actif
     last_on_str = _get_system_timestamp(state, active_system, "on") if active_system else None
     last_on = datetime.fromisoformat(last_on_str) if last_on_str else None
@@ -963,7 +1004,10 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 )
             else:
                 # Temp basse et en plage, mais impossible de démarrer
-                if recommendation not in ("poele", "clim"):
+                if poele_blocked_late:
+                    reason_key = "poele_late"
+                    reason_msg = f"fin de plage dans {int(minutes_left)} min, poêle non allumé et clim indisponible"
+                elif recommendation not in ("poele", "clim"):
                     reason_key = "no_recommendation"
                     reason_msg = f"aucun chauffage recommandé (recommandation : {recommendation or 'none'})"
                 elif recommendation == "clim" and not clim_available:

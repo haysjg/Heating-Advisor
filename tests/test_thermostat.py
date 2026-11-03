@@ -685,6 +685,123 @@ class TestTransitions:
         assert store["state"]["active_system"] == "poele"
 
 
+class TestComfortHysteresisAndLateWindow:
+    """Va-et-vient clim ↔ poêle autour du seuil de confort (hystérésis) et pas d'allumage
+    du poêle juste avant la fin de plage (cas réel du 03/11/2026 : 6,8 → 7,0 → 6,9 °C)."""
+
+    @pytest.fixture
+    def store(self):
+        data = {"state": {
+            "state": "off", "active_system": None, "sensor_failures": 0, "suspended_until": None,
+            "system_history": {"poele": {"last_turned_on": None, "last_turned_off": None},
+                               "clim": {"last_turned_on": None, "last_turned_off": None}},
+        }}
+        with patch("modules.thermostat._load_state", side_effect=lambda: dict(data["state"])), \
+             patch("modules.thermostat._save_state", side_effect=lambda s: data.__setitem__("state", s)), \
+             patch("modules.thermostat.is_on_vacation", return_value=False), \
+             patch("modules.thermostat.is_in_absence_schedule", return_value=False):
+            yield data
+
+    def _run(self, store, base_ha_cfg, cfg, now, active, recommendation, outdoor_temp,
+             indoor_temp=20.5, clim_fallback_ok=True, clim_configured=True):
+        if active:
+            store["state"]["state"] = "on"
+            store["state"]["active_system"] = active
+            store["state"]["system_history"][active]["last_turned_on"] = "2025-01-06T05:50:00"
+        poele_real = "heat" if active == "poele" else "off"
+        clim_real = "heat" if active == "clim" else "off"
+        with freeze_time(now), \
+             patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": indoor_temp, "humidity": 50.0}), \
+             patch("modules.homeassistant.get_state", return_value={"state": poele_real}), \
+             patch("modules.homeassistant.is_clim_configured", return_value=clim_configured), \
+             patch("modules.homeassistant.get_clim_state", return_value={"state": clim_real}), \
+             patch("modules.homeassistant.turn_on", return_value=True) as poele_on, \
+             patch("modules.homeassistant.turn_off", return_value=True) as poele_off, \
+             patch("modules.homeassistant.turn_on_clim", return_value=True) as clim_on, \
+             patch("modules.homeassistant.turn_off_clim", return_value=True) as clim_off, \
+             patch("modules.ntfy_push.send") as ntfy:
+            check_and_apply(base_ha_cfg, cfg, recommendation, ntfy_cfg={"enabled": True},
+                            outdoor_temp=outdoor_temp, comfort_min_temp=7.0, clim_fallback_ok=clim_fallback_ok)
+        return poele_on, poele_off, clim_on, clim_off, ntfy
+
+    # ── Hystérésis ──
+
+    def test_poele_kept_just_above_comfort_threshold(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                                "2025-01-06 10:00:00", "poele", "clim", 7.0)
+        poele_off.assert_not_called()
+        clim_on.assert_not_called()
+        assert store["state"]["active_system"] == "poele"
+
+    def test_poele_to_clim_once_above_hysteresis(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                                "2025-01-06 10:00:00", "poele", "clim", 8.0)
+        poele_off.assert_called_once()
+        clim_on.assert_called_once()
+        assert store["state"]["active_system"] == "clim"
+
+    def test_hysteresis_configurable(self, store, base_ha_cfg, base_thermostat_cfg):
+        cfg = {**base_thermostat_cfg, "clim_comfort_hysteresis": 0.5}
+        _, poele_off, clim_on, _, _ = self._run(store, base_ha_cfg, cfg,
+                                                "2025-01-06 10:00:00", "poele", "clim", 7.6)
+        clim_on.assert_called_once()
+
+    def test_hysteresis_does_not_block_clim_ignition_from_off(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                               "2025-01-06 10:00:00", None, "clim", 7.2, indoor_temp=19.0)
+        clim_on.assert_called_once()
+        poele_on.assert_not_called()
+
+    def test_hysteresis_ignored_without_outdoor_temp(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                                "2025-01-06 10:00:00", "poele", "clim", None)
+        clim_on.assert_called_once()
+
+    # ── Fin de plage (22:00) ──
+
+    def test_no_clim_to_poele_transition_near_end(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, _, clim_off, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                                "2025-01-06 21:54:00", "clim", "poele", 6.9)
+        poele_on.assert_not_called()
+        clim_off.assert_not_called()
+        assert store["state"]["active_system"] == "clim"
+        assert not store["state"].get("clim_overlap_until")
+
+    def test_clim_to_poele_transition_before_window(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, _, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                         "2025-01-06 20:50:00", "clim", "poele", 6.9)
+        poele_on.assert_called_once()
+
+    def test_late_ignition_uses_clim_instead_of_poele(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                               "2025-01-06 21:30:00", None, "poele", 5.0, indoor_temp=19.0)
+        poele_on.assert_not_called()
+        clim_on.assert_called_once()
+        assert store["state"]["active_system"] == "clim"
+
+    def test_late_ignition_nothing_when_clim_not_allowed(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, clim_on, _, ntfy = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                                  "2025-01-06 21:30:00", None, "poele", 5.0,
+                                                  indoor_temp=19.0, clim_fallback_ok=False)
+        poele_on.assert_not_called()
+        clim_on.assert_not_called()
+        assert store["state"]["state"] == "off"
+        assert "fin de plage" in ntfy.call_args[0][1]
+
+    def test_late_window_keeps_running_poele(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                                "2025-01-06 21:30:00", "poele", "poele", 5.0)
+        poele_off.assert_not_called()
+        clim_on.assert_not_called()
+        assert store["state"]["active_system"] == "poele"
+
+    def test_late_window_configurable(self, store, base_ha_cfg, base_thermostat_cfg):
+        cfg = {**base_thermostat_cfg, "poele_no_start_before_end_minutes": 15}
+        poele_on, _, _, _, _ = self._run(store, base_ha_cfg, cfg,
+                                         "2025-01-06 21:30:00", None, "poele", 5.0, indoor_temp=19.0)
+        poele_on.assert_called_once()
+
+
 class TestTurnOffAll:
     """R-04 : une extinction « forte » coupe aussi la clim maintenue en chevauchement clim → poêle."""
 

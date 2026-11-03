@@ -582,8 +582,12 @@ def _run_thermostat():
         data = get_analysis()
         recommendation = data.get("recommendation", {}).get("system", "none")
         outdoor_temp = data.get("weather", {}).get("temperature")
+        clim_fallback_ok = bool((data.get("clim") or {}).get("available")) and \
+            not (data.get("recommendation") or {}).get("red_day_override")
         thermostat_module.check_and_apply(config.HOME_ASSISTANT, config.THERMOSTAT, recommendation, config.EMAIL,
-                                          ntfy_cfg=config.NTFY, outdoor_temp=outdoor_temp)
+                                          ntfy_cfg=config.NTFY, outdoor_temp=outdoor_temp,
+                                          comfort_min_temp=config.CLIM.get("comfort_min_temp"),
+                                          clim_fallback_ok=clim_fallback_ok)
     except Exception as e:
         logger.error("Thermostat check échoué : %s", e)
 

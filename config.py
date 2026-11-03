@@ -107,6 +107,8 @@ THERMOSTAT = {
     "max_on_hours_without_sensor": 3,     # extinction de sécurité après N h de marche sans mesure de température valide (0 = désactivé)
     "overheat_margin": 1.5,               # extinction forcée (même avant la durée min ON) si ressenti >= temp_off + cette marge (°C)
     "clim_to_poele_overlap_minutes": 20,  # maintien de la clim pendant la montée en température du poêle (clim → poêle)
+    "clim_comfort_hysteresis": 1.0,       # retour poêle → clim seulement si temp ext ≥ seuil confort clim + cette marge (°C)
+    "poele_no_start_before_end_minutes": 60,  # pas d'allumage du poêle dans les N dernières minutes de la plage
     "check_interval_minutes": 10,         # fréquence de vérification
     "manual_off_suspend_hours": 4,        # suspension du thermostat après extinction manuelle (heures)
     "presence_enabled": False,            # mode absent : thermostat en pause si tout le monde est parti

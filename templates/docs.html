@@ -313,6 +313,32 @@
       </div>
 
       <div class="rule">
+        <div class="rule-title">Seuil de confort clim : hystérésis {{ config.THERMOSTAT.get('clim_comfort_hysteresis', 1.0) }}°C</div>
+        <div class="rule-desc">
+          Le poêle prend le relais sous {{ config.CLIM.comfort_min_temp }}°C extérieur. Une fois allumé,
+          il reste en place tant que la température extérieure n'est pas remontée à
+          <strong>{{ config.CLIM.comfort_min_temp + config.THERMOSTAT.get('clim_comfort_hysteresis', 1.0) }}°C</strong>,
+          pour éviter les va-et-vient clim ↔ poêle quand elle oscille autour du seuil.
+        </div>
+        <div class="rule-example">
+          Exemple : 6,8°C → poêle ; 7,0°C → poêle maintenu ; retour à la clim seulement à partir de
+          {{ config.CLIM.comfort_min_temp + config.THERMOSTAT.get('clim_comfort_hysteresis', 1.0) }}°C.
+        </div>
+      </div>
+
+      <div class="rule">
+        <div class="rule-title">Pas d'allumage du poêle {{ config.THERMOSTAT.get('poele_no_start_before_end_minutes', 60) }} min avant la fin de plage</div>
+        <div class="rule-desc">
+          Dans les <strong>{{ config.THERMOSTAT.get('poele_no_start_before_end_minutes', 60) }} dernières minutes</strong>
+          de la plage horaire, le poêle n'est plus allumé (cycle trop court). La clim le remplace si elle
+          est disponible (jamais un jour rouge), sinon rien n'est allumé. Un poêle déjà allumé continue normalement.
+        </div>
+        <div class="rule-example">
+          Exemple : clim en marche, recommandation passe à poêle à 21h54 (fin 22h00) → la clim continue.
+        </div>
+      </div>
+
+      <div class="rule">
         <div class="rule-title">Changement de recommandation en cours de chauffe</div>
         <div class="rule-desc">
           Quand la recommandation change alors qu'un système chauffe (après sa durée

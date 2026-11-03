@@ -84,6 +84,8 @@ Règle absolue : un jour Tempo ROUGE, la climatisation est **systématiquement e
 
 En dessous de `CLIM.comfort_min_temp` (7°C), la climatisation chauffe insuffisamment même si elle est techniquement disponible. Le poêle est recommandé indépendamment des coûts.
 
+Pour éviter les va-et-vient quand la température extérieure oscille autour du seuil, le thermostat applique une hystérésis : un poêle allumé reste en place tant qu'il ne fait pas au moins `comfort_min_temp + THERMOSTAT.clim_comfort_hysteresis` (7 + 1 = 8°C) dehors.
+
 ### 5. Température minimale d'utilisation de la clim
 
 En dessous de `CLIM.min_outdoor_temp` (-10°C), la climatisation est considérée **hors service**. Seul le poêle est disponible.
@@ -236,6 +238,8 @@ Le thermostat automatique pilote le poêle selon la température intérieure mes
 | `temp_off` | Seuil d'extinction (température ressentie, °C) |
 | `min_on_minutes` | Durée minimale de fonctionnement avant extinction par température |
 | `end_of_schedule_grace_minutes` | Délai avant extinction après la fin de la plage horaire |
+| `clim_comfort_hysteresis` | Marge (°C) au-dessus du seuil de confort clim avant de repasser du poêle à la clim |
+| `poele_no_start_before_end_minutes` | Pas d'allumage du poêle dans les N dernières minutes de la plage (clim à la place si possible) |
 | `manual_off_suspend_hours` | Suspension du thermostat après extinction manuelle |
 | `use_felt_temperature` | Utilise la température ressentie (corrigée par l'humidité) |
 
