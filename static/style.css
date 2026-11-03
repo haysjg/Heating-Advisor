@@ -191,7 +191,6 @@ main {
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
   box-shadow: inset 0 1px 0 var(--highlight), var(--shadow);
-  transition: border-color 0.25s var(--ease-out);
 }
 .card:hover { border-color: color-mix(in oklab, var(--tone) 70%, #3a3e54); }
 .card h3 { font-size: 0.95rem; font-weight: 600; color: var(--text-sub); margin-bottom: 0.75rem; letter-spacing: 0.005em; }
@@ -978,3 +977,68 @@ main {
 .cg-scale span { position: absolute; transform: translateX(-50%); }
 .comfort-gauge.has-marker .cg-scale { visibility: hidden; }
 .comfort-gauge.has-marker { margin-bottom: 1.6rem; }
+
+/* ── Animations ───────────────────────────────────────────── */
+/* --tone typé couleur : le changement d'état d'une carte se fond au lieu de sauter */
+@property --tone {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+.card { transition: border-color 0.25s var(--ease-out), --tone 0.6s var(--ease-out); }
+
+/* Jauge de confort : le curseur et la plage glissent vers leur position */
+.cg-marker { transition: left 0.8s var(--ease-out); }
+.cg-band   { transition: left 0.5s var(--ease-out), right 0.5s var(--ease-out); }
+
+.tempo-pulse { display: inline-block; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Entrée des cartes, en cascade */
+  @keyframes card-enter {
+    from { opacity: 0; transform: translateY(10px); }
+  }
+  .motion-enter .card {
+    animation: card-enter 0.45s var(--ease-out) backwards;
+    animation-delay: calc(var(--stagger, 0) * 45ms);
+  }
+
+  /* Bascule de recommandation (poêle ↔ clim ↔ nuit) */
+  @keyframes rec-icon-swap {
+    0%   { transform: scale(0.4) rotate(-30deg); opacity: 0; }
+    60%  { transform: scale(1.12) rotate(6deg);  opacity: 1; }
+    100% { transform: none; }
+  }
+  @keyframes rec-content-swap {
+    from { opacity: 0; transform: translateX(-8px); }
+  }
+
+  /* Icônes au repos selon le système recommandé */
+  @keyframes flame-flicker {
+    0%, 100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 4px rgba(249,115,22,0.35)); }
+    30%      { transform: scale(1.05) rotate(-2deg); filter: drop-shadow(0 0 9px rgba(249,115,22,0.6)); }
+    60%      { transform: scale(0.98) rotate(1.5deg); filter: drop-shadow(0 0 6px rgba(249,115,22,0.45)); }
+  }
+  @keyframes snow-spin { to { transform: rotate(360deg); } }
+  @keyframes moon-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+  }
+  .card[data-system="poele"] .rec-icon,
+  .card[data-system="poele"] .rec-icon-sm { animation: flame-flicker 2.4s ease-in-out infinite; }
+  .card[data-system="clim"] .rec-icon,
+  .card[data-system="clim"] .rec-icon-sm  { animation: snow-spin 14s linear infinite; }
+  .card[data-system="none"] .rec-icon,
+  .card[data-system="none"] .rec-icon-sm  { animation: moon-float 4s ease-in-out infinite; }
+
+  /* La bascule passe devant l'animation de repos (même spécificité, déclarée après) */
+  .card.rec-swap .rec-icon, .card.rec-swap .rec-icon-sm { animation: rec-icon-swap 0.55s var(--ease-out); }
+  .card.rec-swap .rec-content { animation: rec-content-swap 0.4s var(--ease-out) 0.08s backwards; }
+
+  /* Tempo rouge demain : battement discret */
+  @keyframes tempo-pulse {
+    0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(239,68,68,0)); }
+    50%      { transform: scale(1.15); filter: drop-shadow(0 0 6px rgba(239,68,68,0.7)); }
+  }
+  .tempo-pulse { animation: tempo-pulse 1.8s ease-in-out infinite; }
+}

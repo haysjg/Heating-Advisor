@@ -370,7 +370,7 @@
           <strong>{{ "%.4f"|format(config.TEMPO_PRICES[color][period]) }} €/kWh</strong>
         </p>
         {% set tom = data.tempo.tomorrow %}
-        <p class="value-sub">Demain : {{ tom.emoji }} {{ tom.label }}</p>
+        <p class="value-sub">Demain : <span{% if tom.color | lower == 'red' %} class="tempo-pulse"{% endif %}>{{ tom.emoji }}</span> {{ tom.label }}</p>
       </div>
 
     </section>
@@ -435,7 +435,7 @@
 
     {# ── Recommandation principale ── #}
     {% set rec = data.recommendation %}
-    <section class="card card-{{ rec.level }}{% if rec.system == 'none' %} card-night{% endif %} card-labeled" id="recommendation" data-refresh="recommendation">
+    <section class="card card-{{ rec.level }}{% if rec.system == 'none' %} card-night{% endif %} card-labeled" id="recommendation" data-refresh="recommendation" data-system="{{ rec.system }}">
       <div class="today-label">AUJOURD'HUI</div>
       <div class="rec-icon" data-value="icon">
         {% if rec.system == "clim" %}❄️{% elif rec.system == "poele" %}🔥{% elif rec.system == "none" %}🌙{% else %}⚠️{% endif %}
@@ -488,14 +488,14 @@
     </section>
     {% else %}
     {% set trec = tom.recommendation %}
-    <section class="card card-{{ trec.level }}{% if trec.system == 'none' %} card-night{% endif %} card-tomorrow" data-refresh="tomorrow">
+    <section class="card card-{{ trec.level }}{% if trec.system == 'none' %} card-night{% endif %} card-tomorrow" data-refresh="tomorrow" data-system="{{ trec.system }}">
       <div class="tomorrow-label">DEMAIN</div>
       <div class="rec-icon rec-icon-sm" data-value="icon">
         {% if trec.system == "clim" %}❄️{% elif trec.system == "poele" %}🔥{% elif trec.system == "none" %}☀️{% else %}⚠️{% endif %}
       </div>
       <div class="rec-content">
         <h2 data-value="title">{{ trec.title }}</h2>
-        <span class="badge badge-gray" data-value="tempo-badge">{{ data.tempo.tomorrow.emoji }} Tempo {{ data.tempo.tomorrow.label }}</span>
+        <span class="badge badge-gray" data-value="tempo-badge"><span{% if data.tempo.tomorrow.color | lower == 'red' %} class="tempo-pulse"{% endif %}>{{ data.tempo.tomorrow.emoji }}</span> Tempo {{ data.tempo.tomorrow.label }}</span>
         <p data-value="explanation">{{ trec.explanation }}</p>
         {% if trec.savings_per_hour > 0 %}
           <span class="badge" data-value="savings">Économie : {{ "%.3f"|format(trec.savings_per_hour) }} €/h</span>
@@ -963,7 +963,7 @@
     .then(d => {
       if (!d.latest) return;
       const card = document.getElementById('electricity-card');
-      document.getElementById('electricity-kwh').textContent = d.latest.kwh.toLocaleString('fr-FR', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' kWh';
+      setAnimatedText(document.getElementById('electricity-kwh'), d.latest.kwh.toLocaleString('fr-FR', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' kWh', 0);
       if (d.latest.period_start && d.latest.period_end) {
         document.getElementById('electricity-period').textContent = 'Semaine du ' + d.latest.period_start + ' au ' + d.latest.period_end;
       }

@@ -449,7 +449,7 @@ const DashboardRefresh = {
 
     if (temp !== null && temp !== undefined) {
       const tempEl = card.querySelector('[data-value="temperature"]');
-      if (tempEl) tempEl.textContent = `${temp.toFixed(1)} °C`;
+      setAnimatedText(tempEl, `${temp.toFixed(1)} °C`);
     }
 
     if (humidity !== null && humidity !== undefined) {
@@ -471,7 +471,7 @@ const DashboardRefresh = {
 
     if (outdoor.temperature !== null && outdoor.temperature !== undefined) {
       const tempEl = card.querySelector('[data-value="temperature"]');
-      if (tempEl) tempEl.textContent = `${outdoor.temperature.toFixed(1)} °C`;
+      setAnimatedText(tempEl, `${outdoor.temperature.toFixed(1)} °C`);
     }
 
     if (outdoor.source) {
@@ -519,7 +519,7 @@ const DashboardRefresh = {
     // Mise à jour des classes CSS de la carte
     card.className = `card card-${rec.level}${rec.system === 'none' ? ' card-night' : ''} card-labeled`;
 
-    this.flashElement(card);
+    this.markSystem(card, rec.system);
   },
 
   updateThermostat(thermostat) {
@@ -591,6 +591,8 @@ const DashboardRefresh = {
 
       // Mise à jour des classes CSS
       card.className = `card card-${rec.level}${rec.system === 'none' ? ' card-night' : ''} card-tomorrow`;
+      this.markSystem(card, rec.system);
+      return;
     }
 
     this.flashElement(card);
@@ -620,8 +622,21 @@ const DashboardRefresh = {
     }
   },
 
+  // Mémorise le système recommandé ; s'il change, la carte bascule en animation au lieu du flash
+  markSystem(card, system) {
+    const previous = card.dataset.system;
+    card.dataset.system = system;
+    if (!previous || previous === system) { this.flashElement(card); return; }
+    card.classList.remove('rec-swap');
+    void card.offsetWidth;
+    card.classList.add('rec-swap');
+    setTimeout(() => card.classList.remove('rec-swap'), 700);
+  },
+
   flashElement(element) {
     if (!element) return;
+    // Pas de flash pendant l'entrée des cartes : il couperait leur animation
+    if (document.documentElement.classList.contains('motion-enter')) return;
     element.classList.remove('refresh-flash');
     // Force reflow pour redémarrer l'animation
     void element.offsetWidth;
@@ -786,6 +801,11 @@ function renderComfortGauge() {
   marker.hidden = !hasCurrent;
   gauge.classList.toggle('has-marker', hasCurrent);
   if (hasCurrent) {
+    // Premier affichage : le curseur part de la gauche et glisse jusqu'au ressenti
+    if (!marker.style.left && MOTION_OK) {
+      marker.style.left = '0%';
+      void marker.offsetWidth;
+    }
     marker.style.left = pct(current);
     document.getElementById('cg-marker-label').textContent = 'ressenti ' + fmt(current);
   }
