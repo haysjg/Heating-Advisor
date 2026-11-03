@@ -241,7 +241,7 @@
         <span>{{ stock.total_kg_delivered }} kg livrés</span>
       </div>
       <div class="gauge-bar-bg" style="width:100%">
-        <div class="gauge-bar-fill {% if stock.remaining_pct > 40 %}high{% elif stock.remaining_pct > 20 %}medium{% else %}low{% endif %}"
+        <div class="gauge-bar-fill {% if stock.remaining_pct > 40 %}high{% elif stock.remaining_pct > 20 %}medium{% else %}low{% endif %}{% if stock.alert %} alert{% endif %}"
              style="width: {{ [stock.remaining_pct, 100]|min }}%"></div>
       </div>
     </div>
@@ -405,6 +405,7 @@ function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast toast-' + type + ' show';
+  toastFx(t, type === 'ok');
   setTimeout(() => { t.className = 'toast'; }, 3000);
 }
 

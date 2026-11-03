@@ -963,6 +963,7 @@
     t.textContent = msg;
     t.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
     t.classList.add('show');
+    toastFx(t, ok);
     // Les erreurs restent affichées plus longtemps : elles demandent souvent une action
     setTimeout(() => t.classList.remove('show'), ok ? 3000 : 7000);
   }

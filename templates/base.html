@@ -69,7 +69,10 @@
       if (!el) return;
       const node = _firstText(el);
       const current = node ? _parseNum(node.textContent) : null;
-      if (text == null) text = node ? node.textContent : '';
+      if (text == null) {
+        if (!node) return;
+        text = node.textContent;
+      }
       const target = _parseNum(text);
       const start = from != null ? from : current && current.value;
       const apply = s => { if (node) node.textContent = s; else el.textContent = s; };
@@ -90,10 +93,71 @@
       };
       el._countRaf = requestAnimationFrame(step);
     }
+
+    // Habille un toast : coche dessinée si succès, secousse si erreur
+    function toastFx(el, ok) {
+      el.querySelector('.toast-check')?.remove();
+      el.classList.remove('toast-shake');
+      if (ok) {
+        el.insertAdjacentHTML('afterbegin', '<svg class="toast-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>');
+      } else if (el.style.animation) {
+        // Toast animé en style inline : la secousse s'enchaîne après l'entrée
+        if (MOTION_OK) el.style.animation += ', toast-shake 0.4s ease-in-out 0.3s';
+      } else {
+        void el.offsetWidth;
+        el.classList.add('toast-shake');
+      }
+    }
+
+    // Applique une animation ponctuelle (classe retirée à la fin pour pouvoir la rejouer)
+    function playOnce(el, cls) {
+      if (!el || !MOTION_OK) return;
+      el.classList.remove(cls);
+      void el.offsetWidth;
+      el.classList.add(cls);
+      el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+    }
   </script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  <script>
+    // Graphes (Chart.js chargé dans extra_head) : tracé progressif de gauche à droite,
+    // et bloc de chargement sur chaque .chart-wrapper jusqu'à la création du graphe
+    if (window.Chart) {
+      if (MOTION_OK) {
+        Chart.defaults.animation.delay = ctx => {
+          if (ctx.type !== 'data' || ctx.mode !== 'default') return 0;
+          const n = Math.max(1, (ctx.chart.data.datasets[ctx.datasetIndex]?.data || []).length);
+          return ctx.dataIndex * Math.min(25, 700 / n) + ctx.datasetIndex * 120;
+        };
+      } else {
+        Chart.defaults.animation = false;
+      }
+      Chart.register({
+        id: 'chart-loading-off',
+        afterInit: chart => chart.canvas.closest('.chart-wrapper')?.classList.remove('chart-loading'),
+      });
+      document.addEventListener('DOMContentLoaded', () => {
+        const wrappers = [...document.querySelectorAll('.chart-wrapper')]
+          .filter(w => !Chart.getChart(w.querySelector('canvas')));
+        wrappers.forEach(w => w.classList.add('chart-loading'));
+        // Filet de sécurité : pas de données ou erreur réseau
+        setTimeout(() => wrappers.forEach(w => w.classList.remove('chart-loading')), 8000);
+      });
+      // Plus aucune requête en cours sans graphe créé (pas de données, erreur) : fin du chargement
+      let pending = 0;
+      const fetchWithLoading = window.fetch;
+      window.fetch = function (...args) {
+        pending++;
+        return fetchWithLoading(...args).finally(() => {
+          if (--pending === 0) setTimeout(() => {
+            if (pending === 0) document.querySelectorAll('.chart-loading').forEach(w => w.classList.remove('chart-loading'));
+          }, 150);
+        });
+      };
+    }
+  </script>
   <header>
     <div class="header-inner">
       <span class="header-icon">{% block header_icon %}🏠{% endblock %}</span>
@@ -115,6 +179,10 @@
         <a href="/api/thermostat/diagnose" class="btn-refresh" style="text-decoration:none" target="_blank">🔍 Diag</a>
         <a href="/logout" class="btn-refresh" style="text-decoration:none" title="Se déconnecter">🚪 Déconnexion</a>
       </nav>
+      <script>
+        // Soulignement de l'onglet actif : élément réel pour glisser d'une page à l'autre (View Transitions)
+        document.querySelector('.nav-links [aria-current="page"]')?.insertAdjacentHTML('beforeend', '<span class="tab-ink"></span>');
+      </script>
       {% set actions_html %}{% if config.HOME_ASSISTANT.enabled and show_thermostat_toggle|default(false) %}
       <button class="btn-refresh {% if config.THERMOSTAT.enabled %}thermostat-on{% else %}thermostat-off{% endif %}"
               id="btn-thermostat-toggle"

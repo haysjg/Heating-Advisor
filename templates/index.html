@@ -386,7 +386,7 @@
           <span title="Prochaine vérification de la température par le thermostat">
             ⏱ <span class="next-check-label">Prochaine évaluation</span> <span id="next-check-value"></span>
           </span>
-          <button type="button" class="next-check-now" id="next-check-now">↻ Évaluer maintenant</button>
+          <button type="button" class="next-check-now" id="next-check-now"><span class="spin-icon">↻</span> Évaluer maintenant</button>
         </div>
         {% endif %}
       </div>
@@ -517,7 +517,8 @@
 
     {# ── Thermostat ── #}
     {% if config.HOME_ASSISTANT.enabled %}
-    <section class="card card-labeled" data-refresh="thermostat">
+    {% set _thermo_sys = thermostat_state.get('active_system') if thermostat_state.state == 'on' else none %}
+    <section class="card card-labeled{% if _thermo_sys in ('poele', 'clim') %} thermo-running thermo-{{ _thermo_sys }}{% endif %}" data-refresh="thermostat">
       <div class="today-label">AUJOURD'HUI</div>
       <h3>🌡️ Thermostat automatique</h3>
       <div class="grid-2">
@@ -889,13 +890,13 @@
 
     {# ── Suivi électricité ── #}
     {% if config.ELECTRICITY.enabled %}
-    <section class="card card-labeled" id="electricity-card" style="display:none">
+    <section class="card card-labeled" id="electricity-card">
       <div class="today-label">SEMAINE</div>
       <h3>⚡ Consommation électrique</h3>
       <div class="elec-layout">
         <div class="elec-summary">
-          <p class="value-big" id="electricity-kwh">—</p>
-          <p class="value-sub" id="electricity-period"></p>
+          <p class="value-big"><span class="skeleton-text" id="electricity-kwh">000,0 kWh</span></p>
+          <p class="value-sub"><span class="skeleton-text" id="electricity-period">Semaine du 00/00 au 00/00</span></p>
           <span class="source-badge source-real" id="electricity-delta"></span>
         </div>
         <a class="elec-trend" id="electricity-trend" href="/electricity" title="Voir l'historique complet" style="display:none">
@@ -961,12 +962,13 @@
   fetch('/api/electricity/status')
     .then(r => r.json())
     .then(d => {
-      if (!d.latest) return;
       const card = document.getElementById('electricity-card');
+      if (!d.latest) { card.remove(); return; }
+      document.querySelectorAll('#electricity-card .skeleton-text').forEach(el => el.classList.remove('skeleton-text'));
       setAnimatedText(document.getElementById('electricity-kwh'), d.latest.kwh.toLocaleString('fr-FR', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' kWh', 0);
-      if (d.latest.period_start && d.latest.period_end) {
-        document.getElementById('electricity-period').textContent = 'Semaine du ' + d.latest.period_start + ' au ' + d.latest.period_end;
-      }
+      document.getElementById('electricity-period').textContent = d.latest.period_start && d.latest.period_end
+        ? 'Semaine du ' + d.latest.period_start + ' au ' + d.latest.period_end
+        : '';
       const badge = document.getElementById('electricity-delta');
       if (d.latest.delta_percent != null) {
         const up = d.latest.delta_direction === 'plus';
@@ -975,9 +977,8 @@
       } else {
         badge.remove();
       }
-      card.style.display = '';
     })
-    .catch(() => {});
+    .catch(() => document.getElementById('electricity-card')?.remove());
 
   // Mini-graphe : évolution hebdomadaire sur les 12 derniers mois (~53 semaines)
   fetch('/api/electricity/history?weeks=53')

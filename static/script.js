@@ -244,6 +244,7 @@ function showToast(message, type = 'info') {
   `;
 
   document.body.appendChild(toast);
+  if (type === 'success' || type === 'error') toastFx(toast, type === 'success');
 
   const removeToast = () => {
     toast.style.animation = 'slideOutDown 0.3s ease-out';
@@ -527,9 +528,17 @@ const DashboardRefresh = {
     if (!card || !thermostat) return;
 
     // Mise à jour badge Poêle
+    // Carte teintée et « respirante » tant qu'un appareil tourne
+    const running = thermostat.state === 'on' && ['poele', 'clim'].includes(thermostat.active_system)
+      ? thermostat.active_system : null;
+    card.classList.toggle('thermo-running', !!running);
+    card.classList.toggle('thermo-poele', running === 'poele');
+    card.classList.toggle('thermo-clim', running === 'clim');
+
     const poeleBadgeEl = card.querySelector('[data-value="poele-badge"]');
     if (poeleBadgeEl) {
       const poeleOn = thermostat.state === 'on' && thermostat.active_system === 'poele';
+      if (poeleOn && poeleBadgeEl.className !== 'thermostat-badge-on') setTimeout(() => playOnce(poeleBadgeEl, 'badge-pop'));
       poeleBadgeEl.className = poeleOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
       poeleBadgeEl.textContent = poeleOn ? '🔥 Allumé' : '⏹ Éteint';
     }
@@ -538,6 +547,7 @@ const DashboardRefresh = {
     const climBadgeEl = card.querySelector('[data-value="clim-badge"]');
     if (climBadgeEl) {
       const climOn = thermostat.state === 'on' && thermostat.active_system === 'clim';
+      if (climOn && climBadgeEl.className !== 'thermostat-badge-on') setTimeout(() => playOnce(climBadgeEl, 'badge-pop'));
       climBadgeEl.className = climOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
       climBadgeEl.textContent = climOn ? '❄️ Allumée' : '⏹ Éteinte';
     }
@@ -717,6 +727,7 @@ const DashboardRefresh = {
   const nowBtn = document.getElementById('next-check-now');
   nowBtn.addEventListener('click', async () => {
     nowBtn.disabled = true;
+    nowBtn.classList.add('is-busy');
     try {
       const response = await fetch('/api/thermostat/check-now', { method: 'POST' });
       if (response.ok) {
@@ -731,7 +742,7 @@ const DashboardRefresh = {
     } catch (e) {
       showToast('Erreur réseau', 'error');
     } finally {
-      setTimeout(() => { nowBtn.disabled = false; }, 5000);
+      setTimeout(() => { nowBtn.disabled = false; nowBtn.classList.remove('is-busy'); }, 5000);
     }
   });
 
@@ -826,6 +837,7 @@ function stepThreshold(kind, delta) {
   const [min, max] = THRESHOLD_LIMITS[kind];
   const current = parseFloat(input.value) || _savedThresholds()[kind];
   input.value = Math.min(max, Math.max(min, Math.round((current + delta) * 10) / 10));
+  playOnce(input, delta > 0 ? 'nudge-up' : 'nudge-down');
   onThresholdInput();
 }
 
@@ -864,6 +876,7 @@ async function saveThresholds() {
       } else {
         const climNote = data.clim_setpoint ? ' — consigne clim mise à jour' : '';
         showToast(`Seuils enregistrés : ${data.temp_on} → ${data.temp_off} °C${climNote}`, 'success');
+        playOnce(btn, 'btn-pop');
       }
     } else {
       showToast(data.error || 'Erreur', 'error');
