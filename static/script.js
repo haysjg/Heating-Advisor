@@ -928,10 +928,11 @@ async function renderSparklines() {
     if (values.length < 2) return;
     const min = Math.min(...values), max = Math.max(...values);
     const span = (max - min) || 1;
-    const W = 100, H = 40;
+    // Marge basse franche : au minimum la ligne reste au-dessus du bord arrondi de la carte
+    const W = 100, H = 40, PAD_TOP = 4, PAD_BOTTOM = 14;
     const pts = values.map((v, i) => [
       (i / (values.length - 1)) * W,
-      H - 3 - ((v - min) / span) * (H - 8),
+      H - PAD_BOTTOM - ((v - min) / span) * (H - PAD_TOP - PAD_BOTTOM),
     ].map(x => x.toFixed(2)).join(','));
     const line = 'M' + pts.join(' L');
     const id = `spark-fill-${n}`;
