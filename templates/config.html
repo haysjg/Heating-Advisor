@@ -260,6 +260,7 @@
       <p style="margin-bottom:0.75rem;font-size:0.85rem;color:var(--text-sub)">
         Fond animé, sur ordinateur uniquement : jamais sur téléphone ni tablette, ni si le système demande de réduire les animations.
         Braises quand le poêle tourne, halo rouge en Tempo rouge et étoile filante la nuit s'ajoutent à tous les thèmes.
+        Le thème s'applique et s'enregistre dès le clic.
       </p>
       <div class="bg-themes" role="radiogroup" aria-label="Thème du fond animé">
         {% for key, name, desc in [
@@ -1009,6 +1010,33 @@
   }
 
   function getVal(id) { return document.getElementById(id).value; }
+
+  // Thème du fond : appliqué et enregistré dès le clic, sans passer par « Enregistrer »
+  let _bgThemeSaved = (document.querySelector('input[name="background_theme"]:checked') || {}).value;
+  document.querySelectorAll('input[name="background_theme"]').forEach(input => {
+    input.addEventListener('change', async () => {
+      const theme = input.value;
+      const name = input.closest('.bg-theme').querySelector('.bg-theme-name').textContent;
+      if (window.bgSetTheme) window.bgSetTheme(theme);
+      try {
+        const r = await fetch('/api/ui/background-theme', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ background_theme: theme }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        _bgThemeSaved = theme;
+        showToast(`Fond : ${name}`, true);
+      } catch (e) {
+        // Échec : on revient au thème enregistré
+        const prev = document.querySelector(`input[name="background_theme"][value="${_bgThemeSaved}"]`);
+        if (prev) prev.checked = true;
+        if (window.bgSetTheme && _bgThemeSaved) window.bgSetTheme(_bgThemeSaved);
+        showToast(`Thème non enregistré : ${e.message}`, false);
+      }
+    });
+  });
 
   function saveConfig() {
     const poids = parseFloat(getVal('poids_sac'));

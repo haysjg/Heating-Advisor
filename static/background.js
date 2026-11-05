@@ -5,9 +5,12 @@
 // passe devant le thème choisi ; gyrophare pendant les heures pleines, les plus chères.
 (function () {
   const root = document.documentElement;
-  if (!root.classList.contains('bg-live')) return;
+  // Mêmes conditions que base.html : ordinateur, animations autorisées
+  const ELIGIBLE = window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 1024px)').matches
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const CHOSEN = root.dataset.bgTheme || 'aurora';
+  let chosen = root.dataset.bgTheme || 'aurora';
+  let started = false;
   const LAT = parseFloat(root.dataset.lat);
   const LON = parseFloat(root.dataset.lon);
   const MIN = 60000;
@@ -131,7 +134,7 @@
   // ── Automatique : coin du feu le soir poêle allumé, météo s'il tombe quelque chose, sinon ciel ──
   function resolve() {
     if (root.hasAttribute('data-tempo-red')) return 'tempo-red';
-    if (CHOSEN !== 'auto') return CHOSEN;
+    if (chosen !== 'auto') return chosen;
     const h = new Date().getHours();
     if (root.dataset.stove === 'on' && (h >= 17 || h < 6)) return 'fireside';
     if (sky && ['rain', 'storm', 'snow', 'fog'].includes(sky.sky)) return 'weather';
@@ -150,6 +153,7 @@
   }
 
   async function loadSky() {
+    if (!started || !['weather', 'auto'].includes(chosen)) return;
     try {
       const r = await fetch('/api/weather/conditions');
       if (!r.ok) return;
@@ -160,7 +164,8 @@
     } catch (e) { /* hors ligne : on garde l'existant */ }
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  function start() {
+    started = true;
     const layer = document.createElement('div');
     layer.className = 'bg-live-layer';
     layer.setAttribute('aria-hidden', 'true');
@@ -171,12 +176,27 @@
     try { applyThermal(JSON.parse(localStorage.getItem('thermal'))); } catch (e) { /* rien de mémorisé */ }
     updateHp();
     render(true);
-    if (CHOSEN === 'weather' || CHOSEN === 'auto') {
-      loadSky();
-      setInterval(loadSky, 15 * MIN);
-    }
+    loadSky();
+    setInterval(loadSky, 15 * MIN);
     setInterval(() => { updateHp(); updateSky(); render(); }, MIN);
     // Poêle allumé / éteint, jour rouge (mis à jour par l'accueil) : le thème affiché peut changer
     new MutationObserver(() => render()).observe(root, { attributes: true, attributeFilter: ['data-stove', 'data-tempo-red'] });
+    // Onglet en arrière-plan : animations figées
+    document.addEventListener('visibilitychange', () => root.classList.toggle('bg-paused', document.hidden));
+  }
+
+  // Changement de thème à chaud (/config) : démarre, change ou coupe le fond sans recharger
+  window.bgSetTheme = function (theme) {
+    chosen = theme;
+    root.dataset.bgTheme = theme;
+    if (theme === 'none' || !ELIGIBLE) { root.classList.remove('bg-live'); return; }
+    root.classList.add('bg-live');
+    if (!started) { start(); return; }
+    render(true);
+    if (!sky) loadSky();
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (root.classList.contains('bg-live')) start();
   });
 })();

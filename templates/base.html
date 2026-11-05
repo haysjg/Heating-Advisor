@@ -74,12 +74,7 @@
     // Le CSS revérifie les mêmes conditions (fenêtre réduite sous 1024 px → calque masqué).
     const BG_LIVE = document.documentElement.dataset.bgTheme !== 'none'
       && MOTION_OK && window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 1024px)').matches;
-    if (BG_LIVE) {
-      document.documentElement.classList.add('bg-live');
-      // Onglet en arrière-plan : animations figées
-      document.addEventListener('visibilitychange', () =>
-        document.documentElement.classList.toggle('bg-paused', document.hidden));
-    }
+    if (BG_LIVE) document.documentElement.classList.add('bg-live');
 
     // Entrée des cartes au chargement : classe posée avant le premier rendu, retirée ensuite
     // pour ne pas interférer avec les animations de rafraîchissement

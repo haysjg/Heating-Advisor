@@ -46,3 +46,19 @@ def test_theme_validation(app_module, monkeypatch):
 def test_legacy_disabled_kept(app_module, monkeypatch):
     monkeypatch.setattr(app_module.config, "UI", {"background_theme": None, "background_animation": False})
     assert app_module._background_theme({}) == "none"
+
+
+def test_route_saves_theme(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.config, "UI", {"background_theme": "aurora"})
+    patched = {}
+    monkeypatch.setattr(app_module, "_patch_override", lambda fn: fn(patched))
+    c = app_module.app.test_client()
+    with c.session_transaction() as s:
+        s["authenticated"] = True
+        s["auth_fp"] = app_module._auth_fingerprint()
+    fetch = {"X-Requested-With": "fetch"}
+    r = c.post("/api/ui/background-theme", json={"background_theme": "sky"}, headers=fetch)
+    assert r.status_code == 200
+    assert patched == {"UI": {"background_theme": "sky"}}
+    assert app_module.config.UI["background_theme"] == "sky"
+    assert c.post("/api/ui/background-theme", json={"background_theme": "disco"}, headers=fetch).status_code == 400

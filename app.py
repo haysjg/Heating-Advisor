@@ -1785,6 +1785,19 @@ def _background_theme(data: dict) -> str:
     return theme
 
 
+@app.route("/api/ui/background-theme", methods=["POST"])
+def api_background_theme():
+    """Thème du fond animé, enregistré dès le clic sur une vignette de /config."""
+    try:
+        theme = _background_theme(request.get_json(silent=True) or {})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _patch_override(lambda d: d.setdefault("UI", {}).__setitem__("background_theme", theme))
+    config.UI["background_theme"] = theme
+    logger.info("Fond animé : thème %s", theme)
+    return jsonify({"status": "ok", "background_theme": theme})
+
+
 def _secret_rebind_error(data: dict) -> str | None:
     """Refuse de réutiliser un secret enregistré pour un hôte qui a changé.
 
