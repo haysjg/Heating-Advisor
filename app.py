@@ -534,14 +534,30 @@ def _record_history():
         logger.error("History record échoué : %s", e)
 
 
-def _pellet_cycle_hours() -> float:
-    """Durée d'un sac (heures de chauffe), réglée dans /config ; 15 h par défaut."""
+def _poele_purchase() -> dict:
     override = jsonstore.load(OVERRIDE_FILE, {})
     purchase = override.get("_poele_purchase", {}) if isinstance(override, dict) else {}
+    return purchase if isinstance(purchase, dict) else {}
+
+
+def _pellet_cycle_hours() -> float:
+    """Durée d'un sac (heures de chauffe), réglée dans /config ; 15 h par défaut."""
     try:
-        return float(purchase.get("hours_per_bag") or pellet_refill.DEFAULT_CYCLE_HOURS)
+        return float(_poele_purchase().get("hours_per_bag") or pellet_refill.DEFAULT_CYCLE_HOURS)
     except (TypeError, ValueError):
         return pellet_refill.DEFAULT_CYCLE_HOURS
+
+
+def _pellet_bag_kg() -> float:
+    """Poids d'un sac, réglé dans /config ; 15 kg par défaut."""
+    try:
+        return float(_poele_purchase().get("poids_sac") or pellet_refill.DEFAULT_BAG_KG)
+    except (TypeError, ValueError):
+        return pellet_refill.DEFAULT_BAG_KG
+
+
+def _pellet_status() -> dict:
+    return pellet_refill.status(_pellet_cycle_hours(), _pellet_bag_kg())
 
 
 def _record_diagnose():
@@ -945,7 +961,7 @@ def index():
                                weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
                                poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL,
                                next_check=_next_thermostat_check(),
-                               pellet=pellet_refill.status(_pellet_cycle_hours()))
+                               pellet=_pellet_status())
     except Exception as e:
         error = _internal_error_message(_log_internal_error(e))
         return render_template("index.html", data=None, error=error, config=config, thermostat_state={},
@@ -1099,7 +1115,7 @@ def api_dashboard_refresh():
             },
             "clim_state": clim_state_value,
             "poele_state": poele_state_value,
-            "pellet_refill": pellet_refill.status(_pellet_cycle_hours()),
+            "pellet_refill": _pellet_status(),
             "radiateurs": radiateurs_info,
             "tomorrow": {
                 "recommendation": {
@@ -1119,10 +1135,39 @@ def api_dashboard_refresh():
 
 @app.route("/api/poele/refill-reset", methods=["POST"])
 def api_poele_refill_reset():
-    """Remise à 0 manuelle du compteur d'heures depuis le dernier remplissage."""
+    """Clic « Trémie remplie » : remise à 0 et enregistrement du cycle (sacs versés)."""
+    data = request.get_json(silent=True) or {}
     try:
-        pellet_refill.reset("manual")
-        return jsonify(pellet_refill.status(_pellet_cycle_hours()))
+        bags = float(data.get("bags", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Nombre de sacs invalide"}), 400
+    if not 0 < bags <= 10:
+        return jsonify({"error": "Nombre de sacs invalide"}), 400
+    try:
+        pellet_refill.reset("manual", kg=bags * _pellet_bag_kg())
+        return jsonify(_pellet_status())
+    except Exception as e:
+        return _internal_error(e)
+
+
+@app.route("/api/poele/refill-apply", methods=["POST"])
+def api_poele_refill_apply():
+    """Applique la durée par sac mesurée : heures par sac (/config), débit du poêle, stock, alerte."""
+    try:
+        bag_kg = _pellet_bag_kg()
+        est = pellet_refill.status(bag_kg=bag_kg)["estimate"]
+        if not est:
+            return jsonify({"error": "Pas assez de remplissages mesurés"}), 400
+        hours = est["hours_per_bag"]
+        consumption = round(bag_kg / hours, 4)
+
+        def _apply(d):
+            d.setdefault("_poele_purchase", {})["hours_per_bag"] = hours
+            d.setdefault("POELE", {})["consumption_kg_per_hour"] = consumption
+        _patch_override(_apply)
+        config.POELE["consumption_kg_per_hour"] = consumption
+        logger.info("Poêle : durée par sac mesurée appliquée — %.1f h (%.3f kg/h)", hours, consumption)
+        return jsonify(_pellet_status())
     except Exception as e:
         return _internal_error(e)
 

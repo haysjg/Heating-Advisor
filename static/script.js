@@ -156,7 +156,24 @@ async function setWeekendAuto(input) {
   }
 }
 
-// Card « Remplissage du poêle » : heures de chauffe depuis le dernier plein
+// Card « Remplissage du poêle » : heures de chauffe depuis le dernier plein + débit réel mesuré
+const _fmtH = h => h.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+
+function _refillMeasureHtml(p) {
+  if (!p.measuring) {
+    return '<span>Mesure du débit réel : démarre au prochain clic « Trémie remplie ».</span>';
+  }
+  const since = `${_fmtH(p.refill_hours)} h de chauffe depuis le dernier plein`;
+  const e = p.estimate;
+  if (!e) {
+    return `<span>Mesure du débit réel : <strong>${p.refills_count}/${p.min_cycles}</strong> remplissages · ${since}</span>`;
+  }
+  const differs = Math.abs(e.hours_per_bag - p.cycle_hours) >= 0.1;
+  return `<span>Réel mesuré : <strong>${_fmtH(e.hours_per_bag)} h/sac</strong> (${e.kg_per_hour.toLocaleString('fr-FR')} kg/h)
+      sur ${e.cycles} remplissages · ${_fmtH(e.min_hours_per_bag)}–${_fmtH(e.max_hours_per_bag)} h</span>`
+    + (differs ? `<button type="button" class="btn-thresholds btn-thresholds-save" onclick="applyPelletEstimate(${e.hours_per_bag})">Appliquer ${_fmtH(e.hours_per_bag)} h</button>` : '');
+}
+
 function renderPelletRefill(p) {
   const card = document.getElementById('refill-card');
   if (!card || !p) return;
@@ -165,28 +182,59 @@ function renderPelletRefill(p) {
   card.classList.add(`refill-${level}`);
   const hoursEl = card.querySelector('[data-value="refill-hours"]');
   if (hoursEl) hoursEl.textContent = `${Math.floor(p.minutes / 60)} h ${String(p.minutes % 60).padStart(2, '0')}`;
+  const cycleEl = hoursEl?.nextElementSibling;
+  if (cycleEl) cycleEl.textContent = `/ ${Math.round(p.cycle_hours)} h de chauffe`;
   const fill = card.querySelector('.refill-fill');
   if (fill) fill.style.width = `${p.percent}%`;
+  const mark = card.querySelector('.refill-mark');
+  if (mark && p.cycle_hours) mark.style.left = `${p.alert_hours / p.cycle_hours * 100}%`;
   const bar = card.querySelector('.refill-bar');
-  if (bar) bar.setAttribute('aria-valuenow', p.hours);
+  if (bar) { bar.setAttribute('aria-valuenow', p.hours); bar.setAttribute('aria-valuemax', p.cycle_hours); }
+  const note = card.querySelector('[data-value="refill-note"]');
+  if (note) note.textContent = `Alerte à ${Math.round(p.alert_hours)} h · retour à 0 automatique à ${Math.round(p.cycle_hours)} h`;
+  const measure = card.querySelector('[data-value="refill-measure"]');
+  if (measure) measure.innerHTML = _refillMeasureHtml(p);
+}
+
+async function _postPellet(url, body, okMessage, errPrefix) {
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    renderPelletRefill(data);
+    showToast(okMessage, 'success');
+  } catch (e) {
+    showToast(`${errPrefix} : ${e.message}`, 'error');
+  }
 }
 
 async function resetPelletRefill() {
   const btn = document.getElementById('refill-reset');
-  if (!confirm('Trémie remplie ? Le compteur d\'heures de chauffe repart de 0.')) return;
+  const select = document.getElementById('refill-bags');
+  const bags = parseFloat(select.value);
+  const label = select.options[select.selectedIndex].text;
+  if (!confirm(`Trémie remplie avec ${label} ? Le compteur d'heures de chauffe repart de 0.`)) return;
   btn.disabled = true;
-  try {
-    const response = await fetch('/api/poele/refill-reset', { method: 'POST' });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-    renderPelletRefill(data);
-    showToast('Compteur de remplissage remis à 0', 'success');
-  } catch (e) {
-    showToast(`Remise à 0 impossible : ${e.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-  }
+  await _postPellet('/api/poele/refill-reset', { bags }, 'Remplissage enregistré, compteur remis à 0', 'Remise à 0 impossible');
+  btn.disabled = false;
+  select.value = '1';
 }
+
+async function applyPelletEstimate(hours) {
+  if (!confirm(`Utiliser ${_fmtH(hours)} h par sac ? Le seuil d'alerte, la consommation du poêle et le stock de /stock seront recalculés avec cette valeur.`)) return;
+  await _postPellet('/api/poele/refill-apply', {}, `Durée par sac réglée sur ${_fmtH(hours)} h`, 'Réglage non appliqué');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const card = document.getElementById('refill-card');
+  if (card?.dataset.pellet) {
+    try { renderPelletRefill(JSON.parse(card.dataset.pellet)); } catch (e) { /* rendu serveur conservé */ }
+  }
+});
 
 // Met à jour le panneau de contrôle (poêle, clim, radiateurs) depuis la réponse de /api/dashboard/refresh
 function updateControlPanel(data) {

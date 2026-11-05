@@ -260,6 +260,30 @@ main {
 }
 .refill-note { margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-sub); }
 .refill-due .refill-note { color: var(--red); }
+.refill-actions { display: flex; gap: 0.5rem; align-items: center; }
+.refill-actions select {
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+.refill-measure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-sub);
+}
+.refill-measure:empty { display: none; }
+.refill-measure strong { color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* ── Seuils thermostat (widget) ───────────────────────────── */
 .thresholds-head {
