@@ -1086,28 +1086,29 @@ main {
 
 .tempo-pulse { display: inline-block; }
 
-/* Pastille de couleur (Tempo, état d'un appareil) : disque fin, anneau léger, halo discret */
+/* Pastille de couleur (Tempo, état d'un appareil) : disque vif, liseré éclairci qui le détache
+   du fond, halo coloré */
 .dot {
   --dot: var(--text-sub);
   display: inline-block;
   flex-shrink: 0;
-  width: 0.55em;
-  height: 0.55em;
+  width: 0.6em;
+  height: 0.6em;
   margin-right: 0.5em;
   border-radius: 50%;
-  background: var(--dot);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--dot) 55%, #fff), var(--dot) 60%);
   box-shadow:
-    0 0 0 0.18em color-mix(in srgb, var(--dot) 18%, transparent),
-    0 0 0.6em color-mix(in srgb, var(--dot) 45%, transparent);
-  vertical-align: 0.06em;
+    0 0 0 1.5px color-mix(in srgb, var(--dot) 45%, #fff),
+    0 0 0.7em 0.05em color-mix(in srgb, var(--dot) 70%, transparent);
+  vertical-align: 0.04em;
 }
-.value-big .dot { width: 0.36em; height: 0.36em; margin-right: 0.4em; vertical-align: 0.2em; }
-.dot-blue    { --dot: #60a5fa; }
-.dot-white   { --dot: #e2e8f0; }
-.dot-red     { --dot: #f87171; }
-.dot-on      { --dot: #22c55e; }
-.dot-off     { --dot: #475569; box-shadow: none; }
-.dot-excluded, .dot-unknown { --dot: transparent; box-shadow: inset 0 0 0 1.5px #64748b; }
+.value-big .dot { width: 0.4em; height: 0.4em; margin-right: 0.4em; vertical-align: 0.18em; }
+.dot-blue    { --dot: #2b8cff; }
+.dot-white   { --dot: #f8fafc; }
+.dot-red     { --dot: #ff3b3b; }
+.dot-on      { --dot: #19d26a; }
+.dot-off     { --dot: #64748b; box-shadow: 0 0 0 1.5px #94a3b8; }
+.dot-excluded, .dot-unknown { background: transparent; box-shadow: inset 0 0 0 1.5px #64748b; }
 .dot-unknown { box-shadow: inset 0 0 0 1.5px #94a3b8; }
 
 @media (prefers-reduced-motion: no-preference) {
