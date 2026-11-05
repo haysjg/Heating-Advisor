@@ -369,6 +369,27 @@
     </section>
     {% endif %}
 
+    {# ── Remplissage du poêle : heures de chauffe depuis le dernier plein ── #}
+    {% if pellet %}
+    {% set _p_level = 'due' if pellet.minutes >= pellet.alert_hours * 60 else 'soon' if pellet.percent >= 75 else 'ok' %}
+    <section class="card refill-card refill-{{ _p_level }}" id="refill-card" data-refresh="refill">
+      <div class="refill-head">
+        <h3>🪵 Remplissage du poêle</h3>
+        <button type="button" class="btn-thresholds" id="refill-reset" onclick="resetPelletRefill()">Trémie remplie</button>
+      </div>
+      <p class="refill-value">
+        <strong data-value="refill-hours">{{ (pellet.minutes // 60) }} h {{ '%02d'|format(pellet.minutes % 60) }}</strong>
+        <span>/ {{ pellet.cycle_hours|round(0)|int }} h de chauffe</span>
+      </p>
+      <div class="refill-bar" role="progressbar" aria-label="Heures de chauffe depuis le dernier remplissage"
+           aria-valuemin="0" aria-valuemax="{{ pellet.cycle_hours }}" aria-valuenow="{{ pellet.hours }}">
+        <span class="refill-fill" style="width: {{ pellet.percent }}%"></span>
+        <span class="refill-mark" style="left: {{ (pellet.alert_hours / pellet.cycle_hours * 100) if pellet.cycle_hours else 100 }}%"></span>
+      </div>
+      <p class="refill-note" data-value="refill-note">Alerte à {{ pellet.alert_hours|round(0)|int }} h · retour à 0 automatique à {{ pellet.cycle_hours|round(0)|int }} h</p>
+    </section>
+    {% endif %}
+
     {# ── Recommandation principale ── #}
     {% set rec = data.recommendation %}
     <section class="card card-{{ rec.level }}{% if rec.system == 'none' %} card-night{% endif %} card-labeled" id="recommendation" data-refresh="recommendation" data-system="{{ rec.system }}">

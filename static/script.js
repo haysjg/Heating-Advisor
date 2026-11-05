@@ -156,6 +156,38 @@ async function setWeekendAuto(input) {
   }
 }
 
+// Card « Remplissage du poêle » : heures de chauffe depuis le dernier plein
+function renderPelletRefill(p) {
+  const card = document.getElementById('refill-card');
+  if (!card || !p) return;
+  const level = p.minutes >= p.alert_hours * 60 ? 'due' : p.percent >= 75 ? 'soon' : 'ok';
+  card.classList.remove('refill-ok', 'refill-soon', 'refill-due');
+  card.classList.add(`refill-${level}`);
+  const hoursEl = card.querySelector('[data-value="refill-hours"]');
+  if (hoursEl) hoursEl.textContent = `${Math.floor(p.minutes / 60)} h ${String(p.minutes % 60).padStart(2, '0')}`;
+  const fill = card.querySelector('.refill-fill');
+  if (fill) fill.style.width = `${p.percent}%`;
+  const bar = card.querySelector('.refill-bar');
+  if (bar) bar.setAttribute('aria-valuenow', p.hours);
+}
+
+async function resetPelletRefill() {
+  const btn = document.getElementById('refill-reset');
+  if (!confirm('Trémie remplie ? Le compteur d\'heures de chauffe repart de 0.')) return;
+  btn.disabled = true;
+  try {
+    const response = await fetch('/api/poele/refill-reset', { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    renderPelletRefill(data);
+    showToast('Compteur de remplissage remis à 0', 'success');
+  } catch (e) {
+    showToast(`Remise à 0 impossible : ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // Met à jour le panneau de contrôle (poêle, clim, radiateurs) depuis la réponse de /api/dashboard/refresh
 function updateControlPanel(data) {
   if (data.poele_state != null) renderPoeleStatus(data.poele_state);
@@ -342,6 +374,7 @@ const DashboardRefresh = {
       this.updateThermostat(data.thermostat);
       this.updateRadiateurs(data.radiateurs);
       updateControlPanel(data);
+      renderPelletRefill(data.pellet_refill);
       this.updateTempo(data.tempo);
       this.updateTomorrow(data.tomorrow);
       this.updateTimestamp(data.timestamp);

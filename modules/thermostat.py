@@ -266,8 +266,9 @@ def is_in_schedule(cfg: dict) -> bool:
         return False
 
 
-def _send_sensor_alert(email_cfg: dict, subject: str, message: str) -> None:
-    """Envoie un email d'alerte thermostat."""
+def _send_sensor_alert(email_cfg: dict, subject: str, message: str,
+                       kicker: str = "🌡️ Thermostat automatique — Heating Advisor") -> None:
+    """Envoie un email d'alerte (thermostat par défaut ; kicker = ligne d'en-tête)."""
     if not email_cfg.get("enabled"):
         return
     import smtplib
@@ -281,7 +282,7 @@ def _send_sensor_alert(email_cfg: dict, subject: str, message: str) -> None:
 <body style="margin:0;padding:0;background:#0f1117;font-family:-apple-system,sans-serif;color:#e2e8f0">
   <div style="max-width:480px;margin:32px auto;background:#1a1d27;border-radius:16px;overflow:hidden;border:1px solid #2a2d3e">
     <div style="background:#0f1117;padding:20px 24px;border-bottom:1px solid #2a2d3e">
-      <p style="margin:0;font-size:0.85em;color:#8892a4">🌡️ Thermostat automatique — Heating Advisor</p>
+      <p style="margin:0;font-size:0.85em;color:#8892a4">{kicker}</p>
       <h1 style="margin:4px 0 0;font-size:1.1em">{subject}</h1>
     </div>
     <div style="padding:20px 24px">

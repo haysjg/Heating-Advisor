@@ -225,6 +225,42 @@ main {
 .card-tempo-white .value-big { color: #f1f5f9; }
 .card-tempo-red   .value-big { color: #fca5a5; }
 
+/* ── Remplissage du poêle ─────────────────────────────────── */
+.refill-card { --refill-tone: var(--warm); }
+.refill-card.refill-soon { --refill-tone: var(--yellow); }
+.refill-card.refill-due  { --refill-tone: var(--red); }
+.refill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.refill-value { margin: 0.6rem 0 0.5rem; font-variant-numeric: tabular-nums; color: var(--text-sub); }
+.refill-value strong { font-size: 1.6rem; color: var(--refill-tone); margin-right: 0.25rem; }
+.refill-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border);
+}
+.refill-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--refill-tone);
+  transition: width 0.6s var(--ease-out), background-color 0.4s ease;
+}
+.refill-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--text-sub);
+  opacity: 0.6;
+}
+.refill-note { margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-sub); }
+.refill-due .refill-note { color: var(--red); }
+
 /* ── Seuils thermostat (widget) ───────────────────────────── */
 .thresholds-head {
   display: flex;

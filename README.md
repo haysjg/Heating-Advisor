@@ -184,6 +184,16 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 | `load(cfg)` | Charge `data/config_override.json` et l'applique sur le module `config` au démarrage. |
 | `apply(cfg, data)` | Applique un dict de surcharges sur le module `config`. Supporte tous les blocs (`THERMOSTAT`, `HOME_ASSISTANT`, `EMAIL`, `NTFY`, `LOCATION`, etc.). |
 
+### `pellet_refill.py` — Remplissage du poêle
+
+Compteur d'heures de chauffe depuis le dernier remplissage de la trémie (`data/pellet_refill.json`). Le job d'historique ajoute 10 min à chaque lecture où le poêle est allumé (état réel HA). Durée d'un sac = « heures par sac » de `/config` (15 h par défaut).
+
+| Fonction | Description |
+|---|---|
+| `tick(poele_on, cycle_hours, email_cfg, ntfy_cfg)` | Ajoute une lecture. Une heure avant la fin du sac (14 h sur 15) : alerte ntfy + email, une seule par cycle. À la fin du sac : retour à 0 automatique. |
+| `reset(by)` | Remise à 0 (bouton « Trémie remplie » de l'accueil). |
+| `status(cycle_hours)` | Minutes, heures, pourcentage, seuil d'alerte — affichés dans la card « Remplissage du poêle ». |
+
 ### `ntfy_push.py` — Notifications push
 
 | Fonction | Description |
@@ -339,6 +349,7 @@ Les notifications push sont envoyées via **[Ntfy](https://ntfy.sh)**, auto-héb
 | 🚗 Poêle éteint | Absence confirmée (géolocalisation) |
 | ✈️ Poêle éteint | Mode vacances actif |
 | ⚠️ Poêle éteint | Extinction sécurité (sonde hors service) |
+| 🪵 Poêle : remplissage à prévoir | 14 h de chauffe depuis le dernier remplissage (aussi envoyé par email) |
 
 ### Installation Ntfy sur NAS Synology
 
@@ -469,6 +480,7 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `GET /api/thermostat/vacation` | Dates d'absence programmées |
 | `POST /api/thermostat/vacation` | Programme une absence |
 | `DELETE /api/thermostat/vacation` | Annule l'absence programmée |
+| `POST /api/poele/refill-reset` | Remet à 0 le compteur d'heures depuis le dernier remplissage |
 | `POST /api/config` | Sauvegarde la configuration depuis l'interface |
 | `POST /api/notify/test` | Déclenche manuellement l'email de recommandation |
 | `GET /electricity` | Page dédiée suivi électricité |

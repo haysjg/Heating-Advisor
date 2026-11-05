@@ -32,6 +32,7 @@ import modules.history as history_module
 import modules.radiateurs as radiateurs_module
 import modules.presence_watch as presence_watch
 import modules.source_watch as source_watch
+import modules.pellet_refill as pellet_refill
 from modules.stock import compute_stock_stats
 import modules.imap_client as imap_client
 import modules.electricity as electricity_module
@@ -528,8 +529,19 @@ def _record_history():
         heating_state = history_module.poele_state_for_history(poele_ha.get("state") if poele_ha else None, th_state)
         tempo_color = data.get("tempo", {}).get("today", {}).get("color")
         history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color)
+        pellet_refill.tick(heating_state == "on", _pellet_cycle_hours(), config.EMAIL, config.NTFY)
     except Exception as e:
         logger.error("History record échoué : %s", e)
+
+
+def _pellet_cycle_hours() -> float:
+    """Durée d'un sac (heures de chauffe), réglée dans /config ; 15 h par défaut."""
+    override = jsonstore.load(OVERRIDE_FILE, {})
+    purchase = override.get("_poele_purchase", {}) if isinstance(override, dict) else {}
+    try:
+        return float(purchase.get("hours_per_bag") or pellet_refill.DEFAULT_CYCLE_HOURS)
+    except (TypeError, ValueError):
+        return pellet_refill.DEFAULT_CYCLE_HOURS
 
 
 def _record_diagnose():
@@ -932,7 +944,8 @@ def index():
                                next_schedule_start=next_start, radiateurs_info=radiateurs_info,
                                weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
                                poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL,
-                               next_check=_next_thermostat_check())
+                               next_check=_next_thermostat_check(),
+                               pellet=pellet_refill.status(_pellet_cycle_hours()))
     except Exception as e:
         error = _internal_error_message(_log_internal_error(e))
         return render_template("index.html", data=None, error=error, config=config, thermostat_state={},
@@ -1086,6 +1099,7 @@ def api_dashboard_refresh():
             },
             "clim_state": clim_state_value,
             "poele_state": poele_state_value,
+            "pellet_refill": pellet_refill.status(_pellet_cycle_hours()),
             "radiateurs": radiateurs_info,
             "tomorrow": {
                 "recommendation": {
@@ -1099,6 +1113,16 @@ def api_dashboard_refresh():
         }
 
         return jsonify(response)
+    except Exception as e:
+        return _internal_error(e)
+
+
+@app.route("/api/poele/refill-reset", methods=["POST"])
+def api_poele_refill_reset():
+    """Remise à 0 manuelle du compteur d'heures depuis le dernier remplissage."""
+    try:
+        pellet_refill.reset("manual")
+        return jsonify(pellet_refill.status(_pellet_cycle_hours()))
     except Exception as e:
         return _internal_error(e)
 
