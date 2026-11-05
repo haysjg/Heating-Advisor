@@ -592,8 +592,9 @@ const DashboardRefresh = {
   },
 
   updateTempo(tempo) {
-    // Le Tempo est affiché dans la section de droite, pas besoin de mise à jour AJAX
-    // (données déjà cachées 30min)
+    // Cartes Tempo non rafraîchies (données cachées 30 min) ; seul le jour rouge du fond suit
+    const color = tempo && tempo.today && tempo.today.color;
+    if (color) setTempoRed(String(color).toLowerCase() === 'red');
   },
 
   updateTomorrow(tomorrow) {
@@ -938,6 +939,18 @@ function updateAmbiance() {
   if (amb) root.dataset.ambiance = amb; else delete root.dataset.ambiance;
   if (stove) root.dataset.stove = 'on'; else delete root.dataset.stove;
   try { localStorage.setItem('ambiance', amb); } catch (e) { /* stockage indisponible */ }
+  if (document.querySelector('[class*="card-tempo-"]')) setTempoRed(!!document.querySelector('.card-tempo-red'));
+}
+
+// Jour Tempo rouge : le thème de fond « Jour rouge » passe devant le thème choisi.
+// Mémorisé jusqu'au prochain 6 h (changement de jour Tempo) pour les autres pages.
+function setTempoRed(red) {
+  const root = document.documentElement;
+  if (red) root.dataset.tempoRed = ''; else delete root.dataset.tempoRed;
+  const until = new Date();
+  if (until.getHours() >= 6) until.setDate(until.getDate() + 1);
+  until.setHours(6, 0, 0, 0);
+  try { localStorage.setItem('tempoRed', JSON.stringify({ red, until: until.getTime() })); } catch (e) { /* stockage indisponible */ }
 }
 
 // Cadran intérieur : arc sur 270°, plage de confort (seuils) et repère sur le ressenti
@@ -956,6 +969,7 @@ function renderDial() {
     dial.style.setProperty('--b1', `${deg(off)}deg`);
   }
   dial.classList.toggle('no-value', isNaN(felt));
+  if (window.bgThermal && !isNaN(felt) && !isNaN(on) && !isNaN(off)) window.bgThermal(felt, on, off);
   if (!isNaN(felt)) {
     // Premier affichage : le repère part du début de l'arc
     requestAnimationFrame(() => dial.style.setProperty('--a', `${deg(felt) - 135}deg`));

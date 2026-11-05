@@ -1773,6 +1773,18 @@ def config_page():
     return render_template("config.html", config=config, purchase=purchase)
 
 
+BACKGROUND_THEMES = ("aurora", "sky", "weather", "thermal", "fireside", "auto", "none")
+
+
+def _background_theme(data: dict) -> str:
+    """Thème du fond animé envoyé par /config ; valeur inconnue → 400 (ValueError)."""
+    current = config.UI.get("background_theme") or ("aurora" if config.UI.get("background_animation", True) else "none")
+    theme = str(data.get("background_theme", current))
+    if theme not in BACKGROUND_THEMES:
+        raise ValueError(f"Thème de fond inconnu : {theme}")
+    return theme
+
+
 def _secret_rebind_error(data: dict) -> str | None:
     """Refuse de réutiliser un secret enregistré pour un hôte qui a changé.
 
@@ -1920,9 +1932,7 @@ def api_config_save():
                 "notify_hour": int(data.get("notify_hour", config.EMAIL.get("notify_hour", 20))),
                 "notify_minute": int(data.get("notify_minute", config.EMAIL.get("notify_minute", 0))),
             },
-            "UI": {
-                "background_animation": bool(data.get("background_animation", config.UI.get("background_animation", True))),
-            },
+            "UI": {"background_theme": _background_theme(data)},
             "NTFY": {
                 "enabled": bool(data.get("ntfy_enabled", False)),
                 "url": str(data.get("ntfy_url", config.NTFY.get("url", ""))).strip().rstrip("/"),

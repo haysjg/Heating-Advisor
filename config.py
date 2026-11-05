@@ -77,7 +77,10 @@ POELE = {
 
 # ── Apparence ────────────────────────────────────────────────
 UI = {
-    "background_animation": True,   # fond animé (ordinateur uniquement, jamais sur mobile)
+    # Fond animé (ordinateur uniquement, jamais sur mobile) :
+    # aurora, sky, weather, thermal, fireside, auto ou none.
+    # None : aurore, sauf ancien réglage background_animation = False (→ none)
+    "background_theme": None,
 }
 
 # ── Superficie à chauffer (pour info) ────────────────────────

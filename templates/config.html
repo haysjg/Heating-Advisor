@@ -256,17 +256,39 @@
     {# ── Apparence ── #}
     <div class="card form-section">
       <h3>🎨 Apparence</h3>
-      <div style="display:flex; align-items:center; gap:0.75rem">
-        <input type="checkbox" id="background_animation" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
-               {% if config.UI.background_animation %}checked{% endif %}>
-        <label for="background_animation" style="font-size:0.9rem;cursor:pointer">
-          Fond animé (aurore, braises quand le poêle tourne, étoile filante la nuit)
-        </label>
-      </div>
-      <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-sub)">
-        Sur ordinateur uniquement : jamais sur téléphone ni tablette, ni si le système demande de réduire les animations.
-        À décocher si la page devient lente.
+      {%- set _cur = config.UI.background_theme or ('aurora' if config.UI.get('background_animation', True) else 'none') %}
+      <p style="margin-bottom:0.75rem;font-size:0.85rem;color:var(--text-sub)">
+        Fond animé, sur ordinateur uniquement : jamais sur téléphone ni tablette, ni si le système demande de réduire les animations.
+        Braises quand le poêle tourne, halo rouge en Tempo rouge et étoile filante la nuit s'ajoutent à tous les thèmes.
       </p>
+      <div class="bg-themes" role="radiogroup" aria-label="Thème du fond animé">
+        {% for key, name, desc in [
+          ('aurora',   'Aurore',          'Halos de couleur qui dérivent, teintés selon la situation.'),
+          ('sky',      'Ciel du jour',    "Aube, journée, crépuscule, nuit : soleil et lune suivent l'heure réelle."),
+          ('weather',  'Météo vivante',   'Pluie, neige, brume, nuages ou soleil : le temps qu\'il fait dehors.'),
+          ('thermal',  'Thermique',       'Bleu trop frais, vert confort, orange trop chaud : votre écart à la cible.'),
+          ('fireside', 'Coin du feu',     'Lueur qui vacille et braises en continu, même poêle éteint.'),
+          ('auto',     'Automatique',     'Coin du feu le soir poêle allumé, météo s\'il pleut ou neige, sinon ciel.'),
+          ('none',     'Aucun',           'Fond fixe. À choisir si la page devient lente.'),
+        ] %}
+        <label class="bg-theme">
+          <input type="radio" name="background_theme" value="{{ key }}" {% if _cur == key %}checked{% endif %}>
+          <span class="bg-theme-card">
+            <span class="bgp bgp-{{ key }}" aria-hidden="true"></span>
+            <span class="bg-theme-name">{{ name }}</span>
+            <span class="bg-theme-desc">{{ desc }}</span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="bg-theme-priority">
+        <span class="bgp bgp-tempo-red" aria-hidden="true"></span>
+        <span>
+          <span class="bg-theme-name" style="margin-top:0">🔴 Jour rouge — prioritaire</span>
+          <span class="bg-theme-desc">Les jours Tempo rouge, remplace automatiquement le thème choisi (sauf « Aucun ») :
+            voiles cramoisis, étincelles, et gyrophare pendant les heures pleines, les plus chères.</span>
+        </span>
+      </div>
     </div>
 
     <hr class="section-divider">
@@ -1027,7 +1049,7 @@
       white_hc:             parseFloat(getVal('white_hc')),
       red_hp:               parseFloat(getVal('red_hp')),
       red_hc:               parseFloat(getVal('red_hc')),
-      background_animation: document.getElementById('background_animation').checked,
+      background_theme:     (document.querySelector('input[name="background_theme"]:checked') || {}).value,
       ntfy_enabled:         document.getElementById('ntfy_enabled').checked,
       ntfy_url:             getVal('ntfy_url'),
       ntfy_topic:           getVal('ntfy_topic'),

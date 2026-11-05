@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="fr">
+{%- set _ui = config.UI if config.UI is defined else {} -%}
+{%- set _bg_theme = _ui.get('background_theme') or ('aurora' if _ui.get('background_animation', True) else 'none') -%}
+<html lang="fr" data-bg-theme="{{ _bg_theme }}"{% if config.LOCATION is defined %} data-lat="{{ config.LOCATION.latitude }}" data-lon="{{ config.LOCATION.longitude }}"{% endif %}{% if config.HP_START is defined %} data-hp="{{ config.HP_START }}-{{ config.HP_END }}"{% endif %}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap">
   <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/background.js" defer></script>
   <script>
     // Protection CSRF : en-tête ajouté à toute requête fetch vers l'appli, exigé par le serveur
     // pour les requêtes qui modifient quelque chose (un site tiers ne peut pas l'ajouter).
@@ -39,6 +42,8 @@
         const amb = localStorage.getItem('ambiance');
         if (amb) document.documentElement.dataset.ambiance = amb;
         if (amb === 'poele') document.documentElement.dataset.stove = 'on';
+        const red = JSON.parse(localStorage.getItem('tempoRed') || 'null');
+        if (red && red.red && red.until > Date.now()) document.documentElement.dataset.tempoRed = '';
       } catch (e) { /* stockage indisponible : fond neutre */ }
       const h = new Date().getHours();
       if (h >= 22 || h < 6) document.documentElement.dataset.night = '';
@@ -65,23 +70,12 @@
     // Respecte le réglage système « réduire les animations »
     const MOTION_OK = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // Fond animé (aurore, braises, étoile filante) : ordinateur uniquement, désactivable dans /config.
+    // Fond animé (thème choisi dans /config) : ordinateur uniquement ; calque construit par background.js.
     // Le CSS revérifie les mêmes conditions (fenêtre réduite sous 1024 px → calque masqué).
-    const BG_LIVE = {{ 'true' if (config.UI is defined and config.UI.get('background_animation', True)) else 'false' }}
+    const BG_LIVE = document.documentElement.dataset.bgTheme !== 'none'
       && MOTION_OK && window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 1024px)').matches;
     if (BG_LIVE) {
       document.documentElement.classList.add('bg-live');
-      document.addEventListener('DOMContentLoaded', () => {
-        const layer = document.createElement('div');
-        layer.className = 'bg-live-layer';
-        layer.setAttribute('aria-hidden', 'true');
-        layer.innerHTML =
-          '<div class="bg-aurora"><i class="aur aur-1"></i><i class="aur aur-2"></i><i class="aur aur-3"></i></div>' +
-          '<div class="bg-heat"></div>' +
-          '<div class="bg-embers">' + '<i></i>'.repeat(14) + '</div>' +
-          '<i class="bg-shoot"></i>';
-        document.body.prepend(layer);
-      });
       // Onglet en arrière-plan : animations figées
       document.addEventListener('visibilitychange', () =>
         document.documentElement.classList.toggle('bg-paused', document.hidden));
