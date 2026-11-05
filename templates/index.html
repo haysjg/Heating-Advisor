@@ -293,7 +293,7 @@
       <div class="card card-tempo-{{ today.color | lower }} card-labeled">
         <div class="today-label">AUJOURD'HUI</div>
         <h3>⚡ Tarif EDF Tempo</h3>
-        <p class="value-big"><span class="dot dot-{{ today.color | lower }}" aria-hidden="true"></span>{{ today.label }}</p>
+        <p class="value-big"><span class="dot dot-{{ today.color | lower }}" aria-hidden="true"></span><span class="tempo-word">{{ today.label }}</span></p>
         <p class="value-sub">
           Période actuelle :
           <strong>{{ data.tempo.current_period }}</strong>

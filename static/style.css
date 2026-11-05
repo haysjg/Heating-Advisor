@@ -224,6 +224,19 @@ main {
 .card-tempo-white .value-big { color: #f1f5f9; }
 .card-tempo-red   .value-big { color: #fca5a5; }
 
+/* Couleur du jour : mot en dégradé à ses couleurs, reflet qui le traverse (animé plus bas) */
+.card-tempo-blue  .tempo-word { --w-base: #3b9bff; --w-light: #e0f0ff; }
+.card-tempo-white .tempo-word { --w-base: #cbd5e1; --w-light: #ffffff; }
+.card-tempo-red   .tempo-word { --w-base: #ff4d4d; --w-light: #ffe0e0; }
+.card-tempo-blue .tempo-word, .card-tempo-white .tempo-word, .card-tempo-red .tempo-word {
+  background: linear-gradient(100deg, var(--w-base) 0%, var(--w-base) 36%, var(--w-light) 50%, var(--w-base) 64%, var(--w-base) 100%);
+  background-size: 260% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+}
+
 /* ── Remplissage du poêle ─────────────────────────────────── */
 .refill-card { --refill-tone: var(--warm); }
 .refill-card.refill-soon { --refill-tone: var(--yellow); }
@@ -1152,6 +1165,19 @@ main {
   /* La bascule passe devant l'animation de repos (même spécificité, déclarée après) */
   .card.rec-swap .rec-icon, .card.rec-swap .rec-icon-sm { animation: rec-icon-swap 0.55s var(--ease-out); }
   .card.rec-swap .rec-content { animation: rec-content-swap 0.4s var(--ease-out) 0.08s backwards; }
+
+  /* Couleur du jour : reflet qui balaie le mot ; le rouge rougeoie en plus */
+  /* Le reflet traverse le mot puis marque une pause (extrémités unies : boucle sans à-coup) */
+  @keyframes tempo-word-shine { 0% { background-position: 100% 0; } 55%, 100% { background-position: 0% 0; } }
+  .card-tempo-blue .tempo-word, .card-tempo-white .tempo-word, .card-tempo-red .tempo-word {
+    animation: tempo-word-shine 3.8s ease-in-out infinite;
+  }
+  .card-tempo-white .tempo-word { animation-duration: 5s; }
+  @keyframes tempo-word-glow {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(255,59,59,0)); }
+    50%      { filter: drop-shadow(0 0 10px rgba(255,59,59,0.65)); }
+  }
+  .card-tempo-red .tempo-word { animation: tempo-word-shine 2.6s ease-in-out infinite, tempo-word-glow 1.8s ease-in-out infinite; }
 
   /* Tempo rouge demain : battement discret */
   @keyframes tempo-pulse {
