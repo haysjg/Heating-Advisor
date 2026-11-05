@@ -18,6 +18,8 @@ from flask_limiter.util import get_remote_address
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from markupsafe import Markup
+
 import config
 from modules.weather import get_current_conditions, get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_tempo_info
@@ -100,6 +102,15 @@ def _cancel_thermostat_suspension(entity_type: str) -> None:
         logger.error("Erreur annulation suspension thermostat : %s", e)
 
 app = Flask(__name__)
+
+
+# Icônes au trait (sprite Lucide static/icons.svg) : {{ icon('flame') }} dans les templates
+def _icon(name: str, cls: str = "") -> Markup:
+    classes = f"ic ic-{name} {cls}".strip()
+    return Markup('<svg class="{0}" aria-hidden="true"><use href="/static/icons.svg#{1}"/></svg>').format(classes, name)
+
+
+app.jinja_env.globals["icon"] = _icon
 
 # ── Clé secrète persistante (sessions) ───────────────────────
 def _get_secret_key() -> str:

@@ -2,7 +2,7 @@
 
 {% block title %}Statistiques{% endblock %}
 
-{% block header_icon %}📊{% endblock %}
+{% block header_icon %}{{ icon('chart-column') }}{% endblock %}
 {% block header_title %}Statistiques{% endblock %}
 {% block header_sub %}{{ config.LOCATION.city }} — Historique températures &amp; poêle{% endblock %}
 
@@ -418,7 +418,7 @@
                 },
                 label: function(item) {
                   if (item.dataset.yAxisID === 'yPoele') {
-                    return item.parsed.y === 1 ? '🔥 Poêle : allumé' : '  Poêle : éteint';
+                    return item.parsed.y === 1 ? 'Poêle : allumé' : 'Poêle : éteint';
                   }
                   const val = item.parsed.y;
                   if (val === null || val === undefined) return null;
@@ -532,7 +532,8 @@
       document.getElementById('daily-table').style.display = 'table';
     }
 
-    const PRESENCE_LABELS = { home: '🏠 Maison', nearby: '📍 Proximité', away: '🚗 Absent', null: '—' };
+    const PRESENCE_LABELS = { home: 'Maison', nearby: 'Proximité', away: 'Absent', null: '—' };
+    const PRESENCE_ICONS = { home: 'house', nearby: 'map-pin', away: 'car' };
     const PRESENCE_COLORS = { home: '#22c55e', nearby: '#f59e0b', away: '#f87171' };
 
     function setActiveDiagnoseBtn(hours) {
@@ -569,17 +570,18 @@
         const poeleColor = r.poele_real_state === 'off' ? '#8892a4' : '#f97316';
         const thColor = r.thermostat_state === 'off' ? '#8892a4' : '#22c55e';
         const susp = r.suspended_until ? new Date(r.suspended_until).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }) : '—';
-        const rec = r.recommendation === 'poele' ? '🔥 Poêle' : r.recommendation === 'clim' ? '❄️ Clim' : r.recommendation === 'none' ? '—' : r.recommendation || '—';
+        const recIcon = { poele: 'flame', clim: 'snowflake' }[r.recommendation];
+        const rec = r.recommendation === 'poele' ? 'Poêle' : r.recommendation === 'clim' ? 'Clim' : r.recommendation === 'none' ? '—' : r.recommendation || '—';
         return `<tr>
           <td style="white-space:nowrap;color:var(--text-sub);font-size:0.82rem">${ts}</td>
-          <td style="color:${presenceColor};font-weight:600">${escapeHtml(presenceLabel)}</td>
+          <td style="color:${presenceColor};font-weight:600">${PRESENCE_ICONS[presence] ? icon(PRESENCE_ICONS[presence]) : ''}${escapeHtml(presenceLabel)}</td>
           <td style="color:${poeleColor};font-weight:600">${escapeHtml(r.poele_real_state || '—')}</td>
           <td style="color:${thColor};font-weight:600">${escapeHtml(r.thermostat_state || '—')}</td>
           <td style="color:var(--text)">${r.felt_temperature !== null && r.felt_temperature !== undefined ? r.felt_temperature.toFixed(1) + ' °C' : '—'}</td>
           <td style="color:#fb923c">${r.indoor_temp !== null && r.indoor_temp !== undefined ? r.indoor_temp.toFixed(1) + ' °C' : '—'}</td>
           <td>${r.in_schedule ? '<span style="color:#22c55e">✓</span>' : '<span style="color:#8892a4">✗</span>'}</td>
           <td style="color:var(--text-sub);font-size:0.82rem">${susp}</td>
-          <td style="color:var(--text-sub)">${escapeHtml(rec)}</td>
+          <td style="color:var(--text-sub)">${recIcon ? icon(recIcon) : ''}${escapeHtml(rec)}</td>
         </tr>`;
       }).join('');
     }

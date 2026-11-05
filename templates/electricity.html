@@ -2,7 +2,7 @@
 
 {% block title %}Électricité{% endblock %}
 
-{% block header_icon %}⚡{% endblock %}
+{% block header_icon %}{{ icon('zap') }}{% endblock %}
 {% block header_title %}Suivi électricité{% endblock %}
 {% block header_sub %}{{ config.LOCATION.city }} — Consommation hebdomadaire (Lite){% endblock %}
 
@@ -47,7 +47,7 @@
 {% block content %}
   <div id="not-connected" class="card no-data" style="display:none;">
     Boîte mail non configurée.<br>
-    <span style="font-size:0.82rem;">Rendez-vous dans <a href="/config">⚙️ Config</a> pour renseigner les identifiants IMAP.</span>
+    <span style="font-size:0.82rem;">Rendez-vous dans <a href="/config">{{ icon('settings') }}Config</a> pour renseigner les identifiants IMAP.</span>
   </div>
 
   <div id="electricity-content">
@@ -65,7 +65,7 @@
         <h2 style="margin:0; font-size:1rem;">Historique</h2>
         <div class="range-bar">
           <button class="range-btn active" data-mode="chrono" onclick="setMode('chrono')">Chronologique</button>
-          <button class="range-btn" data-mode="compare" onclick="setMode('compare')">📊 Comparer les années</button>
+          <button class="range-btn" data-mode="compare" onclick="setMode('compare')">{{ icon('chart-column') }}Comparer les années</button>
         </div>
       </div>
       <div id="chrono-controls" class="range-bar" style="margin-bottom:1rem;">
@@ -90,7 +90,7 @@
     <div class="card" style="margin-top:1rem;">
       <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
         <h2 style="margin:0; font-size:1rem;">Données brutes</h2>
-        <button class="range-btn" onclick="exportCsv()">⬇️ Exporter en CSV</button>
+        <button class="range-btn" onclick="exportCsv()">{{ icon('download') }}Exporter en CSV</button>
       </div>
       <div id="raw-table-no-data" class="no-data" style="display:none;">Aucune donnée disponible.</div>
       <div class="raw-table-wrapper">

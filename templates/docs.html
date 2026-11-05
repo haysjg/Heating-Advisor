@@ -2,7 +2,7 @@
 
 {% block title %}Documentation{% endblock %}
 
-{% block header_icon %}📖{% endblock %}
+{% block header_icon %}{{ icon('book-open') }}{% endblock %}
 {% block header_title %}Documentation{% endblock %}
 {% block header_sub %}Règles métier, thermostat, logs et maintenance{% endblock %}
 
@@ -156,7 +156,7 @@
   <!-- ── 1. Règles métier ──────────────────────────────────────── -->
   <div class="docs-section">
     <div class="docs-section-header">
-      <span>⚙️</span>
+      <span>{{ icon('settings') }}</span>
       <h2>Règles de recommandation</h2>
     </div>
     <div class="docs-section-body">
@@ -242,7 +242,7 @@
   <!-- ── 2. Thermostat automatique ────────────────────────────── -->
   <div class="docs-section">
     <div class="docs-section-header">
-      <span>🌡️</span>
+      <span>{{ icon('thermometer') }}</span>
       <h2>Thermostat automatique</h2>
     </div>
     <div class="docs-section-body">
@@ -381,7 +381,7 @@
   {% if config.THERMOSTAT.presence_enabled %}
   <div class="docs-section">
     <div class="docs-section-header">
-      <span>📍</span>
+      <span>{{ icon('map-pin') }}</span>
       <h2>Mode présence (zones GPS)</h2>
     </div>
     <div class="docs-section-body">
@@ -423,7 +423,7 @@
   <!-- ── 4. Commandes utiles ───────────────────────────────────── -->
   <div class="docs-section">
     <div class="docs-section-header">
-      <span>💻</span>
+      <span>{{ icon('laptop') }}</span>
       <h2>Commandes utiles (NAS Synology)</h2>
     </div>
     <div class="docs-section-body">
@@ -478,33 +478,33 @@ docker-compose logs --tail=20</pre>
   <!-- ── 5. Pages et outils ────────────────────────────────────── -->
   <div class="docs-section">
     <div class="docs-section-header">
-      <span>🗺️</span>
+      <span>{{ icon('map') }}</span>
       <h2>Pages et outils</h2>
     </div>
     <div class="docs-section-body">
       <div class="pages-grid">
         <a href="/" class="page-card">
-          <div class="page-card-title">🏠 Accueil</div>
+          <div class="page-card-title">{{ icon('house') }}Accueil</div>
           <div class="page-card-desc">Recommandation du jour, météo, coûts comparés, contrôles manuels.</div>
         </a>
         <a href="/absence" class="page-card">
-          <div class="page-card-title">🏖️ Absence</div>
+          <div class="page-card-title">{{ icon('tree-palm') }}Absence</div>
           <div class="page-card-desc">Programmer une période de vacances — thermostat suspendu pendant l'absence.</div>
         </a>
         <a href="/statistics" class="page-card">
-          <div class="page-card-title">📊 Statistiques</div>
+          <div class="page-card-title">{{ icon('chart-column') }}Statistiques</div>
           <div class="page-card-desc">Historique des températures intérieure / extérieure et des heures de chauffage.</div>
         </a>
         <a href="/reports" class="page-card">
-          <div class="page-card-title">📈 Rapports</div>
+          <div class="page-card-title">{{ icon('chart-line') }}Rapports</div>
           <div class="page-card-desc">Agrégats mensuels : heures poêle / clim, coûts estimés.</div>
         </a>
         <a href="/config" class="page-card">
-          <div class="page-card-title">⚙️ Config</div>
+          <div class="page-card-title">{{ icon('settings') }}Config</div>
           <div class="page-card-desc">Paramètres Tempo, plages horaires, thermostat, Home Assistant, notifications.</div>
         </a>
         <a href="/api/thermostat/diagnose" class="page-card" target="_blank">
-          <div class="page-card-title">🔍 Diagnostic</div>
+          <div class="page-card-title">{{ icon('search') }}Diagnostic</div>
           <div class="page-card-desc">JSON brut : état du thermostat, timestamps, présence, suspension. Utile pour déboguer.</div>
         </a>
       </div>

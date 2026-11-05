@@ -1099,6 +1099,39 @@ main {
 
 .tempo-pulse { display: inline-block; }
 
+/* Icônes au trait (sprite Lucide) : prennent la couleur du texte, trait fin */
+.ic {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 0.4em;
+  vertical-align: -0.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ic:last-child { margin-right: 0; }
+/* Titres de cartes : icône teintée, un peu plus discrète que le texte */
+.card h3 .ic, .card h4 .ic { color: var(--text-sub); }
+/* Icônes seules dans une pastille ou un bouton rond */
+.header-icon .ic { width: 1.45rem; height: 1.45rem; margin: 0; color: var(--text); stroke-width: 1.6; }
+.rec-icon .ic    { width: 2.3rem; height: 2.3rem; margin: 0; stroke-width: 1.5; }
+.rec-icon-sm .ic { width: 1.55rem; height: 1.55rem; margin: 0; stroke-width: 1.6; }
+.device-icon .ic { width: 1.05rem; height: 1.05rem; margin: 0; color: var(--dev, currentColor); }
+.mobile-fab .ic  { width: 1.4rem; height: 1.4rem; margin: 0; }
+.inactive-icon .ic { margin: 0; }
+/* Teintes porteuses de sens, partout */
+.ic-flame, .ic-flame-kindling, .ic-heater { color: var(--warm); }
+.ic-snowflake { color: var(--cool); }
+.ic-zap, .ic-triangle-alert { color: var(--yellow); }
+.ic-circle-check { color: var(--green); }
+.card h3 .ic-flame, .card h3 .ic-flame-kindling, .card h4 .ic-flame { color: var(--warm); }
+.card h3 .ic-snowflake, .card h4 .ic-snowflake { color: var(--cool); }
+.card h3 .ic-zap { color: var(--yellow); }
+
 /* Pastille de couleur (Tempo, état d'un appareil) : disque vif, liseré éclairci qui le détache
    du fond, halo coloré */
 .dot {

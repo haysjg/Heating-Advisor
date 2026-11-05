@@ -509,9 +509,9 @@ const DashboardRefresh = {
       if (sourceEl) {
         const isReal = !!outdoor.measured;
         sourceEl.className = isReal ? 'source-badge source-real' : 'source-badge source-model';
-        sourceEl.textContent = isReal
-          ? `📡 ${outdoor.source} — mesure de ${outdoor.observed_at}`
-          : `🌐 ${outdoor.source} — modèle (fallback)`;
+        sourceEl.innerHTML = isReal
+          ? `${icon('radio-tower')}${escapeHtml(outdoor.source)} — mesure de ${escapeHtml(outdoor.observed_at)}`
+          : `${icon('globe')}${escapeHtml(outdoor.source)} — modèle (fallback)`;
       }
     }
 
@@ -525,8 +525,8 @@ const DashboardRefresh = {
     // Mise à jour de l'icône
     const iconEl = card.querySelector('[data-value="icon"]');
     if (iconEl) {
-      const icons = { clim: '❄️', poele: '🔥', none: '🌙' };
-      iconEl.textContent = icons[rec.system] || '⚠️';
+      const icons = { clim: 'snowflake', poele: 'flame', none: 'moon' };
+      iconEl.innerHTML = icon(icons[rec.system] || 'triangle-alert');
     }
 
     // Mise à jour du titre
@@ -570,7 +570,7 @@ const DashboardRefresh = {
       const poeleOn = thermostat.state === 'on' && thermostat.active_system === 'poele';
       if (poeleOn && poeleBadgeEl.className !== 'thermostat-badge-on') setTimeout(() => playOnce(poeleBadgeEl, 'badge-pop'));
       poeleBadgeEl.className = poeleOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
-      poeleBadgeEl.textContent = poeleOn ? '🔥 Allumé' : '⏹ Éteint';
+      poeleBadgeEl.innerHTML = poeleOn ? icon('flame') + 'Allumé' : icon('power') + 'Éteint';
     }
 
     // Mise à jour badge Clim
@@ -579,7 +579,7 @@ const DashboardRefresh = {
       const climOn = thermostat.state === 'on' && thermostat.active_system === 'clim';
       if (climOn && climBadgeEl.className !== 'thermostat-badge-on') setTimeout(() => playOnce(climBadgeEl, 'badge-pop'));
       climBadgeEl.className = climOn ? 'thermostat-badge-on' : 'thermostat-badge-off';
-      climBadgeEl.textContent = climOn ? '❄️ Allumée' : '⏹ Éteinte';
+      climBadgeEl.innerHTML = climOn ? icon('snowflake') + 'Allumée' : icon('power') + 'Éteinte';
     }
 
     this.flashElement(card);
@@ -605,7 +605,7 @@ const DashboardRefresh = {
       // Afficher le message "Tempo inconnu"
       card.innerHTML = `
         <div class="tomorrow-label">DEMAIN</div>
-        <div class="rec-icon rec-icon-sm">❓</div>
+        <div class="rec-icon rec-icon-sm">${icon('circle-help')}</div>
         <div class="rec-content">
           <p class="tempo-unknown-warning">Couleur Tempo de demain non encore publiée par RTE.</p>
         </div>
@@ -618,8 +618,8 @@ const DashboardRefresh = {
       // Mise à jour de l'icône
       const iconEl = card.querySelector('[data-value="icon"]');
       if (iconEl) {
-        const icons = { clim: '❄️', poele: '🔥', none: '☀️' };
-        iconEl.textContent = icons[rec.system] || '⚠️';
+        const icons = { clim: 'snowflake', poele: 'flame', none: 'sun' };
+        iconEl.innerHTML = icon(icons[rec.system] || 'triangle-alert');
       }
 
       // Mise à jour du titre

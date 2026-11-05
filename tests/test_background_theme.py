@@ -62,3 +62,19 @@ def test_route_saves_theme(app_module, monkeypatch):
     assert patched == {"UI": {"background_theme": "sky"}}
     assert app_module.config.UI["background_theme"] == "sky"
     assert c.post("/api/ui/background-theme", json={"background_theme": "disco"}, headers=fetch).status_code == 400
+
+
+def test_icon_helper(app_module):
+    from flask import render_template_string
+    ids = set(__import__("re").findall(r'<symbol id="([^"]+)"', open("static/icons.svg").read()))
+    with app_module.app.test_request_context("/"):
+        out = render_template_string("{{ icon('flame') }}{{ icon('sun', 'big') }}")
+    assert out == ('<svg class="ic ic-flame" aria-hidden="true"><use href="/static/icons.svg#flame"/></svg>'
+                   '<svg class="ic ic-sun big" aria-hidden="true"><use href="/static/icons.svg#sun"/></svg>')
+    # Toute icône appelée dans les templates / le JS existe dans le sprite
+    import glob, re
+    used = set()
+    for f in glob.glob("templates/*.html") + ["static/script.js"]:
+        used |= set(re.findall(r"icon\('([a-z-]+)'", open(f).read()))
+    used |= {"flame", "snowflake", "heater"}  # device_row
+    assert used - ids == set(), used - ids

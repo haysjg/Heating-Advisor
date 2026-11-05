@@ -496,6 +496,10 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 
 ---
 
+## Icônes
+
+Icônes au trait [Lucide](https://lucide.dev) (licence ISC) regroupées dans le sprite `static/icons.svg`. Dans les templates : `{{ icon('flame') }}` (fonction globale Jinja définie dans `app.py`) ; en JavaScript : `icon('flame')` (défini dans `base.html`), qui renvoie le même `<svg class="ic ic-flame">`. Les icônes prennent la couleur du texte ; flamme / granulés / radiateur en orangé, flocon en bleu, éclair et alerte en jaune (`style.css`, bloc « Icônes au trait »). Pour en ajouter une : copier le contenu du SVG de `lucide-static` dans un nouveau `<symbol id="nom">`. Les emails et notifications push gardent leurs emojis.
+
 ## Configuration
 
 Tous les paramètres sont modifiables via l'interface `/config` sans rebuild Docker. Les valeurs sont sauvegardées dans `data/config_override.json` et surchargent `config.py` au démarrage.

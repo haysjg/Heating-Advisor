@@ -2,7 +2,7 @@
 
 {% block title %}Configuration{% endblock %}
 
-{% block header_icon %}⚙️{% endblock %}
+{% block header_icon %}{{ icon('settings') }}{% endblock %}
 {% block header_title %}Configuration{% endblock %}
 
 {% block extra_head %}
@@ -118,7 +118,7 @@
 
     {# ── Poêle à granulés ── #}
     <div class="card form-section">
-      <h3>🔥 Poêle à granulés</h3>
+      <h3>{{ icon('flame') }}Poêle à granulés</h3>
       <div class="form-grid">
 
         <div class="form-group">
@@ -185,7 +185,7 @@
 
     {# ── Climatisation ── #}
     <div class="card form-section">
-      <h3>❄️ Climatisation réversible <small style="font-weight:400">({{ config.CLIM.model }})</small></h3>
+      <h3>{{ icon('snowflake') }}Climatisation réversible <small style="font-weight:400">({{ config.CLIM.model }})</small></h3>
       <div class="form-grid">
 
         <div class="form-group">
@@ -215,7 +215,7 @@
 
     {# ── Paramètres généraux ── #}
     <div class="card form-section">
-      <h3>🏠 Paramètres généraux</h3>
+      <h3>{{ icon('house') }}Paramètres généraux</h3>
       <div class="form-grid">
 
         <div class="form-group">
@@ -255,7 +255,7 @@
 
     {# ── Apparence ── #}
     <div class="card form-section">
-      <h3>🎨 Apparence</h3>
+      <h3>{{ icon('palette') }}Apparence</h3>
       {%- set _cur = config.UI.background_theme or ('aurora' if config.UI.get('background_animation', True) else 'none') %}
       <p style="margin-bottom:0.75rem;font-size:0.85rem;color:var(--text-sub)">
         Fond animé, sur ordinateur uniquement : jamais sur téléphone ni tablette, ni si le système demande de réduire les animations.
@@ -296,7 +296,7 @@
 
     {# ── Localisation ── #}
     <div class="card form-section">
-      <h3>📍 Localisation</h3>
+      <h3>{{ icon('map-pin') }}Localisation</h3>
       <div class="form-grid">
 
         <div class="form-group">
@@ -353,7 +353,7 @@
 
     {# ── Stations de mesure (température extérieure) ── #}
     <div class="card form-section">
-      <h3>📡 Stations de mesure <small style="font-weight:400;font-size:0.8em">(température extérieure)</small></h3>
+      <h3>{{ icon('radio-tower') }}Stations de mesure <small style="font-weight:400;font-size:0.8em">(température extérieure)</small></h3>
       <div class="form-grid">
 
         <div class="form-group">
@@ -405,7 +405,7 @@
 
     {# ── Tarifs EDF Tempo ── #}
     <div class="card form-section">
-      <h3>⚡ Tarifs EDF Tempo (€/kWh)</h3>
+      <h3>{{ icon('zap') }}Tarifs EDF Tempo (€/kWh)</h3>
       <div class="form-grid">
 
         <div class="form-group">
@@ -448,7 +448,7 @@
 
     {# ── Notifications email ── #}
     <div class="card form-section">
-      <h3>📧 Notifications email</h3>
+      <h3>{{ icon('mail') }}Notifications email</h3>
 
       <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
         <input type="checkbox" id="email_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
@@ -506,7 +506,7 @@
 
       <div style="margin-top:1rem">
         <button type="button" class="btn-back" onclick="testNotify()" id="btn-test-notify">
-          📨 Envoyer un mail test maintenant
+          {{ icon('send') }}Envoyer un mail test maintenant
         </button>
       </div>
 
@@ -516,7 +516,7 @@
 
     {# ── Home Assistant ── #}
     <div class="card form-section">
-      <h3>🏠 Home Assistant <small style="font-weight:400;font-size:0.8em">(optionnel)</small></h3>
+      <h3>{{ icon('house') }}Home Assistant <small style="font-weight:400;font-size:0.8em">(optionnel)</small></h3>
 
       <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
         <input type="checkbox" id="ha_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
@@ -557,16 +557,16 @@
 
       <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap">
         <button type="button" class="btn-back" onclick="haControl('turn_on')" id="btn-ha-on">
-          🔥 Allumer le poêle
+          {{ icon('flame') }}Allumer le poêle
         </button>
         <button type="button" class="btn-back" onclick="haControl('turn_off')" id="btn-ha-off">
-          ⏹ Éteindre le poêle
+          {{ icon('power') }}Éteindre le poêle
         </button>
         <button type="button" class="btn-back" onclick="climControl('turn_on')" id="btn-clim-on">
-          ❄️ Allumer la clim
+          {{ icon('snowflake') }}Allumer la clim
         </button>
         <button type="button" class="btn-back" onclick="climControl('turn_off')" id="btn-clim-off">
-          ⏹ Éteindre la clim
+          {{ icon('power') }}Éteindre la clim
         </button>
       </div>
 
@@ -576,7 +576,7 @@
 
     {# ── Thermostat ── #}
     <div class="card form-section">
-      <h3>🌡️ Thermostat automatique</h3>
+      <h3>{{ icon('thermometer') }}Thermostat automatique</h3>
       <div class="form-grid">
 
         <div class="form-group">
@@ -745,7 +745,7 @@
 
     {# ── Notifications Ntfy ── #}
     <div class="card form-section">
-      <h3>🔔 Notifications push <small style="font-weight:400;font-size:0.8em">(Ntfy — optionnel)</small></h3>
+      <h3>{{ icon('bell') }}Notifications push <small style="font-weight:400;font-size:0.8em">(Ntfy — optionnel)</small></h3>
 
       <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
         <input type="checkbox" id="ntfy_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
@@ -776,7 +776,7 @@
 
       <div style="margin-top:1rem">
         <button type="button" class="btn-back" onclick="testNtfy()" id="btn-test-ntfy">
-          🔔 Envoyer une notification test
+          {{ icon('bell') }}Envoyer une notification test
         </button>
       </div>
     </div>
@@ -785,7 +785,7 @@
 
     {# ── Suivi électricité (IMAP tiers) ── #}
     <div class="card form-section">
-      <h3>⚡ Suivi électricité <small style="font-weight:400;font-size:0.8em">(IMAP — optionnel)</small></h3>
+      <h3>{{ icon('zap') }}Suivi électricité <small style="font-weight:400;font-size:0.8em">(IMAP — optionnel)</small></h3>
       <p class="hint" style="margin-top:-0.5rem;margin-bottom:1rem">
         Boîte tierce (ex. FAI) recevant les mails "flash élec" Lite transférés depuis Gmail — voir README.md.
       </p>
@@ -836,7 +836,7 @@
 
       <div style="margin-top:1rem; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap">
         <span id="electricity-status-badge" style="font-size:0.85rem; color:var(--text-sub)">Statut : …</span>
-        <button type="button" class="btn-back" onclick="testImapConnection()" id="btn-electricity-test">🔌 Tester la connexion</button>
+        <button type="button" class="btn-back" onclick="testImapConnection()" id="btn-electricity-test">{{ icon('plug') }}Tester la connexion</button>
       </div>
     </div>
 
@@ -891,7 +891,7 @@
 
   {# ── Mot de passe ── #}
     <div class="card form-section">
-      <h3>🔒 Mot de passe de connexion</h3>
+      <h3>{{ icon('lock') }}Mot de passe de connexion</h3>
       <div class="form-grid">
         <div class="form-group">
           <label>Mot de passe actuel</label>
@@ -909,13 +909,13 @@
         </div>
       </div>
       <div style="margin-top:1rem">
-        <button type="button" class="btn-back" onclick="changePassword()">🔑 Changer le mot de passe</button>
+        <button type="button" class="btn-back" onclick="changePassword()">{{ icon('key-round') }}Changer le mot de passe</button>
       </div>
     </div>
 
   {# ── Double authentification ── #}
     <div class="card form-section" id="mfa-card">
-      <h3>🛡️ Double authentification (TOTP)</h3>
+      <h3>{{ icon('shield-check') }}Double authentification (TOTP)</h3>
       <p class="hint" id="mfa-status">Chargement…</p>
 
       <div id="mfa-off" hidden>
@@ -927,7 +927,7 @@
           </div>
         </div>
         <div style="margin-top:1rem">
-          <button type="button" class="btn-back" onclick="mfaSetup()">🛡️ Activer</button>
+          <button type="button" class="btn-back" onclick="mfaSetup()">{{ icon('shield-check') }}Activer</button>
         </div>
       </div>
 
@@ -949,7 +949,7 @@
       <div id="mfa-codes" hidden>
         <span class="hint"><strong>Codes de secours</strong> — chacun ne sert qu'une fois si le téléphone est perdu. Notez-les maintenant (gestionnaire de mots de passe, papier) : ils ne seront plus affichés.</span>
         <pre id="mfa-codes-list" style="margin:0.75rem 0;padding:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;user-select:all;font-size:0.95rem"></pre>
-        <button type="button" class="btn-back" onclick="mfaCopyCodes()">📋 Copier</button>
+        <button type="button" class="btn-back" onclick="mfaCopyCodes()">{{ icon('clipboard-list') }}Copier</button>
       </div>
 
       <div id="mfa-on" hidden>
@@ -965,7 +965,7 @@
           </div>
         </div>
         <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap">
-          <button type="button" class="btn-back" onclick="mfaRecoveryCodes()">🔁 Nouveaux codes de secours</button>
+          <button type="button" class="btn-back" onclick="mfaRecoveryCodes()">{{ icon('repeat') }}Nouveaux codes de secours</button>
           <button type="button" class="btn-back" onclick="mfaDisable()">Désactiver</button>
         </div>
       </div>
@@ -974,10 +974,10 @@
   {# ── Actions ── #}
   <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importConfig(this)">
   <div style="display:flex; gap:1rem; justify-content:flex-end; padding: 0.25rem 0 0.5rem; flex-wrap:wrap">
-    <button class="btn-back" onclick="exportConfig()">📤 Exporter</button>
-    <button class="btn-back" onclick="document.getElementById('import-file-input').click()">📥 Importer</button>
+    <button class="btn-back" onclick="exportConfig()">{{ icon('upload') }}Exporter</button>
+    <button class="btn-back" onclick="document.getElementById('import-file-input').click()">{{ icon('download') }}Importer</button>
     <a href="/" class="btn-back">Annuler</a>
-    <button class="btn-save" onclick="saveConfig()">💾 Enregistrer</button>
+    <button class="btn-save" onclick="saveConfig()">{{ icon('save') }}Enregistrer</button>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -1159,7 +1159,7 @@
   function testNtfy() {
     const btn = document.getElementById('btn-test-ntfy');
     btn.disabled = true;
-    btn.textContent = '⏳ Envoi en cours…';
+    btn.innerHTML = icon('hourglass') + 'Envoi en cours…';
     fetch('/api/ntfy-test', { method: 'POST' })
       .then(r => r.json())
       .then(d => {
@@ -1168,14 +1168,14 @@
       .catch(() => showToast('Erreur réseau', false))
       .finally(() => {
         btn.disabled = false;
-        btn.textContent = '🔔 Envoyer une notification test';
+        btn.innerHTML = icon('bell') + 'Envoyer une notification test';
       });
   }
 
   function testNotify() {
     const btn = document.getElementById('btn-test-notify');
     btn.disabled = true;
-    btn.textContent = '⏳ Envoi en cours…';
+    btn.innerHTML = icon('hourglass') + 'Envoi en cours…';
     fetch('/api/notify-test', { method: 'POST' })
       .then(r => r.json())
       .then(d => {
@@ -1184,7 +1184,7 @@
       .catch(() => showToast('Erreur réseau', false))
       .finally(() => {
         btn.disabled = false;
-        btn.textContent = '📨 Envoyer un mail test maintenant';
+        btn.innerHTML = icon('send') + 'Envoyer un mail test maintenant';
       });
   }
 
@@ -1256,7 +1256,7 @@
       const d = await (await fetch('/api/auth/mfa')).json();
       const status = document.getElementById('mfa-status');
       if (d.enabled) {
-        status.textContent = '✅ Active — ' + d.recovery_remaining + ' code(s) de secours restant(s)'
+        status.innerHTML = icon('circle-check') + 'Active — ' + Number(d.recovery_remaining) + ' code(s) de secours restant(s)'
           + (d.trusted_device ? ' · cet appareil est de confiance' : '');
         mfaShow('mfa-on');
       } else {
@@ -1602,7 +1602,7 @@
       .then(d => {
         const badge = document.getElementById('electricity-status-badge');
         if (d.connected) {
-          badge.textContent = '✅ Identifiants enregistrés';
+          badge.innerHTML = icon('circle-check') + 'Identifiants enregistrés';
           badge.style.color = '#22c55e';
         } else {
           badge.textContent = 'Non configuré';
@@ -1610,7 +1610,7 @@
         }
       })
       .catch(() => {
-        document.getElementById('electricity-status-badge').textContent = '⚠️ Statut indisponible';
+        document.getElementById('electricity-status-badge').innerHTML = icon('triangle-alert') + 'Statut indisponible';
       });
   }
 

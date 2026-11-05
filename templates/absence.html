@@ -2,7 +2,7 @@
 
 {% block title %}Mode Absence{% endblock %}
 
-{% block header_icon %}🏖️{% endblock %}
+{% block header_icon %}{{ icon('tree-palm') }}{% endblock %}
 {% block header_title %}Mode Absence{% endblock %}
 
 {% block content %}
@@ -11,13 +11,13 @@
     <div class="today-label">ABSENCE RAPIDE</div>
     {% if absent %}
       <p class="value-sub" style="color:#fb923c;margin-bottom:0.75rem">
-        🚶 Vous êtes absent — thermostat suspendu.
+        {{ icon('footprints') }}Vous êtes absent — thermostat suspendu.
       </p>
       <button onclick="setPresent()"
         style="width:100%;padding:0.75rem;font-size:1.1rem;font-weight:600;
                background:rgba(34,197,94,0.15);border:1px solid #22c55e;color:#22c55e;
                border-radius:10px;cursor:pointer">
-        🏠 De retour
+        {{ icon('house') }}De retour
       </button>
     {% else %}
       <p class="value-sub" style="color:#64748b;margin-bottom:0.75rem">
@@ -27,7 +27,7 @@
         style="width:100%;padding:0.75rem;font-size:1.1rem;font-weight:600;
                background:rgba(251,146,60,0.15);border:1px solid #fb923c;color:#fb923c;
                border-radius:10px;cursor:pointer">
-        🚶 Je pars
+        {{ icon('footprints') }}Je pars
       </button>
     {% endif %}
   </section>
@@ -35,10 +35,10 @@
   {# ── Section Vacances ─────────────────────────────────────────── #}
   <section class="card card-labeled">
     <div class="today-label">ABSENCE PONCTUELLE</div>
-    <h3>🏖️ Mode Vacances</h3>
+    <h3>{{ icon('tree-palm') }}Mode Vacances</h3>
     {% if on_vacation %}
       <p class="value-sub" style="color:#60a5fa">
-        ✈️ Absence en cours : du <strong>{{ vacation.start }}</strong> au <strong>{{ vacation.end }}</strong>
+        {{ icon('plane') }}Absence en cours : du <strong>{{ vacation.start }}</strong> au <strong>{{ vacation.end }}</strong>
         — thermostat suspendu
       </p>
       <button onclick="clearVacation()" style="margin-top:0.5rem;background:rgba(239,68,68,0.15);border:1px solid #ef4444;color:#ef4444;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
@@ -46,7 +46,7 @@
       </button>
     {% elif vacation.start and vacation.end %}
       <p class="value-sub" style="color:#fb923c">
-        📅 Absence programmée : du <strong>{{ vacation.start }}</strong> au <strong>{{ vacation.end }}</strong>
+        {{ icon('calendar') }}Absence programmée : du <strong>{{ vacation.start }}</strong> au <strong>{{ vacation.end }}</strong>
       </p>
       <button onclick="clearVacation()" style="margin-top:0.5rem;background:rgba(239,68,68,0.15);border:1px solid #ef4444;color:#ef4444;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
         ✕ Annuler l'absence programmée
@@ -55,14 +55,14 @@
       <p class="value-sub" style="color:#64748b">Aucune absence programmée — le thermostat fonctionne normalement.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.75rem">
         <div>
-          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.3rem">✈️ Départ</label>
+          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.3rem">{{ icon('plane') }}Départ</label>
           <div style="display:flex;gap:0.4rem">
             <input type="date" id="vacation-start-date" style="flex:1;min-width:0;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
             <input type="time" id="vacation-start-time" value="08:00" style="width:6rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.5rem;font-size:0.9rem">
           </div>
         </div>
         <div>
-          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.3rem">🏠 Retour</label>
+          <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.3rem">{{ icon('house') }}Retour</label>
           <div style="display:flex;gap:0.4rem">
             <input type="date" id="vacation-end-date" style="flex:1;min-width:0;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.6rem;font-size:0.9rem">
             <input type="time" id="vacation-end-time" value="18:00" style="width:6rem;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:0.35rem 0.5rem;font-size:0.9rem">
@@ -70,7 +70,7 @@
         </div>
       </div>
       <button onclick="setVacation()" style="margin-top:0.75rem;background:rgba(96,165,250,0.15);border:1px solid #60a5fa;color:#60a5fa;border-radius:8px;padding:0.35rem 0.9rem;cursor:pointer;font-size:0.85rem">
-        ✈️ Programmer l'absence
+        {{ icon('plane') }}Programmer l'absence
       </button>
       <p id="vacation-error" style="color:#ef4444;font-size:0.8rem;margin-top:0.4rem;display:none"></p>
     {% endif %}
@@ -79,13 +79,13 @@
   {# ── Section Horaires récurrents ──────────────────────────────── #}
   <section class="card card-labeled" style="margin-top:1.25rem">
     <div class="today-label">ABSENCE RÉCURRENTE</div>
-    <h3>🕐 Horaires d'absence</h3>
+    <h3>{{ icon('clock') }}Horaires d'absence</h3>
     <p class="value-sub" style="color:#94a3b8;margin-bottom:1rem">
       Le thermostat se coupe automatiquement pendant ces créneaux (ex : journées de travail).
     </p>
 
     {% if in_absence_schedule %}
-      <p style="color:#60a5fa;font-size:0.9rem;margin-bottom:0.75rem">🏠 Horaire d'absence actif en ce moment — thermostat suspendu.</p>
+      <p style="color:#60a5fa;font-size:0.9rem;margin-bottom:0.75rem">{{ icon('house') }}Horaire d'absence actif en ce moment — thermostat suspendu.</p>
     {% endif %}
 
     {# Liste des horaires existants #}

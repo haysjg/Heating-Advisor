@@ -103,7 +103,7 @@
 
     if (currentEveryoneAway) {
       banner.className = 'countdown-banner countdown-banner-away';
-      banner.innerHTML = '🚗 Mode absent — thermostat en pause jusqu\'au retour';
+      banner.innerHTML = icon('car') + 'Mode absent — thermostat en pause jusqu\'au retour';
       banner.style.display = 'flex';
       return;
     }
@@ -112,7 +112,7 @@
       const ms = new Date(currentSuspendedUntil).getTime() - now;
       if (ms > 0) {
         banner.className = 'countdown-banner countdown-banner-suspend';
-        banner.innerHTML = '⏸ Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>'
+        banner.innerHTML = icon('pause') + 'Thermostat suspendu — reprend dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>'
           + '<button class="countdown-resume" onclick="resumeThermostat(this)" title="Annuler la suspension : le thermostat reprend la main tout de suite">↺ Réarmer</button>';
         banner.style.display = 'flex';
         return;
@@ -123,7 +123,7 @@
       const ms = new Date(nextScheduleISO).getTime() - now;
       if (ms > 0) {
         banner.className = 'countdown-banner countdown-banner-schedule';
-        banner.innerHTML = '⏰ Prochain créneau d\'allumage dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
+        banner.innerHTML = icon('alarm-clock') + 'Prochain créneau d\'allumage dans <span class="countdown-timer">' + fmtDuration(ms) + '</span>';
         banner.style.display = 'flex';
         return;
       }
@@ -153,9 +153,9 @@
 {% endif %}
 
 {# ── Panneau de contrôle : une ligne par appareil (barre latérale et tiroir mobile) ── #}
-{% macro device_row(key, icon, name, kind) %}
+{% macro device_row(key, glyph, name, kind) %}
   <div class="device device-{{ kind }} is-unknown" data-device="{{ key }}">
-    <span class="device-icon" aria-hidden="true">{{ icon }}</span>
+    <span class="device-icon" aria-hidden="true">{{ icon(glyph) }}</span>
     <span class="device-text">
       <span class="device-name">{{ name }}</span>
       <span class="device-state">…</span>
@@ -167,12 +167,12 @@
 
 {% macro control_list() %}
   <div class="device-list">
-    {{ device_row('poele', '🔥', 'Poêle', 'poele') }}
+    {{ device_row('poele', 'flame', 'Poêle', 'poele') }}
     {% if config.HOME_ASSISTANT.get('clim_entity_id') and config.HOME_ASSISTANT.get('clim_entity_id')|length > 0 %}
-    {{ device_row('clim', '❄️', 'Clim', 'clim') }}
+    {{ device_row('clim', 'snowflake', 'Clim', 'clim') }}
     {% endif %}
     {% for r in radiateurs_info if r.enabled %}
-    {{ device_row(r.entity_id, '♨️', r.name, 'radiateur') }}
+    {{ device_row(r.entity_id, 'heater', r.name, 'radiateur') }}
     {% if r.weekend_restricted %}
     <label class="weekend-toggle" title="Week-end : sans cette autorisation, l'appli ne rallume jamais ce radiateur automatiquement (rallumage reporté au lundi). Les boutons restent utilisables.">
       <input type="checkbox" class="weekend-toggle-input" {% if weekend_auto_allowed %}checked{% endif %} onchange="setWeekendAuto(this)">
@@ -199,7 +199,7 @@
   {# ── Mobile FAB + Drawer (visible uniquement ≤1024px) ── #}
   <div class="mobile-drawer-overlay" id="mobile-drawer-overlay" onclick="toggleControlDrawer()"></div>
 
-  <button class="mobile-fab" id="mobile-fab" onclick="toggleControlDrawer()" title="Contrôles">🎛️</button>
+  <button class="mobile-fab" id="mobile-fab" onclick="toggleControlDrawer()" title="Contrôles">{{ icon('sliders-horizontal') }}</button>
 
   <div class="mobile-control-drawer" id="mobile-control-drawer">
     <div class="mobile-drawer-header">
@@ -215,7 +215,7 @@
 
   {# ── Bannière erreur AJAX ── #}
   <div id="ajax-error-banner">
-    ⚠️ Impossible de rafraîchir les données —
+    {{ icon('triangle-alert') }}Impossible de rafraîchir les données —
     <button onclick="location.reload()">Recharger la page</button>
   </div>
 
@@ -234,7 +234,7 @@
       {% if data.indoor %}
       <div class="card card-labeled has-spark indoor-card" data-refresh="indoor">
         <div class="today-label">AUJOURD'HUI</div>
-        <h3>🏠 Température intérieure</h3>
+        <h3>{{ icon('house') }}Température intérieure</h3>
         {% set _felt_in = data.indoor.felt_temperature if data.indoor.felt_temperature is defined and data.indoor.felt_temperature is not none else data.indoor.temperature %}
         <div class="indoor-layout">
           {# Cadran : arc froid → chaud, plage de confort en surbrillance, repère sur le ressenti #}
@@ -262,7 +262,7 @@
               <p class="value-sub" data-value="humidity">Humidité : <strong>{{ data.indoor.humidity|int }} %</strong></p>
             {% endif %}
             <p class="value-sub">Cible : {{ config.TARGET_TEMP }}°C</p>
-            <span class="source-badge source-real">📡 Shelly H&amp;T Gen3</span>
+            <span class="source-badge source-real">{{ icon('radio-tower') }}Shelly H&amp;T Gen3</span>
           </div>
         </div>
         <svg class="spark" data-series="indoor_temp" aria-hidden="true"></svg>
@@ -273,14 +273,14 @@
       <div class="card card-labeled has-spark{% if data.weather.temperature is not none and data.weather.temperature < 0 %} wx-frost{% endif %}" data-refresh="outdoor">
         <div class="today-label">AUJOURD'HUI</div>
         <div class="wx-scene" id="wx-scene" aria-hidden="true"></div>
-        <h3>🌡️ Température extérieure</h3>
+        <h3>{{ icon('thermometer') }}Température extérieure</h3>
         {% if data.weather.temperature is not none %}
           <p class="value-big" data-value="temperature">{{ "%.1f"|format(data.weather.temperature) }} °C</p>
           <p class="value-sub">Cible intérieure : {{ config.TARGET_TEMP }}°C</p>
           {% if data.weather.measured %}
-            <span class="source-badge source-real" data-value="source">📡 {{ data.weather.source }} — mesure de {{ data.weather.observed_at }}</span>
+            <span class="source-badge source-real" data-value="source">{{ icon('radio-tower') }}{{ data.weather.source }} — mesure de {{ data.weather.observed_at }}</span>
           {% else %}
-            <span class="source-badge source-model" data-value="source">🌐 {{ data.weather.source }} — modèle (fallback)</span>
+            <span class="source-badge source-model" data-value="source">{{ icon('globe') }}{{ data.weather.source }} — modèle (fallback)</span>
           {% endif %}
         {% else %}
           <p class="error-text">{{ data.weather.error or "Indisponible" }}</p>
@@ -292,7 +292,7 @@
       {% set today = data.tempo.today %}
       <div class="card card-tempo-{{ today.color | lower }} card-labeled">
         <div class="today-label">AUJOURD'HUI</div>
-        <h3>⚡ Tarif EDF Tempo</h3>
+        <h3>{{ icon('zap') }}Tarif EDF Tempo</h3>
         <p class="value-big"><span class="dot dot-{{ today.color | lower }}" aria-hidden="true"></span><span class="tempo-word">{{ today.label }}</span></p>
         <p class="value-sub">
           Période actuelle :
@@ -316,11 +316,11 @@
     <section class="card thresholds-card" id="thresholds-card"
              data-temp-on="{{ config.THERMOSTAT.temp_on }}" data-temp-off="{{ config.THERMOSTAT.temp_off }}">
       <div class="thresholds-head">
-        <h3>🎯 Température de confort</h3>
+        <h3>{{ icon('target') }}Température de confort</h3>
         {% if config.THERMOSTAT.enabled %}
         <div class="next-check" id="next-check" data-next-check="{{ next_check or '' }}" hidden>
           <span title="Prochaine vérification de la température par le thermostat">
-            ⏱ <span class="next-check-label">Prochaine évaluation</span> <span id="next-check-value"></span>
+            {{ icon('timer') }}<span class="next-check-label">Prochaine évaluation</span> <span id="next-check-value"></span>
           </span>
           <button type="button" class="next-check-now" id="next-check-now"><span class="spin-icon">↻</span> Évaluer maintenant</button>
         </div>
@@ -374,7 +374,7 @@
     {% set _p_level = 'due' if pellet.minutes >= pellet.alert_hours * 60 else 'soon' if pellet.percent >= 75 else 'ok' %}
     <section class="card refill-card refill-{{ _p_level }}" id="refill-card" data-refresh="refill" data-pellet="{{ pellet|tojson|forceescape }}">
       <div class="refill-head">
-        <h3>🪵 Remplissage du poêle</h3>
+        <h3>{{ icon('flame-kindling') }}Remplissage du poêle</h3>
         <div class="refill-actions">
           {# Quantité versée : sélecteur segmenté, pastille glissante #}
           <div class="seg" role="radiogroup" aria-label="Quantité versée (en sacs)">
@@ -408,7 +408,7 @@
       <span class="embers" aria-hidden="true">{% for _ in range(12) %}<i></i>{% endfor %}</span>
       <div class="today-label">AUJOURD'HUI</div>
       <div class="rec-icon" data-value="icon">
-        {% if rec.system == "clim" %}❄️{% elif rec.system == "poele" %}🔥{% elif rec.system == "none" %}🌙{% else %}⚠️{% endif %}
+        {% if rec.system == "clim" %}{{ icon('snowflake') }}{% elif rec.system == "poele" %}{{ icon('flame') }}{% elif rec.system == "none" %}{{ icon('moon') }}{% else %}{{ icon('triangle-alert') }}{% endif %}
       </div>
       <div class="rec-content">
         <h2 data-value="title">{{ rec.title }}</h2>
@@ -424,19 +424,19 @@
         <div class="inactive-reasons" data-value="inactive-reasons">
           {% if ir.shared and ir.clim %}
             {# Les deux inactifs pour la même raison (nuit, temp cible atteinte) #}
-            <div class="inactive-reason"><span class="inactive-icon">💤</span><span>{{ ir.clim }}</span></div>
+            <div class="inactive-reason"><span class="inactive-icon">{{ icon('circle-minus') }}</span><span>{{ ir.clim }}</span></div>
           {% elif nothing_running and rec.system != 'none' %}
             {# Le système recommandé n'est pas non plus en route : message neutre #}
-            <div class="inactive-reason"><span class="inactive-icon">💤</span><span>
-              {% if rec.system == 'clim' %}❄️ Clim recommandée{% elif rec.system == 'poele' %}🔥 Poêle recommandé{% else %}⚠️ {{ rec.title }}{% endif %}
+            <div class="inactive-reason"><span class="inactive-icon">{{ icon('circle-minus') }}</span><span>
+              {% if rec.system == 'clim' %}{{ icon('snowflake') }}Clim recommandée{% elif rec.system == 'poele' %}{{ icon('flame') }}Poêle recommandé{% else %}{{ icon('triangle-alert') }}{{ rec.title }}{% endif %}
               — thermostat en attente (température intérieure dans les seuils ou hors plage horaire).
             </span></div>
           {% else %}
             {% if ir.clim %}
-            <div class="inactive-reason"><span class="inactive-icon">❄️</span><span>{{ ir.clim }}</span></div>
+            <div class="inactive-reason"><span class="inactive-icon">{{ icon('snowflake') }}</span><span>{{ ir.clim }}</span></div>
             {% endif %}
             {% if ir.poele %}
-            <div class="inactive-reason"><span class="inactive-icon">🔥</span><span>{{ ir.poele }}</span></div>
+            <div class="inactive-reason"><span class="inactive-icon">{{ icon('flame') }}</span><span>{{ ir.poele }}</span></div>
             {% endif %}
           {% endif %}
         </div>
@@ -451,7 +451,7 @@
     {% if tom.tempo_unknown %}
     <section class="card card-tomorrow" data-refresh="tomorrow">
       <div class="tomorrow-label">DEMAIN</div>
-      <div class="rec-icon rec-icon-sm">❓</div>
+      <div class="rec-icon rec-icon-sm">{{ icon('circle-help') }}</div>
       <div class="rec-content">
         <p class="tempo-unknown-warning">Couleur Tempo de demain non encore publiée par RTE.</p>
       </div>
@@ -461,7 +461,7 @@
     <section class="card card-{{ trec.level }}{% if trec.system == 'none' %} card-night{% endif %} card-tomorrow" data-refresh="tomorrow" data-system="{{ trec.system }}">
       <div class="tomorrow-label">DEMAIN</div>
       <div class="rec-icon rec-icon-sm" data-value="icon">
-        {% if trec.system == "clim" %}❄️{% elif trec.system == "poele" %}🔥{% elif trec.system == "none" %}☀️{% else %}⚠️{% endif %}
+        {% if trec.system == "clim" %}{{ icon('snowflake') }}{% elif trec.system == "poele" %}{{ icon('flame') }}{% elif trec.system == "none" %}{{ icon('sun') }}{% else %}{{ icon('triangle-alert') }}{% endif %}
       </div>
       <div class="rec-content">
         <h2 data-value="title">{{ trec.title }}</h2>
@@ -477,7 +477,7 @@
         {% endif %}
         {% if tom.weather.temperature is not none %}
           <span class="badge badge-gray">
-            🌡️ Prévision : {{ tom.weather.temp_min }}°C – {{ tom.weather.temp_max }}°C (moy. {{ tom.weather.temperature }}°C)
+            {{ icon('thermometer') }}Prévision : {{ tom.weather.temp_min }}°C – {{ tom.weather.temp_max }}°C (moy. {{ tom.weather.temperature }}°C)
           </span>
         {% endif %}
       </div>
@@ -490,19 +490,19 @@
     {% set _thermo_sys = thermostat_state.get('active_system') if thermostat_state.state == 'on' else none %}
     <section class="card card-labeled{% if _thermo_sys in ('poele', 'clim') %} thermo-running thermo-{{ _thermo_sys }}{% endif %}" data-refresh="thermostat">
       <div class="today-label">AUJOURD'HUI</div>
-      <h3>🌡️ Thermostat automatique</h3>
+      <h3>{{ icon('thermometer') }}Thermostat automatique</h3>
       <div class="grid-2">
         <div>
           <p class="value-sub">
             État Poêle :
             <span class="{% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'poele' %}thermostat-badge-on{% else %}thermostat-badge-off{% endif %}" data-value="poele-badge">
-              {% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'poele' %}🔥 Allumé{% else %}⏹ Éteint{% endif %}
+              {% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'poele' %}{{ icon('flame') }}Allumé{% else %}{{ icon('power') }}Éteint{% endif %}
             </span>
           </p>
           <p class="value-sub">
             État Clim :
             <span class="{% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'clim' %}thermostat-badge-on{% else %}thermostat-badge-off{% endif %}" data-value="clim-badge">
-              {% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'clim' %}❄️ Allumée{% else %}⏹ Éteinte{% endif %}
+              {% if thermostat_state.state == 'on' and thermostat_state.get('active_system') == 'clim' %}{{ icon('snowflake') }}Allumée{% else %}{{ icon('power') }}Éteinte{% endif %}
             </span>
           </p>
           <p class="value-sub">
@@ -518,7 +518,7 @@
           {% set poele_on = thermostat_state.system_history.poele.last_turned_on if thermostat_state.get('system_history') else None %}
           {% set poele_off = thermostat_state.system_history.poele.last_turned_off if thermostat_state.get('system_history') else None %}
           {% if poele_on or poele_off %}
-            <p class="value-sub" style="margin-top:0.5rem"><strong>🔥 Poêle :</strong></p>
+            <p class="value-sub" style="margin-top:0.5rem"><strong>{{ icon('flame') }}Poêle :</strong></p>
             {% if poele_on %}
               <p class="value-sub" style="margin-left:1rem">Dernier allumage : <strong>{{ poele_on[:16] | replace("T", " ") }}</strong></p>
             {% endif %}
@@ -531,7 +531,7 @@
           {% set clim_on = thermostat_state.system_history.clim.last_turned_on if thermostat_state.get('system_history') else None %}
           {% set clim_off = thermostat_state.system_history.clim.last_turned_off if thermostat_state.get('system_history') else None %}
           {% if clim_on or clim_off %}
-            <p class="value-sub" style="margin-top:0.5rem"><strong>❄️ Clim :</strong></p>
+            <p class="value-sub" style="margin-top:0.5rem"><strong>{{ icon('snowflake') }}Clim :</strong></p>
             {% if clim_on %}
               <p class="value-sub" style="margin-left:1rem">Dernier allumage : <strong>{{ clim_on[:16] | replace("T", " ") }}</strong></p>
             {% endif %}
@@ -542,7 +542,7 @@
 
           {% if thermostat_state.suspended_until %}
             <p class="value-sub" style="color:#fb923c">
-              ⏸ Suspendu jusqu'à <strong>{{ thermostat_state.suspended_until[:16] | replace("T", " ") }}</strong>
+              {{ icon('pause') }}Suspendu jusqu'à <strong>{{ thermostat_state.suspended_until[:16] | replace("T", " ") }}</strong>
               <button onclick="resumeThermostat(this)" style="margin-left:0.5rem;background:none;border:1px solid #fb923c;color:#fb923c;border-radius:6px;padding:0.1rem 0.5rem;cursor:pointer;font-size:0.8rem">↺ Réarmer</button>
             </p>
           {% endif %}
@@ -550,9 +550,9 @@
             <p class="value-sub">
               Présence :
               {% if thermostat_state.everyone_away %}
-                <span style="color:#fb923c">🚗 Tout le monde absent — thermostat en pause</span>
+                <span style="color:#fb923c">{{ icon('car') }}Tout le monde absent — thermostat en pause</span>
               {% else %}
-                <span style="color:#4ade80">🏠 Quelqu'un à la maison</span>
+                <span style="color:#4ade80">{{ icon('house') }}Quelqu'un à la maison</span>
               {% endif %}
             </p>
           {% endif %}
@@ -600,7 +600,7 @@
     {% if data.hourly_forecast %}
     <section class="card card-labeled">
       <div class="tomorrow-label">DEMAIN</div>
-      <h3>📈 Prévision températures — demain <small>(Open-Meteo)</small></h3>
+      <h3>{{ icon('chart-line') }}Prévision températures — demain <small>(Open-Meteo)</small></h3>
       <div class="temp-chart-meta" id="tempChartMeta" hidden>
         <span class="temp-chart-day" id="tempChartDay"></span>
         <span class="temp-chip temp-chip-min" id="tempChipMin"></span>
@@ -634,8 +634,8 @@
 
       document.getElementById('tempChartDay').textContent =
         tomorrow.toLocaleDateString('fr-FR', {weekday: 'long', day: 'numeric', month: 'long'});
-      document.getElementById('tempChipMin').textContent = '❄ min ' + fmtT(temps[iMin]) + ' à ' + hours[iMin] + 'h';
-      document.getElementById('tempChipMax').textContent = '☀ max ' + fmtT(temps[iMax]) + ' à ' + hours[iMax] + 'h';
+      document.getElementById('tempChipMin').innerHTML = icon('snowflake') + 'min ' + fmtT(temps[iMin]) + ' à ' + hours[iMin] + 'h';
+      document.getElementById('tempChipMax').innerHTML = icon('sun') + 'max ' + fmtT(temps[iMax]) + ' à ' + hours[iMax] + 'h';
       document.getElementById('tempChartMeta').hidden = false;
 
       // Dégradé « thermique » calé sur l'axe Y : froid = bleu, doux = violet, chaud = orange
@@ -797,18 +797,18 @@
     {# ── Comparatif des coûts ── #}
     <section class="card card-labeled">
       <div class="today-label">AUJOURD'HUI</div>
-      <h3>📊 Comparatif coût horaire</h3>
+      <h3>{{ icon('chart-column') }}Comparatif coût horaire</h3>
       <div class="grid-2">
 
         {# Clim #}
         <div class="cost-block {% if rec.system == 'clim' %}cost-winner{% elif data.clim.comfort_insufficient %}cost-comfort-ko{% endif %}">
-          <h4>❄️ Climatisation <small>({{ config.CLIM.model }})</small></h4>
+          <h4>{{ icon('snowflake') }}Climatisation <small>({{ config.CLIM.model }})</small></h4>
           {% if data.clim.available %}
             <p class="cost-value {% if data.clim.comfort_insufficient %}cost-value-dimmed{% endif %}">
               {{ "%.3f"|format(data.clim.cost_per_hour) }} €/h
             </p>
             {% if data.clim.comfort_insufficient %}
-              <p class="comfort-warning">⚠️ Confort insuffisant en dessous de {{ config.CLIM.comfort_min_temp }}°C</p>
+              <p class="comfort-warning">{{ icon('triangle-alert') }}Confort insuffisant en dessous de {{ config.CLIM.comfort_min_temp }}°C</p>
             {% endif %}
             <ul class="cost-details">
               <li>COP : <strong>{{ data.clim.cop }}</strong></li>
@@ -823,7 +823,7 @@
 
         {# Poêle #}
         <div class="cost-block {% if rec.system == 'poele' %}cost-winner{% endif %}">
-          <h4>🔥 Poêle à granulés</h4>
+          <h4>{{ icon('flame') }}Poêle à granulés</h4>
           {% if data.poele.available %}
             <p class="cost-value">{{ "%.3f"|format(data.poele.cost_per_hour) }} €/h</p>
             <ul class="cost-details">
@@ -844,14 +844,14 @@
     {% if data.daily_estimate %}
     <section class="card card-labeled">
       <div class="today-label">AUJOURD'HUI</div>
-      <h3>📅 Estimation sur {{ data.daily_estimate.hours }}h <small>(plage de chauffage {{ config.HP_START }}h–{{ config.HP_END }}h, température constante)</small></h3>
+      <h3>{{ icon('calendar') }}Estimation sur {{ data.daily_estimate.hours }}h <small>(plage de chauffage {{ config.HP_START }}h–{{ config.HP_END }}h, température constante)</small></h3>
       <div class="grid-2">
         <div class="cost-block {% if data.daily_estimate.clim <= data.daily_estimate.poele %}cost-winner{% endif %}">
-          <h4>❄️ Climatisation</h4>
+          <h4>{{ icon('snowflake') }}Climatisation</h4>
           <p class="cost-value">{{ "%.2f"|format(data.daily_estimate.clim) }} €/jour</p>
         </div>
         <div class="cost-block {% if data.daily_estimate.poele <= data.daily_estimate.clim %}cost-winner{% endif %}">
-          <h4>🔥 Poêle</h4>
+          <h4>{{ icon('flame') }}Poêle</h4>
           <p class="cost-value">{{ "%.2f"|format(data.daily_estimate.poele) }} €/jour</p>
         </div>
       </div>
@@ -862,7 +862,7 @@
     {% if config.ELECTRICITY.enabled %}
     <section class="card card-labeled" id="electricity-card">
       <div class="today-label">SEMAINE</div>
-      <h3>⚡ Consommation électrique</h3>
+      <h3>{{ icon('zap') }}Consommation électrique</h3>
       <div class="elec-layout">
         <div class="elec-summary">
           <p class="value-big"><span class="skeleton-text" id="electricity-kwh">000,0 kWh</span></p>
@@ -879,7 +879,7 @@
 
     {# ── Tableau des tarifs Tempo ── #}
     <section class="card">
-      <h3>📋 Tarifs EDF Tempo ({{ config.HP_START }}h–{{ config.HP_END }}h = HP)</h3>
+      <h3>{{ icon('clipboard-list') }}Tarifs EDF Tempo ({{ config.HP_START }}h–{{ config.HP_END }}h = HP)</h3>
       <table class="tarif-table">
         <thead>
           <tr>
@@ -1076,7 +1076,7 @@
   {% endif %}
 
   function resumeThermostat(btn) {
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Réarmement…'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = icon('hourglass') + 'Réarmement…'; }
     fetch('/api/thermostat/resume', { method: 'POST' })
       .then(r => r.json())
       .then(d => {
@@ -1101,7 +1101,7 @@
       if (d.status === 'ok') {
         btn.classList.toggle('thermostat-on', d.enabled);
         btn.classList.toggle('thermostat-off', !d.enabled);
-        btn.textContent = '🌡️ Thermostat ' + (d.enabled ? 'ON' : 'OFF');
+        btn.innerHTML = icon('thermometer') + 'Thermostat ' + (d.enabled ? 'ON' : 'OFF');
         setTimeout(() => location.reload(), 500);
       }
     });
@@ -1120,7 +1120,7 @@
       if (d.status === 'ok') {
         btn.classList.toggle('btn-ha-on', d.auto_control);
         btn.classList.toggle('btn-ha-off', !d.auto_control);
-        btn.textContent = '🏠 Auto ' + (d.auto_control ? 'ON' : 'OFF');
+        btn.innerHTML = icon('house') + 'Auto ' + (d.auto_control ? 'ON' : 'OFF');
       }
     });
   }
