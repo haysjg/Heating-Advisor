@@ -376,12 +376,14 @@
       <div class="refill-head">
         <h3>🪵 Remplissage du poêle</h3>
         <div class="refill-actions">
-          <select id="refill-bags" aria-label="Quantité versée">
-            <option value="0.3333">⅓ sac</option>
-            <option value="0.5">½ sac</option>
-            <option value="0.6667">⅔ sac</option>
-            <option value="1" selected>1 sac</option>
-          </select>
+          {# Quantité versée : sélecteur segmenté, pastille glissante #}
+          <div class="seg" role="radiogroup" aria-label="Quantité versée (en sacs)">
+            <span class="seg-thumb" aria-hidden="true"></span>
+            <label title="Un tiers de sac"><input type="radio" name="refill-bags" value="0.3333"><span>⅓</span></label>
+            <label title="Un demi-sac"><input type="radio" name="refill-bags" value="0.5"><span>½</span></label>
+            <label title="Deux tiers de sac"><input type="radio" name="refill-bags" value="0.6667"><span>⅔</span></label>
+            <label title="Un sac entier"><input type="radio" name="refill-bags" value="1" checked><span>1</span></label>
+          </div>
           <button type="button" class="btn-thresholds" id="refill-reset" onclick="resetPelletRefill()">Trémie remplie</button>
         </div>
       </div>

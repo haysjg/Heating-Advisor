@@ -214,14 +214,14 @@ async function _postPellet(url, body, okMessage, errPrefix) {
 
 async function resetPelletRefill() {
   const btn = document.getElementById('refill-reset');
-  const select = document.getElementById('refill-bags');
-  const bags = parseFloat(select.value);
-  const label = select.options[select.selectedIndex].text;
+  const checked = document.querySelector('input[name="refill-bags"]:checked');
+  const bags = parseFloat(checked.value);
+  const label = bags === 1 ? '1 sac' : `${checked.nextElementSibling.textContent} sac`;
   if (!confirm(`Trémie remplie avec ${label} ? Le compteur d'heures de chauffe repart de 0.`)) return;
   btn.disabled = true;
   await _postPellet('/api/poele/refill-reset', { bags }, 'Remplissage enregistré, compteur remis à 0', 'Remise à 0 impossible');
   btn.disabled = false;
-  select.value = '1';
+  document.querySelector('input[name="refill-bags"][value="1"]').checked = true;
 }
 
 async function applyPelletEstimate(hours) {
