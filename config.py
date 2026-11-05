@@ -75,6 +75,11 @@ POELE = {
     "thermal_output_kw": 7.2,         # puissance thermique en fonctionnement normal
 }
 
+# ── Apparence ────────────────────────────────────────────────
+UI = {
+    "background_animation": True,   # fond animé (ordinateur uniquement, jamais sur mobile)
+}
+
 # ── Superficie à chauffer (pour info) ────────────────────────
 SURFACE_M2 = 80  # m²
 

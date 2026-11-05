@@ -509,6 +509,11 @@ Tous les paramètres sont modifiables via l'interface `/config` sans rebuild Doc
 | `nas_ip`, `nas_port` | Adresse du NAS pour les liens dans les emails |
 | `public_url` | URL publique si exposé sur Internet |
 
+**`UI`** — Apparence
+| Clé | Description |
+|---|---|
+| `background_animation` | Fond animé (défaut `true`) : aurore qui dérive aux couleurs de la situation, braises et chaleur quand le poêle tourne, halo qui respire en Tempo rouge, étoile filante la nuit. Ordinateur uniquement (souris + écran ≥ 1024 px), jamais sur mobile ni avec « réduire les animations » ; en pause quand l'onglet est masqué. |
+
 **`OBSERVATIONS`** — Stations de mesure de la température extérieure
 | Clé | Description |
 |---|---|

@@ -253,6 +253,24 @@
 
     <hr class="section-divider">
 
+    {# ── Apparence ── #}
+    <div class="card form-section">
+      <h3>🎨 Apparence</h3>
+      <div style="display:flex; align-items:center; gap:0.75rem">
+        <input type="checkbox" id="background_animation" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.UI.background_animation %}checked{% endif %}>
+        <label for="background_animation" style="font-size:0.9rem;cursor:pointer">
+          Fond animé (aurore, braises quand le poêle tourne, étoile filante la nuit)
+        </label>
+      </div>
+      <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-sub)">
+        Sur ordinateur uniquement : jamais sur téléphone ni tablette, ni si le système demande de réduire les animations.
+        À décocher si la page devient lente.
+      </p>
+    </div>
+
+    <hr class="section-divider">
+
     {# ── Localisation ── #}
     <div class="card form-section">
       <h3>📍 Localisation</h3>
@@ -1009,6 +1027,7 @@
       white_hc:             parseFloat(getVal('white_hc')),
       red_hp:               parseFloat(getVal('red_hp')),
       red_hc:               parseFloat(getVal('red_hc')),
+      background_animation: document.getElementById('background_animation').checked,
       ntfy_enabled:         document.getElementById('ntfy_enabled').checked,
       ntfy_url:             getVal('ntfy_url'),
       ntfy_topic:           getVal('ntfy_topic'),

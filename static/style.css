@@ -23,7 +23,7 @@
 /* Ambiance : deux teintes de fond, fondues en douceur quand la situation change */
 @property --amb-a { syntax: '<color>'; inherits: true; initial-value: rgba(251,146,60,0.07); }
 @property --amb-b { syntax: '<color>'; inherits: true; initial-value: rgba(96,165,250,0.07); }
-html { transition: --amb-a 1.6s ease, --amb-b 1.6s ease; }
+html { transition: --amb-a 1.6s ease, --amb-b 1.6s ease, --aur-a 1.6s ease, --aur-b 1.6s ease; }
 html[data-night]                    { --amb-a: rgba(129,140,248,0.10); --amb-b: rgba(30,64,175,0.16); }
 html[data-ambiance="tempo-red"]     { --amb-a: rgba(239,68,68,0.15);   --amb-b: rgba(153,27,27,0.16); }
 html[data-ambiance="clim"]          { --amb-a: rgba(56,189,248,0.10);  --amb-b: rgba(96,165,250,0.22); }
@@ -1253,6 +1253,115 @@ h1, h2, .card h3, .sidebar-title, .value-big, .big-number, .kpi-value, .device-n
 h1 { font-weight: 800; letter-spacing: -0.02em; }
 .value-big, .big-number, .kpi-value { font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
 .card h3 { letter-spacing: 0; font-weight: 700; }
+
+/* ── Fond animé (ordinateur uniquement, réglage « Apparence » de /config) ── */
+/* Teintes plus franches que le fond fixe, mêmes situations */
+@property --aur-a { syntax: '<color>'; inherits: true; initial-value: rgba(251,146,60,0.14); }
+@property --aur-b { syntax: '<color>'; inherits: true; initial-value: rgba(96,165,250,0.18); }
+html[data-night]                { --aur-a: rgba(129,140,248,0.20); --aur-b: rgba(30,64,175,0.32); }
+html[data-ambiance="tempo-red"] { --aur-a: rgba(239,68,68,0.26);   --aur-b: rgba(153,27,27,0.32); }
+html[data-ambiance="clim"]      { --aur-a: rgba(56,189,248,0.22);  --aur-b: rgba(96,165,250,0.32); }
+html[data-ambiance="poele"]     { --aur-a: rgba(251,146,60,0.32);  --aur-b: rgba(234,88,12,0.24); }
+
+.bg-live-layer {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  html.bg-live .bg-live-layer { display: block; }
+}
+html.bg-paused .bg-live-layer,
+html.bg-paused .bg-live-layer * { animation-play-state: paused !important; }
+
+/* Aurore : trois halos qui dérivent (transform uniquement, pas de flou animé) */
+.bg-aurora { position: absolute; inset: 0; }
+.aur {
+  position: absolute;
+  width: 72vmax;
+  height: 72vmax;
+  border-radius: 50%;
+  will-change: transform;
+}
+.aur-1 { left: -24vmax; top: -34vmax; background: radial-gradient(closest-side, var(--aur-a), transparent); animation: aur-1 26s ease-in-out infinite alternate; }
+.aur-2 { right: -26vmax; top: -26vmax; background: radial-gradient(closest-side, var(--aur-b), transparent); animation: aur-2 32s ease-in-out infinite alternate; }
+.aur-3 { left: 18vw; bottom: -48vmax; background: radial-gradient(closest-side, color-mix(in oklab, var(--aur-a) 55%, var(--aur-b)), transparent); animation: aur-3 38s ease-in-out infinite alternate; }
+@keyframes aur-1 { to { transform: translate(22vw, 16vh) scale(1.18); } }
+@keyframes aur-2 { to { transform: translate(-20vw, 22vh) scale(0.88); } }
+@keyframes aur-3 { to { transform: translate(-16vw, -14vh) scale(1.22); } }
+
+/* Tempo rouge : l'aurore respire */
+html[data-ambiance="tempo-red"] .bg-aurora { animation: aur-breathe 5s ease-in-out infinite; }
+@keyframes aur-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* Poêle allumé : chaleur en bas de page et braises qui montent */
+.bg-heat, .bg-embers { opacity: 0; transition: opacity 1.8s ease; }
+html[data-stove] .bg-heat, html[data-stove] .bg-embers { opacity: 1; }
+html:not([data-stove]) .bg-heat, html:not([data-stove]) .bg-embers i { animation-play-state: paused; }
+.bg-heat {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 26vh;
+  background: linear-gradient(to top, rgba(251,146,60,0.16), rgba(234,88,12,0.05) 55%, transparent);
+  transform-origin: bottom;
+  animation: bg-heat 4.5s ease-in-out infinite alternate;
+}
+@keyframes bg-heat { from { transform: scaleY(0.9); } to { transform: scaleY(1.15); } }
+.bg-embers { position: absolute; inset: 0; }
+.bg-embers i {
+  position: absolute;
+  bottom: -8px;
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: #fdba74;
+  box-shadow: 0 0 6px 2px rgba(251,146,60,0.55);
+  opacity: 0;
+  animation: bg-ember var(--d) linear var(--t) infinite;
+}
+.bg-embers i:nth-child(1)  { left: 4%;  --d: 13s; --t: -2s;  --x: 30px; }
+.bg-embers i:nth-child(2)  { left: 11%; --d: 16s; --t: -9s;  --x: -40px; }
+.bg-embers i:nth-child(3)  { left: 18%; --d: 11s; --t: -5s;  --x: 20px; }
+.bg-embers i:nth-child(4)  { left: 26%; --d: 15s; --t: -12s; --x: -25px; }
+.bg-embers i:nth-child(5)  { left: 33%; --d: 12s; --t: -1s;  --x: 45px; }
+.bg-embers i:nth-child(6)  { left: 41%; --d: 17s; --t: -7s;  --x: -30px; }
+.bg-embers i:nth-child(7)  { left: 48%; --d: 10s; --t: -4s;  --x: 15px; }
+.bg-embers i:nth-child(8)  { left: 56%; --d: 14s; --t: -10s; --x: -45px; }
+.bg-embers i:nth-child(9)  { left: 63%; --d: 12s; --t: -6s;  --x: 35px; }
+.bg-embers i:nth-child(10) { left: 70%; --d: 16s; --t: -3s;  --x: -20px; }
+.bg-embers i:nth-child(11) { left: 77%; --d: 11s; --t: -8s;  --x: 25px; }
+.bg-embers i:nth-child(12) { left: 84%; --d: 15s; --t: -13s; --x: -35px; }
+.bg-embers i:nth-child(13) { left: 91%; --d: 13s; --t: -5s;  --x: 18px; }
+.bg-embers i:nth-child(14) { left: 97%; --d: 17s; --t: -11s; --x: -28px; }
+@keyframes bg-ember {
+  0%   { transform: translate(0, 0) scale(1); opacity: 0; }
+  8%   { opacity: 0.9; }
+  70%  { opacity: 0.5; }
+  100% { transform: translate(var(--x), -88vh) scale(0.4); opacity: 0; }
+}
+
+/* Nuit : étoile filante toutes les ~45 s */
+.bg-shoot {
+  display: none;
+  position: absolute;
+  top: 10%;
+  left: 68%;
+  width: 150px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.95), rgba(199,210,254,0.35) 40%, transparent);
+  opacity: 0;
+  animation: bg-shoot 45s linear 8s infinite;
+}
+html[data-night] .bg-shoot { display: block; }
+@keyframes bg-shoot {
+  0%, 95% { transform: translate(0, 0) rotate(-22deg); opacity: 0; }
+  95.6%   { opacity: 1; }
+  98%     { transform: translate(-34vw, 14vw) rotate(-22deg); opacity: 0; }
+  100%    { opacity: 0; }
+}
 
 /* Nuit : ciel étoilé derrière la page */
 html[data-night] body::before {

@@ -1920,6 +1920,9 @@ def api_config_save():
                 "notify_hour": int(data.get("notify_hour", config.EMAIL.get("notify_hour", 20))),
                 "notify_minute": int(data.get("notify_minute", config.EMAIL.get("notify_minute", 0))),
             },
+            "UI": {
+                "background_animation": bool(data.get("background_animation", config.UI.get("background_animation", True))),
+            },
             "NTFY": {
                 "enabled": bool(data.get("ntfy_enabled", False)),
                 "url": str(data.get("ntfy_url", config.NTFY.get("url", ""))).strip().rstrip("/"),
