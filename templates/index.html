@@ -293,7 +293,7 @@
       <div class="card card-tempo-{{ today.color | lower }} card-labeled">
         <div class="today-label">AUJOURD'HUI</div>
         <h3>⚡ Tarif EDF Tempo</h3>
-        <p class="value-big">{{ today.emoji }} {{ today.label }}</p>
+        <p class="value-big"><span class="dot dot-{{ today.color | lower }}" aria-hidden="true"></span>{{ today.label }}</p>
         <p class="value-sub">
           Période actuelle :
           <strong>{{ data.tempo.current_period }}</strong>
@@ -306,7 +306,7 @@
           <strong>{{ "%.4f"|format(config.TEMPO_PRICES[color][period]) }} €/kWh</strong>
         </p>
         {% set tom = data.tempo.tomorrow %}
-        <p class="value-sub">Demain : <span{% if tom.color | lower == 'red' %} class="tempo-pulse"{% endif %}>{{ tom.emoji }}</span> {{ tom.label }}</p>
+        <p class="value-sub">Demain : <span class="dot dot-{{ tom.color | lower }}{% if tom.color | lower == 'red' %} tempo-pulse{% endif %}" aria-hidden="true"></span>{{ tom.label }}</p>
       </div>
 
     </section>
@@ -465,7 +465,7 @@
       </div>
       <div class="rec-content">
         <h2 data-value="title">{{ trec.title }}</h2>
-        <span class="badge badge-gray" data-value="tempo-badge"><span{% if data.tempo.tomorrow.color | lower == 'red' %} class="tempo-pulse"{% endif %}>{{ data.tempo.tomorrow.emoji }}</span> Tempo {{ data.tempo.tomorrow.label }}</span>
+        <span class="badge badge-gray" data-value="tempo-badge"><span class="dot dot-{{ data.tempo.tomorrow.color | lower }}{% if data.tempo.tomorrow.color | lower == 'red' %} tempo-pulse{% endif %}" aria-hidden="true"></span>Tempo {{ data.tempo.tomorrow.label }}</span>
         <p data-value="explanation">{{ trec.explanation }}</p>
         {% if trec.savings_per_hour > 0 %}
           <span class="badge" data-value="savings">Économie : {{ "%.3f"|format(trec.savings_per_hour) }} €/h</span>
@@ -568,23 +568,23 @@
           {% for r in radiateurs_info %}
           <p class="value-sub" style="display:flex;align-items:center;gap:0.5rem">
             {% if not r.enabled %}
-              <span style="color:#64748b">⏭</span>
+              <span class="dot dot-excluded" aria-hidden="true"></span>
               <span style="color:#64748b">{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#475569">exclu du pilotage</span>
             {% elif r.managed_off %}
-              <span>🔴</span>
+              <span class="dot dot-red" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#fb923c">éteint automatiquement</span>
             {% elif r.state == "on" %}
-              <span>🟢</span>
+              <span class="dot dot-on" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#22c55e">allumé</span>
             {% elif r.state == "off" %}
-              <span>⚫</span>
+              <span class="dot dot-off" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#64748b">éteint</span>
             {% else %}
-              <span>❓</span>
+              <span class="dot dot-unknown" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#94a3b8">{{ r.state or "indisponible" }}</span>
             {% endif %}
@@ -890,17 +890,17 @@
         </thead>
         <tbody>
           <tr class="tarif-blue{% if data.tempo.today.color == 'BLUE' %} is-today{% endif %}">
-            <td>🔵 Bleu</td>
+            <td><span class="dot dot-blue" aria-hidden="true"></span>Bleu</td>
             <td>{% if data.tempo.today.color == 'BLUE' and data.tempo.current_period == 'HP' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HP) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HP) }} €/kWh{% endif %}</td>
             <td>{% if data.tempo.today.color == 'BLUE' and data.tempo.current_period == 'HC' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HC) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.BLUE.HC) }} €/kWh{% endif %}</td>
           </tr>
           <tr class="tarif-white{% if data.tempo.today.color == 'WHITE' %} is-today{% endif %}">
-            <td>⚪ Blanc</td>
+            <td><span class="dot dot-white" aria-hidden="true"></span>Blanc</td>
             <td>{% if data.tempo.today.color == 'WHITE' and data.tempo.current_period == 'HP' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HP) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HP) }} €/kWh{% endif %}</td>
             <td>{% if data.tempo.today.color == 'WHITE' and data.tempo.current_period == 'HC' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HC) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.WHITE.HC) }} €/kWh{% endif %}</td>
           </tr>
           <tr class="tarif-red{% if data.tempo.today.color == 'RED' %} is-today{% endif %}">
-            <td>🔴 Rouge</td>
+            <td><span class="dot dot-red" aria-hidden="true"></span>Rouge</td>
             <td>{% if data.tempo.today.color == 'RED' and data.tempo.current_period == 'HP' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.RED.HP) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.RED.HP) }} €/kWh{% endif %}</td>
             <td>{% if data.tempo.today.color == 'RED' and data.tempo.current_period == 'HC' %}<span class="tarif-now" title="Tarif qui s'applique maintenant">{{ "%.4f"|format(config.TEMPO_PRICES.RED.HC) }} €/kWh</span>{% else %}{{ "%.4f"|format(config.TEMPO_PRICES.RED.HC) }} €/kWh{% endif %}</td>
           </tr>

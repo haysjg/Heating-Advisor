@@ -285,7 +285,7 @@
       <div class="bg-theme-priority">
         <span class="bgp bgp-tempo-red" aria-hidden="true"></span>
         <span>
-          <span class="bg-theme-name" style="margin-top:0">🔴 Jour rouge — prioritaire</span>
+          <span class="bg-theme-name" style="margin-top:0"><span class="dot dot-red" aria-hidden="true"></span>Jour rouge — prioritaire</span>
           <span class="bg-theme-desc">Les jours Tempo rouge, remplace automatiquement le thème choisi (sauf « Aucun ») :
             voiles cramoisis, étincelles, et gyrophare pendant les heures pleines, les plus chères.</span>
         </span>
@@ -409,34 +409,34 @@
       <div class="form-grid">
 
         <div class="form-group">
-          <label>🔵 Bleu HP</label>
+          <label><span class="dot dot-blue" aria-hidden="true"></span>Bleu HP</label>
           <input type="number" id="blue_hp" step="0.0001"
                  value="{{ config.TEMPO_PRICES.BLUE.HP }}">
         </div>
         <div class="form-group">
-          <label>🔵 Bleu HC</label>
+          <label><span class="dot dot-blue" aria-hidden="true"></span>Bleu HC</label>
           <input type="number" id="blue_hc" step="0.0001"
                  value="{{ config.TEMPO_PRICES.BLUE.HC }}">
         </div>
 
         <div class="form-group">
-          <label>⚪ Blanc HP</label>
+          <label><span class="dot dot-white" aria-hidden="true"></span>Blanc HP</label>
           <input type="number" id="white_hp" step="0.0001"
                  value="{{ config.TEMPO_PRICES.WHITE.HP }}">
         </div>
         <div class="form-group">
-          <label>⚪ Blanc HC</label>
+          <label><span class="dot dot-white" aria-hidden="true"></span>Blanc HC</label>
           <input type="number" id="white_hc" step="0.0001"
                  value="{{ config.TEMPO_PRICES.WHITE.HC }}">
         </div>
 
         <div class="form-group">
-          <label>🔴 Rouge HP</label>
+          <label><span class="dot dot-red" aria-hidden="true"></span>Rouge HP</label>
           <input type="number" id="red_hp" step="0.0001"
                  value="{{ config.TEMPO_PRICES.RED.HP }}">
         </div>
         <div class="form-group">
-          <label>🔴 Rouge HC</label>
+          <label><span class="dot dot-red" aria-hidden="true"></span>Rouge HC</label>
           <input type="number" id="red_hc" step="0.0001"
                  value="{{ config.TEMPO_PRICES.RED.HC }}">
         </div>
@@ -844,7 +844,7 @@
 
     {# ── Radiateurs Tempo Rouge ── #}
     <div class="card form-section">
-      <h3>🔴 Radiateurs — Jours Tempo Rouge</h3>
+      <h3><span class="dot dot-red" aria-hidden="true"></span>Radiateurs — Jours Tempo Rouge</h3>
 
       <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
         <input type="checkbox" id="radiateurs_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
@@ -1605,7 +1605,7 @@
           badge.textContent = '✅ Identifiants enregistrés';
           badge.style.color = '#22c55e';
         } else {
-          badge.textContent = '⚪ Non configuré';
+          badge.textContent = 'Non configuré';
           badge.style.color = 'var(--text-sub)';
         }
       })
