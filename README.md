@@ -190,12 +190,12 @@ Compteur d'heures de chauffe depuis le dernier remplissage de la trémie (`data/
 
 | Fonction | Description |
 |---|---|
-| `tick(poele_on, cycle_hours, email_cfg, ntfy_cfg)` | Ajoute une lecture. Une heure avant la fin du sac (14 h sur 15) : alerte ntfy + email, une seule par cycle. À la fin du sac : retour à 0 automatique. |
+| `tick(poele_on, cycle_hours, email_cfg, ntfy_cfg)` | Ajoute une lecture. Une heure avant la fin du sac (14 h sur 15) : alerte ntfy + email, une seule par plein. Passé la fin du sac : pas de remise à 0, la jauge reste à 100 % (le compteur continue) jusqu'au clic « Trémie remplie ». |
 | `reset(by, kg)` | Remise à 0 (bouton « Trémie remplie » de l'accueil, avec la quantité versée : ⅓, ½, ⅔ ou 1 sac). Enregistre le cycle de mesure écoulé. |
 | `estimate(refills, bag_kg)` | Débit réel : cumul kg / cumul heures sur les 8 derniers remplissages (3 minimum), ramené en heures par sac. |
 | `status(cycle_hours, bag_kg)` | Minutes, pourcentage, seuil d'alerte, mesure en cours et estimation — affichés dans la card « Remplissage du poêle ». |
 
-**Débit réel mesuré.** Un second compteur ne repart de 0 qu'au clic « Trémie remplie » (jamais à la remise à 0 automatique). Chaque clic enregistre un cycle : heures de chauffe depuis le clic précédent + kg versés (⅓, ½, ⅔ ou 1 sac, poids du sac de `/config`). Le premier clic démarre la mesure, un cycle de moins d'1 h (double clic) est ignoré. L'estimation n'est jamais appliquée seule : le bouton « Appliquer » de la card met à jour « heures par sac » (`/config`) et `POELE.consumption_kg_per_hour`, donc le seuil d'alerte et le stock de `/stock` (recalculé sur tout l'historique avec ce débit).
+**Débit réel mesuré.** Un second compteur ne repart de 0 qu'au clic « Trémie remplie ». Chaque clic enregistre un cycle : heures de chauffe depuis le clic précédent + kg versés (⅓, ½, ⅔ ou 1 sac, poids du sac de `/config`). Le premier clic démarre la mesure, un cycle de moins d'1 h (double clic) est ignoré. L'estimation n'est jamais appliquée seule : le bouton « Appliquer » de la card met à jour « heures par sac » (`/config`) et `POELE.consumption_kg_per_hour`, donc le seuil d'alerte et le stock de `/stock` (recalculé sur tout l'historique avec ce débit).
 
 ### `ntfy_push.py` — Notifications push
 
