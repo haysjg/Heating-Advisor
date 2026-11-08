@@ -3,8 +3,8 @@ Compteur d'heures de chauffe depuis le dernier remplissage du poêle, et débit 
 
 Le job d'historique (toutes les 10 min) appelle tick() avec l'état réel du poêle : chaque lecture
 « allumé » ajoute 10 min. Une heure avant la durée d'un sac, une alerte ntfy + email est envoyée
-(une seule par cycle). À la durée d'un sac, le compteur affiché repart de 0 tout seul ; il peut aussi
-être remis à 0 à la main depuis l'accueil après un remplissage.
+(une seule par cycle). Passé la durée d'un sac, la jauge reste à 100 % (le compteur continue) jusqu'au
+clic « Trémie remplie » sur l'accueil, seul geste qui le remet à 0.
 
 Mesure du débit : un second compteur (refill_minutes) ne repart de 0 qu'au clic « Trémie remplie ».
 Chaque clic enregistre un cycle (heures de chauffe depuis le clic précédent, kg versés). Le niveau
@@ -132,20 +132,13 @@ def _send_alert(hours: float, cycle_hours: float, email_cfg: dict, ntfy_cfg: dic
 
 
 def tick(poele_on: bool, cycle_hours: float, email_cfg: dict, ntfy_cfg: dict) -> dict:
-    """Ajoute une lecture aux compteurs ; alerte au seuil, remise à 0 automatique en fin de sac."""
+    """Ajoute une lecture aux compteurs ; alerte au seuil. Pas de remise à 0 automatique en fin de sac."""
     with jsonstore.lock_for(STATE_FILE):
         state = _load()
         if not poele_on:
             return state
         state["refill_minutes"] = int(state["refill_minutes"]) + TICK_MINUTES
         minutes = int(state["minutes"]) + TICK_MINUTES
-
-        if cycle_hours > 0 and minutes >= cycle_hours * 60:
-            logger.info("Poêle : %.0f h de chauffe atteintes, compteur de remplissage remis à 0", cycle_hours)
-            _start_cycle(state, "auto")
-            jsonstore.save(STATE_FILE, state)
-            return state
-
         state["minutes"] = minutes
         send = not state["alerted"] and minutes >= alert_hours(cycle_hours) * 60
         if send:

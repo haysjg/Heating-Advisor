@@ -191,7 +191,7 @@ function renderPelletRefill(p) {
   const bar = card.querySelector('.refill-bar');
   if (bar) { bar.setAttribute('aria-valuenow', p.hours); bar.setAttribute('aria-valuemax', p.cycle_hours); }
   const note = card.querySelector('[data-value="refill-note"]');
-  if (note) note.textContent = `Alerte à ${Math.round(p.alert_hours)} h · retour à 0 automatique à ${Math.round(p.cycle_hours)} h`;
+  if (note) note.textContent = `Alerte à ${Math.round(p.alert_hours)} h · jauge bloquée à 100 % jusqu'au remplissage`;
   const measure = card.querySelector('[data-value="refill-measure"]');
   if (measure) measure.innerHTML = _refillMeasureHtml(p);
 }

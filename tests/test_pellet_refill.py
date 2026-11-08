@@ -35,12 +35,11 @@ def test_alert_at_14h_once_with_push_and_email(sent):
     assert len(sent) == 2  # pas de répétition dans le même cycle
 
 
-def test_auto_reset_at_15h(sent):
-    _run(15 * 6)
+def test_gauge_stays_full_after_cycle(sent):
+    _run(18 * 6)
     st = pr.status()
-    assert st["minutes"] == 0 and st["reset_by"] == "auto" and not st["alerted"]
-    _run(14 * 6)
-    assert len(sent) == 4  # nouveau cycle → nouvelle alerte
+    assert st["minutes"] == 18 * 60 and st["percent"] == 100 and st["alerted"]
+    assert len(sent) == 2  # une seule alerte tant que la trémie n'est pas remplie
 
 
 def test_manual_reset(sent):
@@ -63,11 +62,11 @@ class TestMeasure:
         st = pr.status()
         assert st["measuring"] and st["refills_count"] == 0 and st["estimate"] is None
 
-    def test_auto_reset_keeps_measure_counter(self, sent):
+    def test_measure_counter_past_cycle(self, sent):
         pr.reset("manual", kg=15)
-        _run(16 * 6)  # passe la remise à 0 automatique de 15 h
+        _run(16 * 6)  # dépasse la durée d'un sac
         st = pr.status()
-        assert st["minutes"] == 60 and st["refill_hours"] == 16
+        assert st["minutes"] == 16 * 60 and st["refill_hours"] == 16
 
     def test_estimate_after_three_refills(self, sent):
         pr.reset("manual", kg=15)

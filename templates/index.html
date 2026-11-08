@@ -396,7 +396,7 @@
         <span class="refill-fill" style="width: {{ pellet.percent }}%"></span>
         <span class="refill-mark" style="left: {{ (pellet.alert_hours / pellet.cycle_hours * 100) if pellet.cycle_hours else 100 }}%"></span>
       </div>
-      <p class="refill-note" data-value="refill-note">Alerte à {{ pellet.alert_hours|round(0)|int }} h · retour à 0 automatique à {{ pellet.cycle_hours|round(0)|int }} h</p>
+      <p class="refill-note" data-value="refill-note">Alerte à {{ pellet.alert_hours|round(0)|int }} h · jauge bloquée à 100 % jusqu'au remplissage</p>
       <div class="refill-measure" data-value="refill-measure"></div>
     </section>
     {% endif %}
