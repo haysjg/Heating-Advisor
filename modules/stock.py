@@ -43,6 +43,15 @@ def compute_stock_stats(
     total_kg_consumed = round(total_on_minutes / 60 * consumption_kg_per_hour, 2)
     remaining_kg = round(max(total_kg_delivered - total_kg_consumed, 0), 2)
 
+    # Référence de la jauge : stock juste après la dernière livraison (reliquat
+    # + livraison), pas le cumul de toutes les livraisons — sinon le % baisse à
+    # chaque nouvelle livraison (900 kg restants sur 2 × 1000 kg livrés = 45 %).
+    last_date = deliveries_sorted[-1]["date"]
+    minutes_before_last = sum(
+        d["on_minutes"] for d in consumption_data["daily_breakdown"] if d["date"] < last_date
+    )
+    reference_kg = max(total_kg_delivered - minutes_before_last / 60 * consumption_kg_per_hour, remaining_kg)
+
     days_since = max((now - datetime.strptime(oldest_date, "%Y-%m-%d")).days, 1)
 
     # Moyenne sur les RECENT_WINDOW_DAYS derniers jours complets (aujourd'hui exclu,
@@ -92,7 +101,8 @@ def compute_stock_stats(
         "total_kg_delivered": round(total_kg_delivered, 1),
         "total_kg_consumed": total_kg_consumed,
         "remaining_kg": remaining_kg,
-        "remaining_pct": round(remaining_kg / total_kg_delivered * 100, 1) if total_kg_delivered > 0 else 0,
+        "reference_kg": round(reference_kg, 1),
+        "remaining_pct": round(remaining_kg / reference_kg * 100, 1) if reference_kg > 0 else 0,
         "avg_daily_kg": avg_daily_kg,
         "days_remaining": days_remaining,
         "depletion_date": depletion_date,

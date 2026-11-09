@@ -238,7 +238,7 @@
     <div class="gauge-wrapper">
       <div style="width:100%; display:flex; justify-content:space-between; font-size:0.82rem; color:var(--text-sub); margin-bottom:0.2rem;">
         <span>0 kg</span>
-        <span>{{ stock.total_kg_delivered }} kg livrés</span>
+        <span>{{ stock.reference_kg }} kg après la dernière livraison</span>
       </div>
       <div class="gauge-bar-bg" style="width:100%">
         <div class="gauge-bar-fill {% if stock.remaining_pct > 40 %}high{% elif stock.remaining_pct > 20 %}medium{% else %}low{% endif %}{% if stock.alert %} alert{% endif %}"

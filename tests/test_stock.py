@@ -3,7 +3,7 @@
 Couvre :
 - Cas de base : aucune livraison
 - kg livrés / consommés / restants
-- Pourcentage restant
+- Pourcentage restant (relatif au stock après la dernière livraison)
 - Jours restants + date d'épuisement
 - Moyenne journalière sur fenêtre glissante de 14 jours
 - date d'épuisement None si pas assez de données
@@ -70,6 +70,22 @@ class TestKgCalculations:
         # 10 kg consommés sur 1080 → ~99.1 %
         result = compute_stock_stats(DELIVERY_SIMPLE, _consumption(600), 1.0, NOW)
         assert result["remaining_pct"] == round(1070 / 1080 * 100, 1)
+
+    def test_remaining_pct_relative_to_last_delivery(self):
+        # 1000 kg le 01/01, 900 kg consommés avant le 01/03, puis 1000 kg le 01/03,
+        # 200 kg consommés depuis → 900 restants sur 1100 au dernier plein
+        deliveries = [
+            {"date": "2026-01-01", "nb_sacs": 100, "poids_sac": 10.0},
+            {"date": "2026-03-01", "nb_sacs": 100, "poids_sac": 10.0},
+        ]
+        daily = [
+            {"date": "2026-02-01", "on_minutes": 900 * 60},
+            {"date": "2026-03-10", "on_minutes": 200 * 60},
+        ]
+        result = compute_stock_stats(deliveries, _consumption(1100 * 60, daily), 1.0, NOW)
+        assert result["remaining_kg"] == 900.0
+        assert result["reference_kg"] == 1100.0
+        assert result["remaining_pct"] == round(900 / 1100 * 100, 1)
 
     def test_consumption_rate_applied(self):
         # 60 minutes × 0.5 kg/h = 0.5 kg
