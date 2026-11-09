@@ -5,6 +5,7 @@ Couvre :
 - kg livrés / consommés / restants
 - Pourcentage restant
 - Jours restants + date d'épuisement
+- Moyenne journalière sur fenêtre glissante de 14 jours
 - date d'épuisement None si pas assez de données
 - Alerte stock faible (seuil)
 - Prix : total_cost, avg_price_per_kg, prix_par_kg par livraison
@@ -121,6 +122,46 @@ class TestDaysRemainingAndDepletionDate:
     def test_days_remaining_none_when_no_consumption(self):
         result = compute_stock_stats(DELIVERY_SIMPLE, _consumption(0), 1.0, NOW)
         assert result["days_remaining"] is None
+
+
+class TestRecentWindowAverage:
+    """La moyenne journalière porte sur les 14 derniers jours, pas sur toute la période."""
+
+    def test_old_delivery_does_not_dilute_average(self):
+        # Livraison il y a ~1 an, chauffe seulement les 14 derniers jours à 6 kg/j
+        deliveries = [{"date": "2025-04-15", "nb_sacs": 100, "poids_sac": 15.0}]  # 1500 kg
+        daily = [{"date": f"2026-04-{d:02d}", "on_minutes": 360} for d in range(2, 16)]
+        cons = _consumption(sum(x["on_minutes"] for x in daily), daily)
+        result = compute_stock_stats(deliveries, cons, 1.0, NOW)
+        assert result["avg_daily_kg"] == 6.0
+        # 1500 - 84 = 1416 kg / 6 kg/j = 236 j
+        assert result["days_remaining"] == 236
+
+    def test_days_outside_window_ignored(self):
+        deliveries = [{"date": "2026-01-01", "nb_sacs": 100, "poids_sac": 15.0}]
+        daily = [
+            {"date": "2026-04-01", "on_minutes": 6000},  # hors fenêtre (14 j → dès le 02/04)
+            {"date": "2026-04-10", "on_minutes": 840},   # 14 kg dans la fenêtre
+        ]
+        cons = _consumption(6840, daily)
+        result = compute_stock_stats(deliveries, cons, 1.0, NOW)
+        assert result["avg_daily_kg"] == 1.0
+
+    def test_window_shorter_than_14_days_after_recent_delivery(self):
+        # Livraison il y a 5 jours : moyenne sur 5 jours, pas 14
+        deliveries = [{"date": "2026-04-10", "nb_sacs": 10, "poids_sac": 15.0}]
+        daily = [{"date": f"2026-04-{d:02d}", "on_minutes": 300} for d in range(11, 16)]
+        cons = _consumption(1500, daily)
+        result = compute_stock_stats(deliveries, cons, 1.0, NOW)
+        assert result["avg_daily_kg"] == 5.0
+
+    def test_fallback_to_global_average_without_recent_consumption(self):
+        # Rien sur les 14 derniers jours (hors saison) → moyenne globale
+        deliveries = [{"date": "2026-03-16", "nb_sacs": 100, "poids_sac": 15.0}]
+        daily = [{"date": "2026-03-20", "on_minutes": 1800}]  # 30 kg sur 30 j
+        cons = _consumption(1800, daily)
+        result = compute_stock_stats(deliveries, cons, 1.0, NOW)
+        assert result["avg_daily_kg"] == 1.0
 
 
 # ── Alerte stock faible ───────────────────────────────────────────

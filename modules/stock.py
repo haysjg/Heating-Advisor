@@ -5,6 +5,8 @@ Aucune dépendance I/O : prend toutes les données en paramètre.
 
 from datetime import datetime, timedelta
 
+RECENT_WINDOW_DAYS = 14
+
 
 def compute_stock_stats(
     deliveries: list,
@@ -34,7 +36,22 @@ def compute_stock_stats(
     remaining_kg = round(max(total_kg_delivered - total_kg_consumed, 0), 2)
 
     days_since = max((now - datetime.strptime(oldest_date, "%Y-%m-%d")).days, 1)
-    avg_daily_kg = round(total_kg_consumed / days_since, 3) if total_kg_consumed > 0 else None
+
+    # Moyenne sur les RECENT_WINDOW_DAYS derniers jours (aujourd'hui inclus) :
+    # une moyenne depuis la plus ancienne livraison est diluée par les mois
+    # poêle éteint et donne une autonomie absurde (plusieurs années).
+    # Repli sur la moyenne globale si aucune conso récente (hors saison).
+    window_days = min(RECENT_WINDOW_DAYS, days_since)
+    window_start = (now - timedelta(days=window_days - 1)).strftime("%Y-%m-%d")
+    recent_minutes = sum(
+        d["on_minutes"] for d in consumption_data["daily_breakdown"] if d["date"] >= window_start
+    )
+    if recent_minutes > 0:
+        avg_daily_kg = round(recent_minutes / 60 * consumption_kg_per_hour / window_days, 3)
+    elif total_kg_consumed > 0:
+        avg_daily_kg = round(total_kg_consumed / days_since, 3)
+    else:
+        avg_daily_kg = None
     days_remaining = round(remaining_kg / avg_daily_kg) if avg_daily_kg and avg_daily_kg > 0 else None
     depletion_date = (now + timedelta(days=days_remaining)).strftime("%d %b %Y") if days_remaining is not None else None
 
