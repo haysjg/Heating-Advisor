@@ -17,7 +17,7 @@
     @media (max-width: 600px) { .form-grid { grid-column: 1fr; } }
     .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
     .form-group label { font-size: 0.82rem; color: var(--text-sub); }
-    .form-group input {
+    .form-group input, .form-group select {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -27,7 +27,7 @@
       transition: border-color 0.15s;
       width: 100%;
     }
-    .form-group input:focus { outline: none; border-color: var(--blue); }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--blue); }
     .form-group .hint { font-size: 0.75rem; color: var(--text-sub); opacity: 0.7; }
     .computed-value {
       background: rgba(59,130,246,0.06);
@@ -723,10 +723,11 @@
       </div>
 
       <p style="font-size:0.82rem;color:var(--text-sub);margin:1rem 0 0.5rem">Plages horaires d'allumage automatique</p>
-      <div style="display:grid;grid-template-columns:6rem 1fr 1fr;gap:0.5rem 1rem;align-items:center">
+      <div style="display:grid;grid-template-columns:5.5rem repeat(3, minmax(0, 1fr));gap:0.5rem 0.75rem;align-items:center">
         <span style="font-size:0.75rem;color:var(--text-sub)">Jour</span>
         <span style="font-size:0.75rem;color:var(--text-sub)">Début</span>
         <span style="font-size:0.75rem;color:var(--text-sub)">Fin</span>
+        <span style="font-size:0.75rem;color:var(--text-sub)" title="Heure à laquelle la consigne d'allumage doit être atteinte (démarrage optimisé). Vide = début + 45 min.">Confort</span>
         {% set days = [('mon','Lundi'),('tue','Mardi'),('wed','Mercredi'),('thu','Jeudi'),('fri','Vendredi'),('sat','Samedi'),('sun','Dimanche')] %}
         {% for key, label in days %}
         <span style="font-size:0.88rem">{{ label }}</span>
@@ -736,7 +737,31 @@
         <input type="time" id="sched_{{ key }}_end"
                value="{{ config.THERMOSTAT.schedule[key].end }}"
                style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.4rem 0.6rem;font-size:0.9rem">
+        <input type="time" id="sched_{{ key }}_comfort"
+               value="{{ config.THERMOSTAT.schedule[key].get('comfort', '') }}"
+               aria-label="Heure de confort {{ label }}"
+               style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.4rem 0.6rem;font-size:0.9rem">
         {% endfor %}
+      </div>
+
+      {% set _os = config.THERMOSTAT.get('optimal_start') or {} %}
+      <p style="font-size:0.82rem;color:var(--text-sub);margin:1.25rem 0 0.5rem">Démarrage optimisé</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="optimal_start_mode">Mode</label>
+          <select id="optimal_start_mode">
+            {% for value, text in [('off', 'Désactivé'), ('simulation', 'Simulation (journal seulement)'), ('pilot', 'Pilotage (retarde l\'allumage)')] %}
+            <option value="{{ value }}" {% if _os.get('mode', 'simulation') == value %}selected{% endif %}>{{ text }}</option>
+            {% endfor %}
+          </select>
+          <span class="hint">Allume le plus tard possible pour atteindre la consigne d'allumage à l'heure de confort, jamais avant le début de plage. La vitesse de montée en température est apprise chaque nuit.</span>
+        </div>
+        <div class="form-group">
+          <label for="optimal_start_margin">Marge de sécurité (min)</label>
+          <input type="number" id="optimal_start_margin" min="0" max="120" step="5"
+                 value="{{ _os.get('safety_margin_minutes', 15) }}">
+          <span class="hint">Démarre ce temps plus tôt que la durée prévue.</span>
+        </div>
       </div>
 
     </div>
@@ -1117,14 +1142,16 @@
       thermostat_humidity_ref: parseFloat(getVal('thermostat_humidity_ref')),
       thermostat_humidity_factor: parseFloat(getVal('thermostat_humidity_factor')),
       thermostat_schedule: {
-        mon: { start: getVal('sched_mon_start'), end: getVal('sched_mon_end') },
-        tue: { start: getVal('sched_tue_start'), end: getVal('sched_tue_end') },
-        wed: { start: getVal('sched_wed_start'), end: getVal('sched_wed_end') },
-        thu: { start: getVal('sched_thu_start'), end: getVal('sched_thu_end') },
-        fri: { start: getVal('sched_fri_start'), end: getVal('sched_fri_end') },
-        sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end') },
-        sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end') },
+        mon: { start: getVal('sched_mon_start'), end: getVal('sched_mon_end'), comfort: getVal('sched_mon_comfort') },
+        tue: { start: getVal('sched_tue_start'), end: getVal('sched_tue_end'), comfort: getVal('sched_tue_comfort') },
+        wed: { start: getVal('sched_wed_start'), end: getVal('sched_wed_end'), comfort: getVal('sched_wed_comfort') },
+        thu: { start: getVal('sched_thu_start'), end: getVal('sched_thu_end'), comfort: getVal('sched_thu_comfort') },
+        fri: { start: getVal('sched_fri_start'), end: getVal('sched_fri_end'), comfort: getVal('sched_fri_comfort') },
+        sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end'), comfort: getVal('sched_sat_comfort') },
+        sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end'), comfort: getVal('sched_sun_comfort') },
       },
+      optimal_start_mode: getVal('optimal_start_mode'),
+      optimal_start_margin: parseInt(getVal('optimal_start_margin')),
       radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
       radiateurs_entities: getRadiateurs(),
       electricity_enabled: document.getElementById('electricity_enabled').checked,
@@ -1407,14 +1434,16 @@
       thermostat_humidity_ref: parseFloat(getVal('thermostat_humidity_ref')),
       thermostat_humidity_factor: parseFloat(getVal('thermostat_humidity_factor')),
       thermostat_schedule: {
-        mon: { start: getVal('sched_mon_start'), end: getVal('sched_mon_end') },
-        tue: { start: getVal('sched_tue_start'), end: getVal('sched_tue_end') },
-        wed: { start: getVal('sched_wed_start'), end: getVal('sched_wed_end') },
-        thu: { start: getVal('sched_thu_start'), end: getVal('sched_thu_end') },
-        fri: { start: getVal('sched_fri_start'), end: getVal('sched_fri_end') },
-        sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end') },
-        sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end') },
+        mon: { start: getVal('sched_mon_start'), end: getVal('sched_mon_end'), comfort: getVal('sched_mon_comfort') },
+        tue: { start: getVal('sched_tue_start'), end: getVal('sched_tue_end'), comfort: getVal('sched_tue_comfort') },
+        wed: { start: getVal('sched_wed_start'), end: getVal('sched_wed_end'), comfort: getVal('sched_wed_comfort') },
+        thu: { start: getVal('sched_thu_start'), end: getVal('sched_thu_end'), comfort: getVal('sched_thu_comfort') },
+        fri: { start: getVal('sched_fri_start'), end: getVal('sched_fri_end'), comfort: getVal('sched_fri_comfort') },
+        sat: { start: getVal('sched_sat_start'), end: getVal('sched_sat_end'), comfort: getVal('sched_sat_comfort') },
+        sun: { start: getVal('sched_sun_start'), end: getVal('sched_sun_end'), comfort: getVal('sched_sun_comfort') },
       },
+      optimal_start_mode: getVal('optimal_start_mode'),
+      optimal_start_margin: parseInt(getVal('optimal_start_margin')),
       radiateurs_enabled: document.getElementById('radiateurs_enabled').checked,
       radiateurs_entities: getRadiateurs(),
       electricity_enabled: document.getElementById('electricity_enabled').checked,
@@ -1517,9 +1546,12 @@
             if (d.thermostat_schedule[day]) {
               setVal('sched_' + day + '_start', d.thermostat_schedule[day].start);
               setVal('sched_' + day + '_end',   d.thermostat_schedule[day].end);
+              setVal('sched_' + day + '_comfort', d.thermostat_schedule[day].comfort || '');
             }
           });
         }
+        if (d.optimal_start_mode) setVal('optimal_start_mode', d.optimal_start_mode);
+        if (d.optimal_start_margin != null) setVal('optimal_start_margin', d.optimal_start_margin);
         if (Array.isArray(d.radiateurs_entities)) {
           setChk('radiateurs_enabled', d.radiateurs_enabled);
           setRadiateurs(d.radiateurs_entities);

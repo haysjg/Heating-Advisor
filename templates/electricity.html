@@ -58,6 +58,10 @@
         <span style="font-size:0.82rem;">Cliquez sur « Synchroniser » pour vérifier les nouveaux emails.</span>
       </div>
       <div class="kpi-grid" id="kpi-grid" style="display:none;"></div>
+      <p id="clim-note" style="display:none; margin:0.85rem 0 0; font-size:0.78rem; color:var(--text-sub); line-height:1.5;">
+        Part de la clim estimée : heures de chauffe × 4 kW ÷ COP de la courbe (plutôt surestimée, la clim module
+        sa puissance). Seules les semaines entièrement suivies sont comptées.
+      </p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
@@ -453,6 +457,27 @@
     return v.toLocaleString('fr-FR', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' kWh';
   }
 
+  // Part estimée de la clim : dernière semaine entièrement suivie, et cumul des semaines suivies
+  function climCard(data) {
+    const tracked = data.filter(d => d.clim_kwh != null && d.kwh);
+    if (!tracked.length) return '';
+    const last = tracked[tracked.length - 1];
+    const climTotal = tracked.reduce((s, d) => s + d.clim_kwh, 0);
+    const kwhTotal = tracked.reduce((s, d) => s + d.kwh, 0);
+    const sharePeriod = Math.round(Math.min(climTotal / kwhTotal, 1) * 100);
+    return `
+      <div class="kpi-card">
+        <p class="kpi-label">Part clim (sem. du ${fmtShortDate(last.period_start)})</p>
+        <p class="kpi-value" style="color:#a78bfa">${last.clim_share} %</p>
+        <p class="kpi-label" style="margin-top:0.3rem;">${fmtKwh(last.clim_kwh)} · ${sharePeriod} % sur ${tracked.length} sem.</p>
+      </div>`;
+  }
+
+  function fmtShortDate(iso) {
+    const [, m, d] = iso.split('-');
+    return d + '/' + m;
+  }
+
   function renderKPIs(data) {
     const grid = document.getElementById('kpi-grid');
     const noData = document.getElementById('kpi-no-data');
@@ -486,7 +511,9 @@
         <p class="kpi-label">Total période</p>
         <p class="kpi-value">${fmtKwh(total)}</p>
       </div>
+      ${climCard(data)}
     `;
+    document.getElementById('clim-note').style.display = data.some(d => d.clim_kwh != null) ? 'block' : 'none';
     grid.style.display = 'grid';
     noData.style.display = 'none';
     grid.querySelectorAll('.kpi-value').forEach(el => setAnimatedText(el, null, 0));
@@ -497,6 +524,7 @@
     if (!data.length) return;
 
     const points = data.map(d => ({ x: d.period_start || d.fetched_at, y: d.kwh }));
+    const climPoints = data.filter(d => d.clim_kwh != null).map(d => ({ x: d.period_start, y: d.clim_kwh }));
 
     const ctx = document.getElementById('electricityChart').getContext('2d');
     chart = new Chart(ctx, {
@@ -512,13 +540,23 @@
           pointBackgroundColor: '#f59e0b',
           tension: 0.25,
           fill: true,
+        }, {
+          label: 'Clim (estimé)',
+          data: climPoints,
+          borderColor: '#a78bfa',
+          backgroundColor: 'rgba(167,139,250,0.2)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#a78bfa',
+          tension: 0.25,
+          fill: 'origin',
         }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend: { display: climPoints.length > 0, labels: { color: '#8892a4' } },
           tooltip: {
             backgroundColor: '#1a1d27',
             borderColor: '#2a2d3e',
@@ -527,7 +565,9 @@
             bodyColor: '#8892a4',
             padding: 10,
             callbacks: {
-              label: item => `${item.parsed.y.toFixed(1)} kWh`,
+              label: item => item.datasetIndex === 1
+                ? `Clim (estimé) : ${item.parsed.y.toFixed(1)} kWh`
+                : `Total : ${item.parsed.y.toFixed(1)} kWh`,
             },
           },
         },

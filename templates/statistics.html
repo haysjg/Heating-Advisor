@@ -148,7 +148,7 @@
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem;">
         <div>
-          <h2 style="margin:0 0 0.25rem; font-size:1rem;">Températures &amp; état du poêle</h2>
+          <h2 style="margin:0 0 0.25rem; font-size:1rem;">Températures &amp; état du chauffage</h2>
           <p style="margin:0; font-size:0.83rem; color:var(--text-sub);">Enregistrement toutes les ~10 min</p>
         </div>
         <div class="range-bar">
@@ -171,6 +171,10 @@
         <div class="legend-item">
           <div class="legend-dot" style="background:rgba(34,197,94,0.35); border:1px solid #22c55e;"></div>
           <span>Poêle allumé</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:rgba(167,139,250,0.35); border:1px solid #a78bfa;"></div>
+          <span>Clim en chauffe</span>
         </div>
       </div>
 
@@ -249,11 +253,59 @@
               <th>Poêle allumé</th>
               <th>Poêle éteint</th>
               <th>Répartition</th>
+              <th>Clim allumée</th>
               <th>Moy. ext.</th>
               <th>Moy. int.</th>
             </tr>
           </thead>
           <tbody id="daily-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;" id="warmup-card">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:0.5rem 1rem;margin-bottom:0.25rem;">
+        <h2 style="margin:0;font-size:1rem;">Démarrage optimisé <span id="warmup-mode" style="font-size:0.8rem;font-weight:400;color:var(--text-sub);"></span></h2>
+        <div class="range-bar">
+          <button class="range-btn active" onclick="loadWarmup('30d')" data-wr="30d">30 jours</button>
+          <button class="range-btn" onclick="loadWarmup('season')" data-wr="season">Saison</button>
+        </div>
+      </div>
+      <p style="margin:0 0 1rem;font-size:0.83rem;color:var(--text-sub);">
+        Vitesse de montée en température apprise sur les matins de chauffe, et heure d'allumage au plus tard
+        pour atteindre la consigne à l'heure de confort (jamais avant le début de plage). <a href="/config">Réglages</a>
+      </p>
+      <div id="warmup-summary" class="stat-grid" style="display:none;"></div>
+
+      <p style="margin:1.25rem 0 0.5rem;font-size:0.78rem;color:var(--text-sub);font-weight:500;">
+        Vitesse de montée selon la température extérieure <span id="warmup-counts"></span>
+      </p>
+      <div id="warmup-curve-empty" class="no-data" style="display:none;padding:1.5rem 1rem;">
+        Pas encore de montée mesurée. Les matins de chauffe sont analysés chaque nuit.
+      </div>
+      <div class="chart-wrapper" id="warmup-chart-wrapper" style="height:260px;">
+        <canvas id="warmupChart"></canvas>
+      </div>
+
+      <p style="margin:1.25rem 0 0.5rem;font-size:0.78rem;color:var(--text-sub);font-weight:500;">Journal des matins</p>
+      <div id="warmup-log-empty" class="no-data" style="display:none;padding:1.5rem 1rem;">Aucun matin enregistré.</div>
+      <div style="overflow-x:auto;">
+        <table class="daily-table" id="warmup-table" style="display:none;">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Système</th>
+              <th>Ext.</th>
+              <th title="Température ressentie au premier besoin de chauffe">Int. au besoin</th>
+              <th title="Durée de montée prévue jusqu'à la consigne d'allumage">Durée prévue</th>
+              <th>Allumage réel</th>
+              <th title="Heure d'allumage au plus tard calculée">Allumage optimisé</th>
+              <th title="Durée réelle de l'allumage à la consigne d'allumage">Durée réelle</th>
+              <th>À l'heure de confort</th>
+              <th>Chauffe évitée</th>
+            </tr>
+          </thead>
+          <tbody id="warmup-tbody"></tbody>
         </table>
       </div>
     </div>
@@ -264,7 +316,7 @@
     let chart = null;
 
     function setActiveBtn(hours) {
-      document.querySelectorAll('.range-btn').forEach(b => {
+      document.querySelectorAll('[data-h]').forEach(b => {
         b.classList.toggle('active', parseInt(b.dataset.h) === hours);
       });
     }
@@ -300,6 +352,11 @@
         stats.push({ label: 'Poêle allumé', value: pct, unit: '%' });
         const h = Math.floor(onMin / 60), m = onMin % 60;
         stats.push({ label: 'Durée poêle', value: h > 0 ? `${h}h${m > 0 ? m : ''}` : `${m}min`, unit: '' });
+        if (records.some(r => r.clim_state)) {
+          const climMin = records.filter(r => r.clim_state === 'on').length * 10;
+          const ch = Math.floor(climMin / 60), cm = climMin % 60;
+          stats.push({ label: 'Durée clim', value: ch > 0 ? `${ch}h${cm > 0 ? cm : ''}` : `${cm}min`, unit: '' });
+        }
       }
       return stats;
     }
@@ -339,6 +396,8 @@
       const outdoorData  = records.map(r => r.outdoor_temp);
       const indoorData   = records.map(r => r.indoor_temp);
       const poeleData    = records.map(r => ['on','poele'].includes(r.poele_state) ? 1 : 0);
+      // null : clim pas encore suivie à ce moment-là (ou non configurée)
+      const climData     = records.map(r => r.clim_state ? (r.clim_state === 'on' ? 1 : 0) : null);
 
       const hasIndoor = indoorData.some(v => v !== null && v !== undefined);
 
@@ -355,6 +414,20 @@
           borderWidth: 1,
           pointRadius: 0,
           order: 3,
+          tension: 0,
+        },
+        {
+          label: 'Clim en chauffe',
+          data: climData,
+          yAxisID: 'yPoele',
+          type: 'line',
+          stepped: true,
+          fill: true,
+          borderColor: 'rgba(167,139,250,0.6)',
+          backgroundColor: 'rgba(167,139,250,0.12)',
+          borderWidth: 1,
+          pointRadius: 0,
+          order: 4,
           tension: 0,
         },
         {
@@ -418,6 +491,8 @@
                 },
                 label: function(item) {
                   if (item.dataset.yAxisID === 'yPoele') {
+                    if (item.parsed.y === null || item.parsed.y === undefined) return null;
+                    if (item.datasetIndex === 1) return item.parsed.y === 1 ? 'Clim : en chauffe' : 'Clim : arrêtée';
                     return item.parsed.y === 1 ? 'Poêle : allumé' : 'Poêle : éteint';
                   }
                   const val = item.parsed.y;
@@ -524,6 +599,7 @@
             <span class="bar-off" style="width:${barOffWidth}px;" title="Éteint ${100 - pctOn}%"></span>
             <span style="font-size:0.78rem; color:var(--text-sub); margin-left:0.3rem;">${pctOn}%</span>
           </td>
+          <td style="color:#a78bfa; font-weight:600;">${r.clim_on_minutes === null || r.clim_on_minutes === undefined ? '—' : fmtDuration(r.clim_on_minutes)}</td>
           <td style="color:#60a5fa;">${r.avg_outdoor_temp !== null && r.avg_outdoor_temp !== undefined ? r.avg_outdoor_temp.toFixed(1) + ' °C' : '—'}</td>
           <td style="color:#fb923c;">${r.avg_indoor_temp  !== null && r.avg_indoor_temp  !== undefined ? r.avg_indoor_temp.toFixed(1)  + ' °C' : '—'}</td>
         </tr>`;
@@ -614,18 +690,171 @@
     }
 
     function refreshAll() {
-      const activeBtn = document.querySelector('.range-btn.active');
+      const activeBtn = document.querySelector('[data-h].active');
       const hours = activeBtn ? parseInt(activeBtn.dataset.h) : 24;
       loadData(hours);
       loadDailyTable();
       loadIgnitions();
+      loadWarmup();
       const activeDBtn = document.querySelector('[data-dh].active');
       loadDiagnose(activeDBtn ? parseInt(activeDBtn.dataset.dh) : 6);
+    }
+
+    const WARMUP_MODES = { off: 'Désactivé', simulation: 'Simulation — rien n\'est piloté', pilot: 'Pilotage actif' };
+    const SYSTEM_LABELS = { poele: 'Poêle', clim: 'Clim' };
+    let warmupChart = null;
+
+    function fmtTime(iso) {
+      return iso ? new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+    }
+
+    function renderWarmupChart(d) {
+      const wrapper = document.getElementById('warmup-chart-wrapper');
+      const empty = document.getElementById('warmup-curve-empty');
+      if (warmupChart) { warmupChart.destroy(); warmupChart = null; }
+      if (!d.events.length) {
+        wrapper.style.display = 'none';
+        empty.style.display = 'block';
+        return;
+      }
+      wrapper.style.display = 'block';
+      empty.style.display = 'none';
+      const COLORS = { poele: '#22c55e', clim: '#a78bfa' };
+      const datasets = [];
+      ['poele', 'clim'].forEach(sys => {
+        const pts = d.events.filter(e => e.system === sys).map(e => ({ x: e.outdoor_avg, y: e.rate, e }));
+        if (!pts.length) return;
+        datasets.push({
+          label: `${SYSTEM_LABELS[sys]} — matins mesurés`, data: pts, type: 'scatter',
+          backgroundColor: COLORS[sys] + '66', borderColor: COLORS[sys], pointRadius: 4,
+        });
+        if (d.curves[sys].length) {
+          datasets.push({
+            label: `${SYSTEM_LABELS[sys]} — courbe apprise`, type: 'line',
+            data: d.curves[sys].map(p => ({ x: p.outdoor, y: p.rate, p })),
+            borderColor: COLORS[sys], backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, tension: 0.3,
+          });
+        }
+      });
+      warmupChart = new Chart(document.getElementById('warmupChart').getContext('2d'), {
+        type: 'scatter',
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, labels: { color: '#8892a4', boxWidth: 12 } },
+            tooltip: {
+              backgroundColor: '#1a1d27', borderColor: '#2a2d3e', borderWidth: 1,
+              titleColor: '#e2e8f0', bodyColor: '#8892a4', padding: 10,
+              callbacks: {
+                label: item => {
+                  const raw = item.raw;
+                  if (raw.e) {
+                    const day = new Date(raw.e.start_ts).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+                    return `${day} : ${raw.e.rate.toFixed(1)} °C/h à ${raw.e.outdoor_avg.toFixed(1)} °C dehors, latence ${raw.e.lag_minutes} min`;
+                  }
+                  return `${raw.p.outdoor} °C dehors : ${raw.p.rate.toFixed(1)} °C/h, latence ${raw.p.lag_minutes} min (${raw.p.events} matins)`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'Température extérieure (°C)', color: '#8892a4', font: { size: 11 } },
+              ticks: { color: '#8892a4' }, grid: { color: 'rgba(42,45,62,0.8)' },
+            },
+            y: {
+              beginAtZero: true,
+              title: { display: true, text: 'Montée (°C/h)', color: '#8892a4', font: { size: 11 } },
+              ticks: { color: '#8892a4' }, grid: { color: 'rgba(42,45,62,0.8)' },
+            },
+          },
+        },
+      });
+    }
+
+    function renderWarmupSummary(d) {
+      const s = d.summary;
+      const el = document.getElementById('warmup-summary');
+      if (!s.mornings) { el.style.display = 'none'; return; }
+      const sim = d.settings.mode !== 'pilot';
+      const period = d.range === 'season' ? 'depuis le ' + fmtDate(d.since) : '30 j';
+      const stats = [
+        { label: `Matins chauffés (${period})`, value: s.mornings, unit: '' },
+        { label: 'Matins avec prévision', value: s.predicted, unit: '' },
+        { label: sim ? 'Chauffe évitable' : 'Chauffe évitée', value: fmtDuration(s.saved_minutes), unit: '' },
+        { label: sim ? 'Gain possible' : 'Gain estimé', value: s.saved_eur.toFixed(2).replace('.', ','), unit: '€' },
+      ];
+      if (s.accuracy_checked) {
+        stats.push({ label: `Prévision juste (± ${s.accuracy_tolerance_minutes} min)`,
+                     value: `${s.accuracy_ok}/${s.accuracy_checked}`,
+                     unit: `· ${Math.round(s.accuracy_ok * 100 / s.accuracy_checked)} %` });
+      }
+      if (!sim && s.comfort_checked) {
+        stats.push({ label: 'Consigne manquée à l\'heure', value: `${s.comfort_missed}/${s.comfort_checked}`, unit: '' });
+      }
+      el.innerHTML = stats.map(st => `
+        <div class="stat-card">
+          <p class="stat-label">${st.label}</p>
+          <p class="stat-value">${st.value}<span class="stat-unit">${st.unit ? ' ' + st.unit : ''}</span></p>
+        </div>`).join('');
+      el.style.display = 'grid';
+    }
+
+    function renderWarmupLog(d) {
+      const table = document.getElementById('warmup-table');
+      const empty = document.getElementById('warmup-log-empty');
+      const rows = d.log.filter(e => e.need_ts);
+      if (!rows.length) { table.style.display = 'none'; empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+      const tempOn = {{ config.THERMOSTAT.get('temp_on', 20.0) | tojson }};
+      document.getElementById('warmup-tbody').innerHTML = rows.map(e => {
+        const real = e.real_minutes;
+        const comfort = e.indoor_at_comfort;
+        const comfortColor = comfort == null ? 'var(--text-sub)' : comfort >= tempOn - 0.2 ? '#22c55e' : '#f87171';
+        return `<tr>
+          <td>${fmtDate(e.day)}</td>
+          <td>${escapeHtml(SYSTEM_LABELS[e.system] || '—')}</td>
+          <td style="color:#60a5fa;">${e.outdoor != null ? e.outdoor.toFixed(1) + ' °C' : '—'}</td>
+          <td style="color:#fb923c;">${e.indoor_need != null ? e.indoor_need.toFixed(1) + ' °C' : '—'}</td>
+          <td>${e.predicted_minutes != null ? fmtDuration(e.predicted_minutes) : '<span style="color:var(--text-sub)" title="Pas assez de matins mesurés à cette température">pas assez de données</span>'}</td>
+          <td>${fmtTime(e.actual_start)}</td>
+          <td>${fmtTime(e.planned_start)}</td>
+          <td>${real != null ? fmtDuration(real) : '—'}</td>
+          <td style="color:${comfortColor};font-weight:600;">${comfort != null ? comfort.toFixed(1) + ' °C' : '—'}</td>
+          <td style="font-weight:600;">${e.saved_minutes ? fmtDuration(e.saved_minutes) : '—'}</td>
+        </tr>`;
+      }).join('');
+      table.style.display = 'table';
+    }
+
+    let warmupRange = '30d';
+
+    async function loadWarmup(range) {
+      warmupRange = range || warmupRange;
+      document.querySelectorAll('[data-wr]').forEach(b => b.classList.toggle('active', b.dataset.wr === warmupRange));
+      let d = null;
+      try {
+        const res = await fetch(`/api/warmup?range=${warmupRange}`);
+        d = res.ok ? await res.json() : null;
+      } catch (e) {
+        console.error('Erreur chargement démarrage optimisé', e);
+      }
+      if (!d) return;
+      document.getElementById('warmup-mode').textContent = WARMUP_MODES[d.settings.mode] || '';
+      const c = d.event_counts;
+      document.getElementById('warmup-counts').textContent = `(${c.poele} matin${c.poele > 1 ? 's' : ''} poêle, ${c.clim} clim)`;
+      renderWarmupSummary(d);
+      renderWarmupChart(d);
+      renderWarmupLog(d);
     }
 
     loadData(24);
     loadDailyTable();
     loadIgnitions();
     loadDiagnose(6);
+    loadWarmup();
   </script>
 {% endblock %}

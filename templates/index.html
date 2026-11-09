@@ -562,8 +562,33 @@
         </div>
       </div>
       {# Allumages du poêle : suivi de l'usure (résistance d'allumage, creuset), rendu par renderIgnitions() #}
-      {% if ignitions %}
-      <div class="ignitions" data-value="ignitions" data-ignitions="{{ ignitions|tojson|forceescape }}"></div>
+      {% if ignitions or (season and season.months) %}
+      <div class="thermo-footer">
+        {% if ignitions %}
+        <div class="ignitions" data-value="ignitions" data-ignitions="{{ ignitions|tojson|forceescape }}"></div>
+        {% endif %}
+        {# Bilan de la saison (rapports mensuels, recalculés chaque nuit) : détail sur /reports #}
+        {% if season and season.months %}
+        {% set _vs_poele = season.all_poele_cost is not none and season.all_poele_cost > season.all_clim_cost %}
+        {% macro _eur(v) %}{{ '%.2f'|format(v|abs)|replace('.', ',') }} €{% endmacro %}
+        <a class="season-savings" href="/reports">
+          <p class="ignitions-title">Bilan de la saison</p>
+          <p class="season-main">
+            <strong class="{{ 'is-positive' if season.savings >= 0 else 'is-negative' }}">{{ '+' if season.savings >= 0 else '−' }}{{ _eur(season.savings) }}</strong>
+            {{ 'économisés' if season.savings >= 0 else 'de surcoût' }} vs tout {{ 'poêle' if _vs_poele else 'clim' }}
+          </p>
+          <p class="season-sub">
+            Chauffage : <strong>{{ _eur(season.cost_total) }}</strong>
+            {% if season.clim_cost is not none %}(poêle {{ _eur(season.poele_cost) }} · clim {{ _eur(season.clim_cost) }}){% endif %}
+          </p>
+          {% if season.savings_vs_all_poele is not none %}
+          {% set _other = season.savings_vs_all_clim if _vs_poele else season.savings_vs_all_poele %}
+          <p class="season-sub">{{ 'Économie' if _other >= 0 else 'Surcoût' }} vs tout {{ 'clim' if _vs_poele else 'poêle' }} : <strong>{{ _eur(_other) }}</strong></p>
+          {% endif %}
+          <p class="season-link">Détail des rapports →</p>
+        </a>
+        {% endif %}
+      </div>
       {% endif %}
       {% if radiateurs_info %}
       <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.07)">

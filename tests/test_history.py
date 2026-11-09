@@ -2,7 +2,7 @@
 
 import pytest
 
-from modules.history import poele_state_for_history
+from modules.history import clim_state_for_history, poele_state_for_history
 
 
 ON_POELE = {"state": "on", "active_system": "poele"}
@@ -24,6 +24,23 @@ class TestPoeleStateForHistory:
         assert poele_state_for_history(real, ON_POELE) == "on"
         assert poele_state_for_history(real, ON_CLIM) == "off"
         assert poele_state_for_history(real, OFF) == "off"
+
+
+class TestClimStateForHistory:
+    def test_not_configured(self):
+        assert clim_state_for_history("heat", ON_CLIM, configured=False) is None
+
+    def test_only_heat_counts(self):
+        # Mode froid ou ventilation : pas du chauffage
+        assert clim_state_for_history("heat", OFF, True) == "on"
+        for real in ("off", "cool", "fan_only", "dry"):
+            assert clim_state_for_history(real, ON_CLIM, True) == "off"
+
+    @pytest.mark.parametrize("real", [None, "unavailable", "unknown"])
+    def test_fallback_to_thermostat_when_ha_unavailable(self, real):
+        assert clim_state_for_history(real, ON_CLIM, True) == "on"
+        assert clim_state_for_history(real, ON_POELE, True) == "off"
+        assert clim_state_for_history(real, OFF, True) == "off"
 
 
 from datetime import date, datetime
@@ -61,7 +78,8 @@ class TestPelletDaily:
             history.record(5.0, 20.0, "on", "BLUE")
             history.purge_old(30)
             assert history.get_history(24 * 120) == [
-                {"ts": "2026-10-20T10:00:00", "outdoor_temp": 5.0, "indoor_temp": 20.0, "poele_state": "on", "tempo_color": "BLUE"}
+                {"ts": "2026-10-20T10:00:00", "outdoor_temp": 5.0, "indoor_temp": 20.0, "poele_state": "on",
+                 "tempo_color": "BLUE", "clim_state": None}
             ]
             data = history.get_pellet_consumption_since("2026-07-01")
         assert data["total_on_minutes"] == 70
@@ -242,3 +260,124 @@ class TestAggregateMonth:
     def test_no_readings_returns_false(self):
         assert history.aggregate_month("2026-11", self.CFG) is False
         assert history.get_monthly_reports() == []
+
+    def _record_clim(self, ts, outdoor, poele, clim, color):
+        from freezegun import freeze_time
+        with freeze_time(ts):
+            history.record(outdoor, 20.0, poele, color, clim)
+
+    def test_clim_costs(self):
+        # 1 h de clim en HP Bleu à 0 °C (COP 2) puis 1 h de poêle
+        for i in range(6):
+            self._record_clim(f"2026-11-03 10:{i}0:00", 0.0, "off", "on", "BLUE")
+        for i in range(6):
+            self._record_clim(f"2026-11-03 14:{i}0:00", 0.0, "on", "off", "BLUE")
+        assert history.aggregate_month("2026-11", self.CFG)
+        r = history.get_monthly_reports(1)[0]
+        assert r["clim_on_minutes"] == 60
+        assert r["estimated_clim_cost"] == 0.4          # 1 h × 4 kW / 2 × 0,20 €
+        assert r["estimated_poele_equiv_cost"] == 0.6   # 1 h × 1 kg/h × 0,60 €
+        assert r["estimated_poele_cost"] == 0.6
+        assert r["estimated_clim_equiv_cost"] == 0.4
+        assert r["heating_days"] == 1
+
+    def test_clim_not_tracked(self):
+        self._record("2026-11-03 10:00:00", 0.0, "on", "BLUE")
+        assert history.aggregate_month("2026-11", self.CFG)
+        r = history.get_monthly_reports(1)[0]
+        assert (r["clim_on_minutes"], r["estimated_clim_cost"], r["estimated_poele_equiv_cost"]) == (None, None, None)
+
+
+class TestClimDaily:
+    """Minutes et kWh estimés de la clim par jour, jamais purgés (part de la clim sur /electricity)."""
+
+    CLIM = {"nominal_capacity_kw": 4.0, "cop_curve": [(0, 2.0), (10, 4.0)]}
+
+    @pytest.fixture(autouse=True)
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(history, "DB_FILE", str(tmp_path / "history.db"))
+
+    def test_refresh_and_survives_purge(self):
+        from freezegun import freeze_time
+        with freeze_time("2026-08-01 10:00:00"):
+            for _ in range(3):
+                history.record(0.0, 20.0, "off", "BLUE", "on")      # 3 × 10 min à 2 kW
+            history.record(0.0, 20.0, "off", "BLUE", "off")
+        with freeze_time("2026-08-02 10:00:00"):
+            history.record(0.0, 20.0, "on", "BLUE", "off")           # jour suivi, clim à l'arrêt
+        with freeze_time("2026-08-03 10:00:00"):
+            history.record(0.0, 20.0, "on", "BLUE", None)            # jour non suivi
+        history.refresh_clim_daily(self.CLIM)
+        assert history.get_clim_daily("2026-07-01") == {"2026-08-01": 1.0, "2026-08-02": 0.0}
+        assert history.clim_tracking_since() == "2026-08-01"
+        with freeze_time("2026-10-20 10:00:00"):
+            history.purge_old(30)
+        history.refresh_clim_daily(self.CLIM)
+        assert history.get_clim_daily("2026-07-01") == {"2026-08-01": 1.0, "2026-08-02": 0.0}
+
+    def test_migration_backfills_from_diagnose_log(self):
+        import sqlite3
+        from modules import migrate
+        conn = sqlite3.connect(history.DB_FILE)
+        for fn in migrate.MIGRATIONS[:8]:
+            fn(conn)
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+        conn.executemany("INSERT INTO schema_version VALUES (?, '2026-01-01')", [(i,) for i in range(1, 9)])
+        conn.executemany("INSERT INTO readings (ts, poele_state) VALUES (?, 'off')", [
+            ("2026-11-01T10:00:00",), ("2026-11-09T10:00:00",), ("2026-11-09T10:10:00",),
+            ("2026-11-09T10:20:00",), ("2026-11-09T10:30:00",),
+        ])
+        conn.executemany("INSERT INTO diagnose_log (ts, clim_real_state) VALUES (?, ?)", [
+            ("2026-11-09T10:01:30", "heat"), ("2026-11-09T10:09:00", "off"),
+            ("2026-11-09T10:21:00", "unavailable"),
+        ])
+        conn.commit(); conn.close()
+        states = {r["ts"]: r["clim_state"] for r in _all_readings()}
+        assert states == {
+            "2026-11-01T10:00:00": None,   # avant le journal de diagnostic
+            "2026-11-09T10:00:00": "on",
+            "2026-11-09T10:10:00": "off",  # point le plus proche : 10:09
+            "2026-11-09T10:20:00": None,   # état inconnu
+            "2026-11-09T10:30:00": None,   # aucun point à ±5 min
+        }
+
+
+def _all_readings():
+    import sqlite3
+    history.init_db()
+    with sqlite3.connect(history.DB_FILE) as conn:
+        return [{"ts": ts, "clim_state": st} for ts, st in conn.execute("SELECT ts, clim_state FROM readings")]
+
+
+class TestSeasonBalance:
+    def _month(self, month, poele_cost, clim_equiv, clim_cost=None, poele_equiv=None, poele_min=600, clim_min=None):
+        return {"month": month, "estimated_poele_cost": poele_cost, "estimated_clim_equiv_cost": clim_equiv,
+                "estimated_clim_cost": clim_cost, "estimated_poele_equiv_cost": poele_equiv,
+                "poele_on_minutes": poele_min, "clim_on_minutes": clim_min, "updated_at": f"{month}-28T02:30:00"}
+
+    def test_mixed_season(self):
+        reports = [
+            self._month("2026-11", 20.0, 30.0, clim_cost=5.0, poele_equiv=8.0, clim_min=300),
+            self._month("2026-10", 10.0, 12.0),                       # clim pas encore suivie
+            self._month("2026-08", 99.0, 99.0),                       # saison précédente
+        ]
+        b = history.season_balance(reports, date(2026, 11, 9))
+        assert b["months"] == 2
+        assert b["cost_total"] == 35.0                  # 20 + 10 + 5
+        assert b["all_clim_cost"] == 47.0               # 30 + 12 + 5
+        assert b["all_poele_cost"] == 38.0              # 30 + 8
+        assert b["savings_vs_all_clim"] == 12.0
+        assert b["savings_vs_all_poele"] == 3.0
+        assert b["savings"] == 12.0                     # vs le plus cher des deux
+        assert (b["poele_minutes"], b["clim_minutes"]) == (1200, 300)
+        assert b["avg_cost_per_heated_month"] == 17.5
+        assert b["updated_at"] == "2026-11-28T02:30:00"
+
+    def test_clim_never_tracked(self):
+        b = history.season_balance([self._month("2026-11", 20.0, 30.0)], date(2026, 11, 9))
+        assert b["clim_cost"] is None and b["all_poele_cost"] is None and b["savings_vs_all_poele"] is None
+        assert b["savings"] == 10.0
+
+    def test_empty(self):
+        b = history.season_balance([], date(2026, 11, 9))
+        assert b["months"] == 0 and b["avg_cost_per_heated_month"] is None

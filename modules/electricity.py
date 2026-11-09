@@ -288,3 +288,28 @@ def fetch_new_readings(electricity_cfg: dict) -> dict:
         return {"status": "error", "reason": str(e)}
     finally:
         imap_client.close_connection(conn)
+
+
+def with_clim_estimate(readings: list, clim_kwh_by_day: dict) -> list:
+    """Ajoute à chaque lecture la part estimée de la clim : `clim_kwh` (somme de clim_daily sur la
+    période, bornes incluses) et `clim_share` (% du total). None si un jour de la période n'est pas
+    suivi (avant l'historisation de la clim) ou si la lecture n'a pas de période."""
+    result = []
+    for r in readings:
+        clim_kwh = share = None
+        if r.get("period_start") and r.get("period_end"):
+            try:
+                day = datetime.strptime(r["period_start"], "%Y-%m-%d")
+                end = datetime.strptime(r["period_end"], "%Y-%m-%d")
+                days = []
+                while day <= end:
+                    days.append(day.strftime("%Y-%m-%d"))
+                    day += timedelta(days=1)
+                if days and all(d in clim_kwh_by_day for d in days):
+                    clim_kwh = round(sum(clim_kwh_by_day[d] for d in days), 1)
+                    if r.get("kwh"):
+                        share = round(min(clim_kwh / r["kwh"], 1) * 100)
+            except ValueError:
+                pass
+        result.append({**r, "clim_kwh": clim_kwh, "clim_share": share})
+    return result

@@ -70,11 +70,39 @@ def poele_state_for_history(real_state: str | None, thermostat_state: dict) -> s
     return "on" if thermostat_state.get("state") == "on" and active in (None, "poele") else "off"
 
 
+def clim_state_for_history(real_state: str | None, thermostat_state: dict, configured: bool) -> str | None:
+    """État de la clim à historiser : "on" si elle chauffe (mode HA « heat »), "off" sinon,
+    None si la clim n'est pas configurée. Repli sur l'état du thermostat si HA ne répond pas."""
+    if not configured:
+        return None
+    if real_state not in (None, "unavailable", "unknown"):
+        return "on" if real_state == "heat" else "off"
+    on = thermostat_state.get("state") == "on" and thermostat_state.get("active_system") == "clim"
+    return "on" if on else "off"
+
+
 def _is_on(poele_state: str | None) -> bool:
     return poele_state in ("on", "poele")
 
 
-def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None) -> bool:
+# Température extérieure retenue pour le COP quand une lecture n'en a pas (rare : plusieurs sources de secours)
+CLIM_FALLBACK_OUTDOOR_TEMP = 7.0
+
+
+def clim_electric_kw(outdoor_temp, clim_cfg: dict) -> float:
+    """Puissance électrique estimée de la clim (kW) : puissance thermique nominale ÷ COP de la courbe.
+    Estimation haute : une clim inverter module sa puissance."""
+    temp = outdoor_temp if outdoor_temp is not None else CLIM_FALLBACK_OUTDOOR_TEMP
+    cop = max(interpolate_cop(temp, clim_cfg.get("cop_curve", [])), 1.0)
+    return clim_cfg.get("nominal_capacity_kw", 4.0) / cop
+
+
+def _elec_price(tempo_prices: dict, color: str | None, period: str) -> float:
+    return tempo_prices.get(color or "BLUE", tempo_prices.get("BLUE", {})).get(period, 0.15)
+
+
+def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None,
+           clim_state: str | None = None) -> bool:
     """Insère une lecture. Appelé par le scheduler toutes les ~10 min.
     Retourne True si la lecture correspond à un allumage (lecture précédente « off »)."""
     now = datetime.now()
@@ -83,8 +111,9 @@ def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None)
             prev = conn.execute("SELECT poele_state FROM readings ORDER BY ts DESC LIMIT 1").fetchone()
             ignited = _is_on(poele_state) and prev is not None and prev[0] == "off"
             conn.execute(
-                "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state, tempo_color) VALUES (?, ?, ?, ?, ?)",
-                (now.isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color),
+                "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (now.isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state),
             )
             # Cumul journalier non purgé (stock de granulés) : une lecture = 10 min
             conn.execute(
@@ -93,8 +122,8 @@ def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None)
                 "ignitions = ignitions + excluded.ignitions",
                 (now.strftime("%Y-%m-%d"), 10 if _is_on(poele_state) else 0, 1 if ignited else 0),
             )
-        logger.debug("History : enregistrement outdoor=%.1f indoor=%s poele=%s tempo=%s",
-                     outdoor_temp or 0, indoor_temp, poele_state, tempo_color)
+        logger.debug("History : enregistrement outdoor=%.1f indoor=%s poele=%s clim=%s tempo=%s",
+                     outdoor_temp or 0, indoor_temp, poele_state, clim_state, tempo_color)
         if ignited:
             logger.info("History : allumage du poêle détecté")
         return ignited
@@ -152,11 +181,13 @@ def get_history(hours: int = 24) -> list[dict]:
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT ts, outdoor_temp, indoor_temp, poele_state, tempo_color FROM readings WHERE ts >= ? ORDER BY ts",
+                "SELECT ts, outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state "
+                "FROM readings WHERE ts >= ? ORDER BY ts",
                 (since,),
             ).fetchall()
         return [
-            {"ts": r[0], "outdoor_temp": r[1], "indoor_temp": r[2], "poele_state": r[3], "tempo_color": r[4]}
+            {"ts": r[0], "outdoor_temp": r[1], "indoor_temp": r[2], "poele_state": r[3], "tempo_color": r[4],
+             "clim_state": r[5]}
             for r in rows
         ]
     except Exception as e:
@@ -178,6 +209,8 @@ def get_daily_summary(days: int = 30) -> list[dict]:
                     substr(ts, 1, 10) AS day,
                     SUM(CASE WHEN poele_state IN ('on', 'poele') THEN 1 ELSE 0 END) * 10 AS on_minutes,
                     SUM(CASE WHEN poele_state = 'off' THEN 1 ELSE 0 END) * 10 AS off_minutes,
+                    SUM(CASE WHEN clim_state = 'on' THEN 1 ELSE 0 END) * 10 AS clim_on_minutes,
+                    COUNT(clim_state) AS clim_known,
                     AVG(outdoor_temp) AS avg_outdoor,
                     AVG(indoor_temp)  AS avg_indoor
                 FROM readings
@@ -209,11 +242,13 @@ def get_daily_summary(days: int = 30) -> list[dict]:
                 "date": day,
                 "on_minutes": on_min,
                 "off_minutes": off_min,
+                # None : jour sans suivi de la clim (avant son historisation ou clim non configurée)
+                "clim_on_minutes": clim_min if clim_known else None,
                 "tempo_color": dominant_color.get(day),
                 "avg_outdoor_temp": round(avg_out, 1) if avg_out is not None else None,
                 "avg_indoor_temp": round(avg_in, 1) if avg_in is not None else None,
             }
-            for day, on_min, off_min, avg_out, avg_in in rows
+            for day, on_min, off_min, clim_min, clim_known, avg_out, avg_in in rows
         ]
     except Exception as e:
         logger.error("History : erreur résumé journalier : %s", e)
@@ -360,7 +395,6 @@ def aggregate_month(year_month: str, config: dict) -> bool:
     tempo_prices = config.get("TEMPO_PRICES", {})
     hp_start = config.get("HP_START", 6)
     hp_end = config.get("HP_END", 22)
-    cop_curve = clim_cfg.get("cop_curve", [])
 
     poele_cost_per_hour = 0
     if poele_cfg:
@@ -371,7 +405,7 @@ def aggregate_month(year_month: str, config: dict) -> bool:
         with _connect() as conn:
             # 1. Readings pour le mois
             readings = conn.execute(
-                "SELECT ts, outdoor_temp, indoor_temp, poele_state, tempo_color "
+                "SELECT ts, outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state "
                 "FROM readings WHERE ts >= ? AND ts < ? ORDER BY ts",
                 (month_start, month_end),
             ).fetchall()
@@ -384,12 +418,16 @@ def aggregate_month(year_month: str, config: dict) -> bool:
             poele_on_count = 0
             total_poele_cost = 0.0
             total_clim_equiv_cost = 0.0
+            clim_on_count = 0
+            clim_known = 0
+            total_clim_cost = 0.0
+            total_poele_equiv_cost = 0.0
             outdoor_temps = []
             indoor_temps = []
             heating_days_set = set()
             tempo_day_colors = {}  # day -> {color: count}
 
-            for ts, outdoor_temp, indoor_temp, poele_state, tempo_color in readings:
+            for ts, outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state in readings:
                 day = ts[:10]
                 hour = int(ts[11:13])
                 period = "HP" if hp_start <= hour < hp_end else "HC"
@@ -413,13 +451,18 @@ def aggregate_month(year_month: str, config: dict) -> bool:
                 # Coût clim équivalent (pour toutes les lectures où le poêle est on
                 # OU où du chauffage est nécessaire)
                 if poele_state in ("on", "poele") and outdoor_temp is not None:
-                    color = tempo_color or "BLUE"
-                    elec_price = tempo_prices.get(color, tempo_prices.get("BLUE", {})).get(period, 0.15)
-                    cop = interpolate_cop(outdoor_temp, cop_curve)
-                    cop = max(cop, 1.0)
-                    thermal_kw = clim_cfg.get("nominal_capacity_kw", 4.0)
-                    electric_kw = thermal_kw / cop
-                    total_clim_equiv_cost += (10 / 60) * electric_kw * elec_price
+                    elec_price = _elec_price(tempo_prices, tempo_color, period)
+                    total_clim_equiv_cost += (10 / 60) * clim_electric_kw(outdoor_temp, clim_cfg) * elec_price
+
+                # Clim réelle (en chauffe) : coût estimé, et coût du poêle s'il avait chauffé à sa place
+                if clim_state is not None:
+                    clim_known += 1
+                if clim_state == "on":
+                    clim_on_count += 1
+                    heating_days_set.add(day)
+                    elec_price = _elec_price(tempo_prices, tempo_color, period)
+                    total_clim_cost += (10 / 60) * clim_electric_kw(outdoor_temp, clim_cfg) * elec_price
+                    total_poele_equiv_cost += (10 / 60) * poele_cost_per_hour
 
             # 2. Recommandations depuis diagnose_log
             diag_rows = conn.execute(
@@ -455,8 +498,8 @@ def aggregate_month(year_month: str, config: dict) -> bool:
                     tempo_blue_days, tempo_white_days, tempo_red_days,
                     estimated_poele_cost, estimated_clim_equiv_cost,
                     rec_poele_minutes, rec_clim_minutes, rec_none_minutes,
-                    updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    updated_at, clim_on_minutes, estimated_clim_cost, estimated_poele_equiv_cost)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     year_month,
                     total_readings,
@@ -473,11 +516,16 @@ def aggregate_month(year_month: str, config: dict) -> bool:
                     rec_clim,
                     rec_none,
                     datetime.now().isoformat(timespec="seconds"),
+                    # None : clim non suivie ce mois-là (avant son historisation ou non configurée)
+                    clim_on_count * 10 if clim_known else None,
+                    round(total_clim_cost, 2) if clim_known else None,
+                    round(total_poele_equiv_cost, 2) if clim_known else None,
                 ),
             )
-            logger.info("Agrégation %s : %d lectures, poêle %d min, coût poêle %.2f€, clim equiv %.2f€",
+            logger.info("Agrégation %s : %d lectures, poêle %d min, coût poêle %.2f€, clim equiv %.2f€, "
+                        "clim %d min, coût clim %.2f€",
                          year_month, total_readings, poele_on_count * 10,
-                         total_poele_cost, total_clim_equiv_cost)
+                         total_poele_cost, total_clim_equiv_cost, clim_on_count * 10, total_clim_cost)
             return True
 
     except Exception as e:
@@ -495,7 +543,7 @@ def get_monthly_reports(months: int = 24) -> list[dict]:
                           tempo_blue_days, tempo_white_days, tempo_red_days,
                           estimated_poele_cost, estimated_clim_equiv_cost,
                           rec_poele_minutes, rec_clim_minutes, rec_none_minutes,
-                          updated_at
+                          updated_at, clim_on_minutes, estimated_clim_cost, estimated_poele_equiv_cost
                    FROM monthly_reports
                    ORDER BY month DESC
                    LIMIT ?""",
@@ -518,9 +566,101 @@ def get_monthly_reports(months: int = 24) -> list[dict]:
                 "rec_clim_minutes": r[12],
                 "rec_none_minutes": r[13],
                 "updated_at": r[14],
+                "clim_on_minutes": r[15],
+                "estimated_clim_cost": r[16],
+                "estimated_poele_equiv_cost": r[17],
             }
             for r in rows
         ]
     except Exception as e:
         logger.error("Lecture monthly_reports échouée : %s", e)
         return []
+
+
+def refresh_clim_daily(clim_cfg: dict) -> None:
+    """Recalcule clim_daily (minutes de chauffe et kWh estimés par jour) pour les jours encore présents
+    dans readings. Les jours purgés de readings gardent leur dernière valeur : clim_daily n'est jamais purgée.
+    Lancé au démarrage et chaque nuit avec l'agrégation mensuelle."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT substr(ts, 1, 10), outdoor_temp FROM readings WHERE clim_state = 'on'"
+            ).fetchall()
+            known_days = [r[0] for r in conn.execute(
+                "SELECT DISTINCT substr(ts, 1, 10) FROM readings WHERE clim_state IS NOT NULL"
+            ).fetchall()]
+            totals = {day: [0, 0.0] for day in known_days}
+            for day, outdoor_temp in rows:
+                totals[day][0] += 10
+                totals[day][1] += (10 / 60) * clim_electric_kw(outdoor_temp, clim_cfg)
+            conn.executemany(
+                "INSERT INTO clim_daily (day, on_minutes, kwh) VALUES (?, ?, ?) "
+                "ON CONFLICT(day) DO UPDATE SET on_minutes = excluded.on_minutes, kwh = excluded.kwh",
+                [(day, m, round(k, 3)) for day, (m, k) in totals.items()],
+            )
+    except Exception as e:
+        logger.error("History : erreur recalcul clim_daily : %s", e)
+
+
+def get_clim_daily(since_date: str) -> dict:
+    """{jour: kWh estimés} de la clim depuis une date (clim_daily, jours suivis uniquement)."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute("SELECT day, kwh FROM clim_daily WHERE day >= ? ORDER BY day",
+                                (since_date,)).fetchall()
+        return {day: kwh for day, kwh in rows}
+    except Exception as e:
+        logger.error("History : erreur lecture clim_daily : %s", e)
+        return {}
+
+
+def clim_tracking_since() -> str | None:
+    """Premier jour où l'état de la clim est connu (début de son historisation), None si jamais suivie."""
+    try:
+        with _connect() as conn:
+            row = conn.execute("SELECT MIN(day) FROM clim_daily").fetchone()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error("History : erreur lecture début du suivi clim : %s", e)
+        return None
+
+
+def season_balance(reports: list[dict], today: date | None = None) -> dict:
+    """Bilan de la saison de chauffe en cours (1er septembre → 31 août) à partir des rapports mensuels.
+
+    - cost_total : coût estimé réel (poêle + clim) ;
+    - savings_vs_all_clim : coût si la clim avait chauffé à la place du poêle, moins le coût réel ;
+    - savings_vs_all_poele : coût si le poêle avait chauffé à la place de la clim, moins le coût réel
+      (None tant que la clim n'est pas suivie) ;
+    - savings : économie par rapport au plus cher des deux scénarios « un seul système ».
+    Durées égales dans chaque scénario : même approximation que la colonne « Clim équiv. »."""
+    start = season_start(today or date.today())
+    first, last = start.strftime("%Y-%m"), f"{start.year + 1}-08"
+    months = [r for r in reports if first <= r["month"] <= last]
+    clim_tracked = any(r.get("clim_on_minutes") is not None for r in months)
+
+    def total(key):
+        return sum(r.get(key) or 0 for r in months)
+
+    poele_cost, clim_cost = total("estimated_poele_cost"), total("estimated_clim_cost")
+    cost_total = poele_cost + clim_cost
+    all_clim = total("estimated_clim_equiv_cost") + clim_cost
+    all_poele = poele_cost + total("estimated_poele_equiv_cost") if clim_tracked else None
+    worst = max(all_clim, all_poele) if all_poele is not None else all_clim
+    heated = [r for r in months if (r.get("poele_on_minutes") or 0) + (r.get("clim_on_minutes") or 0) > 0]
+    return {
+        "season_start": start.isoformat(),
+        "months": len(months),
+        "poele_minutes": total("poele_on_minutes"),
+        "clim_minutes": total("clim_on_minutes") if clim_tracked else None,
+        "poele_cost": round(poele_cost, 2),
+        "clim_cost": round(clim_cost, 2) if clim_tracked else None,
+        "cost_total": round(cost_total, 2),
+        "all_clim_cost": round(all_clim, 2),
+        "all_poele_cost": round(all_poele, 2) if all_poele is not None else None,
+        "savings_vs_all_clim": round(all_clim - cost_total, 2),
+        "savings_vs_all_poele": round(all_poele - cost_total, 2) if all_poele is not None else None,
+        "savings": round(worst - cost_total, 2),
+        "avg_cost_per_heated_month": round(cost_total / len(heated), 2) if heated else None,
+        "updated_at": max((r.get("updated_at") or "" for r in months), default="") or None,
+    }

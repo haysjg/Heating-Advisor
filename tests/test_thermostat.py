@@ -956,3 +956,59 @@ class TestSensorSafeguards:
         store["state"]["system_history"]["poele"]["last_turned_on"] = "2025-01-06T09:30:00"
         poele_off, _ = self._run(base_ha_cfg, {**base_thermostat_cfg, "overheat_margin": 1.0}, indoor_temp=24.0)
         poele_off.assert_called_once()
+
+
+class TestOptimalStart:
+    """Démarrage optimisé : en pilotage, l'allumage du matin est retardé ; en simulation, jamais."""
+
+    @pytest.fixture
+    def store(self):
+        data = {"state": {
+            "state": "off", "active_system": None, "sensor_failures": 0, "suspended_until": None,
+            "system_history": {"poele": {"last_turned_on": None, "last_turned_off": None},
+                               "clim": {"last_turned_on": None, "last_turned_off": None}},
+        }}
+        with patch("modules.thermostat._load_state", side_effect=lambda: dict(data["state"])), \
+             patch("modules.thermostat._save_state", side_effect=lambda s: data.__setitem__("state", s)), \
+             patch("modules.thermostat.is_on_vacation", return_value=False), \
+             patch("modules.thermostat.is_in_absence_schedule", return_value=False), \
+             patch("modules.warmup.get_events", return_value=[
+                 {"start_ts": f"2025-01-0{i}T05:45:00", "system": "poele", "outdoor_avg": 5.0, "indoor_start": 18.0,
+                  "indoor_peak": 19.5, "lag_minutes": 15, "rate": 2.0} for i in range(1, 4)]):
+            yield data
+
+    def _run(self, cfg, base_ha_cfg, now, indoor_temp):
+        with freeze_time(now), \
+             patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": indoor_temp, "humidity": 50.0}), \
+             patch("modules.homeassistant.get_state", return_value={"state": "off"}), \
+             patch("modules.homeassistant.is_clim_configured", return_value=False), \
+             patch("modules.homeassistant.turn_on", return_value=True) as poele_on, \
+             patch("modules.ntfy_push.send"):
+            check_and_apply(base_ha_cfg, cfg, "poele", ntfy_cfg={"enabled": True}, outdoor_temp=5.0,
+                            cost_per_hour={"poele": 0.42, "clim": 0.2})
+        return poele_on
+
+    def _cfg(self, base_thermostat_cfg, mode):
+        schedule = {**base_thermostat_cfg["schedule"], "mon": {"start": "05:45", "end": "22:00", "comfort": "06:30"}}
+        return {**base_thermostat_cfg, "schedule": schedule, "optimal_start": {"mode": mode, "safety_margin_minutes": 15}}
+
+    def test_pilot_delays_then_ignites(self, store, base_ha_cfg, base_thermostat_cfg):
+        cfg = self._cfg(base_thermostat_cfg, "pilot")
+        # Ressenti 19,9 °C : 15 + 3 min + 15 de marge → au plus tard 05:57
+        self._run(cfg, base_ha_cfg, "2025-01-06 05:45:00", 19.9).assert_not_called()
+        assert store["state"]["state"] == "off"
+        self._run(cfg, base_ha_cfg, "2025-01-06 05:50:00", 19.9).assert_called_once()
+        assert store["state"]["state"] == "on"
+
+    def test_simulation_never_delays(self, store, base_ha_cfg, base_thermostat_cfg):
+        cfg = self._cfg(base_thermostat_cfg, "simulation")
+        self._run(cfg, base_ha_cfg, "2025-01-06 05:45:00", 19.9).assert_called_once()
+
+    def test_pilot_outside_morning_window(self, store, base_ha_cfg, base_thermostat_cfg):
+        cfg = self._cfg(base_thermostat_cfg, "pilot")
+        self._run(cfg, base_ha_cfg, "2025-01-06 10:00:00", 19.9).assert_called_once()
+
+    def test_error_never_blocks(self, store, base_ha_cfg, base_thermostat_cfg):
+        cfg = self._cfg(base_thermostat_cfg, "pilot")
+        with patch("modules.warmup.plan", side_effect=RuntimeError("boom")):
+            self._run(cfg, base_ha_cfg, "2025-01-06 05:45:00", 19.9).assert_called_once()

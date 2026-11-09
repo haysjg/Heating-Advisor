@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import secrets as _secrets
 from datetime import date, datetime, timedelta
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
@@ -31,6 +32,7 @@ import modules.homeassistant as ha_client
 from modules import jsonstore
 import modules.thermostat as thermostat_module
 import modules.history as history_module
+import modules.warmup as warmup_module
 import modules.radiateurs as radiateurs_module
 import modules.presence_watch as presence_watch
 import modules.source_watch as source_watch
@@ -485,6 +487,8 @@ def api_mfa_recovery_codes():
 # ── Base SQLite : migrations appliquées une seule fois, avant le démarrage des jobs ──
 try:
     history_module.init_db()
+    history_module.refresh_clim_daily(config.CLIM)
+    warmup_module.refresh_events()
 except Exception as e:
     logger.error("Migration de la base échouée : %s", e)
 
@@ -539,7 +543,10 @@ def _record_history():
         poele_ha = ha_client.get_state(config.HOME_ASSISTANT)
         heating_state = history_module.poele_state_for_history(poele_ha.get("state") if poele_ha else None, th_state)
         tempo_color = data.get("tempo", {}).get("today", {}).get("color")
-        if history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color):
+        clim_ha = ha_client.get_clim_state(config.HOME_ASSISTANT)
+        clim_state = history_module.clim_state_for_history(
+            clim_ha.get("state") if clim_ha else None, th_state, ha_client.is_clim_configured(config.HOME_ASSISTANT))
+        if history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color, clim_state):
             _notify_ignitions()
         pellet_refill.tick(heating_state == "on", _pellet_cycle_hours(), config.EMAIL, config.NTFY)
     except Exception as e:
@@ -651,7 +658,9 @@ def _run_thermostat():
         thermostat_module.check_and_apply(config.HOME_ASSISTANT, config.THERMOSTAT, recommendation, config.EMAIL,
                                           ntfy_cfg=config.NTFY, outdoor_temp=outdoor_temp,
                                           comfort_min_temp=config.CLIM.get("comfort_min_temp"),
-                                          clim_fallback_ok=clim_fallback_ok)
+                                          clim_fallback_ok=clim_fallback_ok,
+                                          cost_per_hour={s: (data.get(s) or {}).get("cost_per_hour")
+                                                         for s in ("poele", "clim")})
     except Exception as e:
         logger.error("Thermostat check échoué : %s", e)
 
@@ -853,6 +862,8 @@ def _run_monthly_aggregation():
         prev = now.replace(day=1) - timedelta(days=1)
         prev_month = prev.strftime("%Y-%m")
         history_module.aggregate_month(prev_month, cfg)
+        history_module.refresh_clim_daily(config.CLIM)
+        warmup_module.refresh_events()
     except Exception as e:
         logger.error("Agrégation mensuelle échouée : %s", e)
 
@@ -997,7 +1008,8 @@ def index():
                                weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
                                poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL,
                                next_check=_next_thermostat_check(),
-                               pellet=_pellet_status(), ignitions=_ignition_status())
+                               pellet=_pellet_status(), ignitions=_ignition_status(),
+                               season=history_module.season_balance(history_module.get_monthly_reports(12)))
     except Exception as e:
         error = _internal_error_message(_log_internal_error(e))
         return render_template("index.html", data=None, error=error, config=config, thermostat_state={},
@@ -1716,6 +1728,42 @@ def api_reports_monthly():
         return _internal_error(e)
 
 
+@app.route("/api/reports/season")
+def api_reports_season():
+    """Bilan de la saison en cours : coûts poêle + clim et économies par rapport aux scénarios « un seul système »."""
+    try:
+        return jsonify({**history_module.season_balance(history_module.get_monthly_reports(12)),
+                        "clim_tracking_since": history_module.clim_tracking_since()})
+    except Exception as e:
+        return _internal_error(e)
+
+
+@app.route("/api/warmup")
+def api_warmup():
+    """Démarrage optimisé : courbes apprises (vitesse de montée par température extérieure),
+    montées mesurées, journal des matins et bilan."""
+    try:
+        events = warmup_module.get_events()
+        season = request.args.get("range") == "season"
+        since = history_module.season_start(date.today()) if season else None
+        log = warmup_module.get_log(30, since=since)
+        for entry in log:
+            entry["saved_minutes"] = warmup_module.saved_minutes(entry)
+            entry["real_minutes"] = warmup_module.real_minutes(entry)
+        return jsonify({
+            "range": "season" if season else "30d",
+            "since": (since or date.today() - timedelta(days=30)).isoformat(),
+            "settings": warmup_module.settings(config.THERMOSTAT),
+            "curves": {s: warmup_module.curve(events, s) for s in ("poele", "clim")},
+            "events": events[-500:],
+            "event_counts": {s: sum(1 for e in events if e["system"] == s) for s in ("poele", "clim")},
+            "log": log,
+            "summary": warmup_module.summarize(log, config.THERMOSTAT.get("temp_on", 20.0)),
+        })
+    except Exception as e:
+        return _internal_error(e)
+
+
 @app.route("/api/reports/aggregate-now", methods=["POST"])
 def api_reports_aggregate_now():
     """Déclenche manuellement l'agrégation du mois en cours et du mois précédent."""
@@ -1751,7 +1799,9 @@ def api_electricity_history():
         else:
             weeks = min(max(int(weeks_param), 1), 260)
             data = electricity_module.get_readings(weeks=weeks)
-        return jsonify(data)
+        since = min((r["period_start"] for r in data if r.get("period_start")), default=None)
+        clim_daily = history_module.get_clim_daily(since) if since else {}
+        return jsonify(electricity_module.with_clim_estimate(data, clim_daily))
     except Exception as e:
         return _internal_error(e)
 
@@ -1862,6 +1912,35 @@ def _secret_rebind_error(data: dict) -> str | None:
         if _norm(data[host_field]) != _norm(section.get(host_key)):
             return f"{message} (le secret enregistré n'est jamais envoyé à un nouveau serveur)"
     return None
+
+
+def _optimal_start_settings(data: dict) -> dict:
+    """Réglages du démarrage optimisé envoyés par /config (mode, marge de sécurité)."""
+    current = warmup_module.settings(config.THERMOSTAT)
+    mode = data.get("optimal_start_mode", current["mode"])
+    if mode not in warmup_module.MODES:
+        raise ValueError("Mode de démarrage optimisé inconnu")
+    margin = int(data.get("optimal_start_margin", current["safety_margin_minutes"]))
+    if not 0 <= margin <= 120:
+        raise ValueError("Marge du démarrage optimisé : entre 0 et 120 min")
+    return {"mode": mode, "safety_margin_minutes": margin}
+
+
+def _schedule_with_comfort(schedule: dict) -> dict:
+    """Plages du thermostat : l'heure de confort (démarrage optimisé) est facultative ; vide = début + 45 min.
+    Refusée si elle n'est pas après le début de la plage."""
+    result = {}
+    for day, sched in (schedule or {}).items():
+        sched = dict(sched or {})
+        comfort = str(sched.get("comfort") or "").strip()
+        if not comfort:
+            sched.pop("comfort", None)
+        elif not re.fullmatch(r"\d{2}:\d{2}", comfort) or comfort <= str(sched.get("start", "")):
+            raise ValueError(f"Heure de confort ({day}) : format HH:MM, après le début de la plage")
+        else:
+            sched["comfort"] = comfort
+        result[day] = sched
+    return result
 
 
 @app.route("/api/config", methods=["POST"])
@@ -2017,7 +2096,8 @@ def api_config_save():
                 "use_felt_temperature": bool(data.get("thermostat_use_felt", config.THERMOSTAT.get("use_felt_temperature", True))),
                 "humidity_reference": float(data.get("thermostat_humidity_ref", config.THERMOSTAT.get("humidity_reference", 50.0))),
                 "humidity_correction_factor": float(data.get("thermostat_humidity_factor", config.THERMOSTAT.get("humidity_correction_factor", 0.05))),
-                "schedule": data.get("thermostat_schedule", config.THERMOSTAT.get("schedule", {})),
+                "schedule": _schedule_with_comfort(data.get("thermostat_schedule", config.THERMOSTAT.get("schedule", {}))),
+                "optimal_start": _optimal_start_settings(data),
             },
             "RADIATEURS_TEMPO_ROUGE": {
                 "enabled": bool(data.get("radiateurs_enabled", False)),

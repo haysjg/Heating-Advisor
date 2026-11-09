@@ -46,6 +46,7 @@ modules/
   ntfy_push.py           # Notifications push via Ntfy
   imap_client.py         # Client IMAP (lecture seule) — boîte tierce recevant les mails Lite transférés
   electricity.py         # Parsing emails "flash élec" + historisation conso électrique
+  warmup.py              # Démarrage optimisé : vitesse de montée apprise, allumage du matin retardé
 ```
 
 **Flux de données principal :**
@@ -172,11 +173,17 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 |---|---|
 | `record(outdoor_temp, indoor_temp, poele_state, tempo_color)` | Insère une lecture. Appelé par le scheduler de `app.py`. Retourne `True` si la lecture est un allumage (lecture précédente « off »), compté dans `pellet_daily.ignitions`. |
 | `get_history(hours)` | Retourne les enregistrements des N dernières heures (utilisé par `/api/statistics`). |
-| `get_daily_summary(days)` | Agrège par journée : minutes allumé/éteint, température moyenne ext/int, couleur Tempo majoritaire. |
+| `get_daily_summary(days)` | Agrège par journée : minutes allumé/éteint, minutes de clim en chauffe (`None` si non suivie), température moyenne ext/int, couleur Tempo majoritaire. |
 | `purge_old(days)` | Supprime les lectures de plus de N jours, en conservant tout le mois précédent (recalculé chaque jour par l'agrégation mensuelle). Lancé chaque lundi à 3h. |
 | `get_pellet_consumption_since(date)` | Minutes de poêle par jour depuis une date, lues dans `pellet_daily` (jamais purgée) — base du suivi de stock. |
 | `get_ignition_stats(today)` | Allumages du poêle (suivi de l'usure) : aujourd'hui, moyenne par jour et cycle moyen sur les 7 jours précédents, cumul depuis le 1er septembre, détail des 7 derniers jours. Affichés dans la card « Thermostat automatique » (chiffres clés + histogramme 7 jours, seuil d'alerte en pointillé). À partir du 4ᵉ allumage de la journée (`POELE.ignition_alert_daily`), chaque nouvel allumage envoie une alerte ntfy. Lecture toutes les 10 min : un cycle plus court peut passer inaperçu. |
 | `poele_state_for_history(real_state, thermostat_state)` | État historisé : état réel HA du poêle, repli sur l'état du thermostat si HA ne répond pas. |
+| `clim_state_for_history(real_state, thermostat_state, configured)` | État historisé de la clim (`readings.clim_state`) : `on` seulement en mode HA `heat` (le froid ne compte pas), repli sur le thermostat si HA ne répond pas, `None` si la clim n'est pas configurée. |
+| `aggregate_month(year_month, config)` | Agrège un mois dans `monthly_reports` : coût poêle, « clim équiv. » (heures de poêle facturées au prix de la clim), et pour la clim réelle : minutes, coût estimé, « poêle équiv. » (heures de clim au prix du poêle). Colonnes clim à `NULL` pour un mois sans suivi de la clim. |
+| `refresh_clim_daily(clim_cfg)` | Recalcule `clim_daily` (minutes et kWh estimés par jour, jamais purgée) pour les jours encore présents dans `readings`. Au démarrage et chaque nuit à 2h30. |
+| `season_balance(reports, today)` | Bilan de la saison (1er sept → 31 août) : coût réel poêle + clim, scénarios « tout clim » et « tout poêle », économie par rapport au plus cher des deux. Affiché sur `/reports` et dans la card Thermostat. |
+
+**Suivi de la clim.** Historisé depuis la migration 9 (reprise des 7 derniers jours depuis `diagnose_log`). Coût estimé = heures × `nominal_capacity_kw` ÷ COP de `cop_curve` × tarif Tempo : estimation haute, la clim inverter module sa puissance. Les scénarios « tout clim » / « tout poêle » gardent les mêmes heures de chauffe.
 
 ### `overrides.py` — Surcharges de configuration
 
@@ -233,6 +240,7 @@ Calcul pur de la page `/stock` (`compute_stock_stats`), à partir des livraisons
 | `fetch_new_readings(electricity_cfg)` | Job de synchronisation : liste les emails non traités, les parse, les historise (idempotent par `message_id`). |
 | `get_readings(weeks)` | Retourne l'historique des lectures sur N semaines. |
 | `get_latest_reading()` | Retourne la dernière lecture (carte dashboard). |
+| `with_clim_estimate(readings, clim_kwh_by_day)` | Ajoute la part estimée de la clim à chaque semaine (`clim_kwh`, `clim_share` en %), à partir de `clim_daily` ; `None` si un jour de la semaine n'est pas suivi. |
 
 ---
 
@@ -279,6 +287,17 @@ Exemple : 20°C, 65% d'humidité, référence 50%, facteur 0.05 → ressenti = 2
 ### Gestion des échecs de sonde
 
 Si la sonde est inaccessible ≥ 3 fois consécutives (~30 min), une alerte email est envoyée. Le poêle continue de s'éteindre à la fin des plages horaires (extinction de sécurité) mais ne peut plus être allumé automatiquement par la température.
+
+### Démarrage optimisé
+
+Allume le matin **le plus tard possible** pour atteindre la consigne d'allumage (`temp_on`) à l'**heure de confort**, et **jamais avant le début de plage** : la consommation ne peut pas augmenter, au pire elle reste la même (`modules/warmup.py`).
+
+- **Heure de confort** : colonne « Confort » des plages dans `/config` (vide = début de plage + 45 min).
+- **Mode** (`THERMOSTAT.optimal_start.mode`) : `off`, `simulation` (par défaut : journal seulement, le thermostat allume comme avant) ou `pilot` (le thermostat attend l'heure de démarrage calculée). Marge de sécurité : `safety_margin_minutes` (15 min).
+- **Apprentissage** : chaque nuit à 2h30 (et au démarrage), chaque montée en température du matin (départ entre 4h et 11h, un seul système en marche) des lectures encore présentes devient une ligne de `warmup_events`, jamais purgée. Mesures : latence (démarrage → +0,2 °C) et vitesse en °C/h (fin de latence → maximum atteint). Montées écartées : moins de 0,5 °C, moins de 20 min de montée, vitesse hors 0,1–6 °C/h.
+- **Modèle** : par système, `durée = latence + écart ÷ vitesse(temp. extérieure)`. Vitesse moyenne pondérée des matins à ±4 °C (noyau gaussien σ = 2 °C), latence médiane. Moins de 3 matins proches : pas de prévision, allumage au début de plage comme avant.
+- **Décision** (fenêtre début de plage → heure de confort) : démarrage au plus tard = heure de confort − durée − marge ; le thermostat allume au cycle où attendre le suivant ferait dépasser cette heure. Une erreur du module ne bloque jamais l'allumage.
+- **Journal** (`optimal_start_log`, un matin par ligne) : besoin constaté, durée prévue, allumage réel et optimisé, durée réelle jusqu'à la consigne, température à l'heure de confort, chauffe évitée (en simulation : celle qui l'aurait été). Affiché sur `/statistics` (carte « Démarrage optimisé », avec la courbe apprise), sur 30 jours ou depuis le début de la saison (1er septembre). « Prévision juste » : matins où la durée réelle de montée (allumage → consigne d'allumage) est à 10 min ou moins de la durée prévue — l'indicateur pour décider du passage en pilotage.
 
 ---
 
@@ -487,6 +506,8 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `GET /api/refresh` | Force le rechargement des données |
 | `GET /api/statistics?hours=N` | Historique des N dernières heures |
 | `GET /api/statistics/daily?days=N` | Résumé journalier sur N jours |
+| `GET /api/warmup?range=30d\|season` | Démarrage optimisé : réglages, courbes apprises, montées mesurées, journal des matins et bilan (30 jours ou saison) |
+| `GET /api/reports/season` | Bilan de la saison : coûts poêle + clim, économies vs « tout clim » / « tout poêle », début du suivi de la clim |
 | `GET /api/weather/conditions` | État du ciel (Open-Meteo, cache 15 min) pour l'illustration de la carte météo |
 | `GET /api/thermostat/state` | État courant du thermostat |
 | `GET /api/thermostat/diagnose` | Diagnostic complet (temp, sonde, présence, scheduler) |
@@ -503,7 +524,7 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `POST /api/config` | Sauvegarde la configuration depuis l'interface |
 | `POST /api/notify/test` | Déclenche manuellement l'email de recommandation |
 | `GET /electricity` | Page dédiée suivi électricité |
-| `GET /api/electricity/history?weeks=N` | Historique des lectures des N dernières semaines |
+| `GET /api/electricity/history?weeks=N` | Historique des lectures des N dernières semaines, avec la part estimée de la clim |
 | `GET /api/electricity/status` | Statut de connexion IMAP + dernière lecture |
 | `POST /api/electricity/sync-now` | Déclenche manuellement la synchronisation IMAP |
 | `POST /api/electricity/imap/test` | Teste la connexion IMAP avec les identifiants enregistrés |

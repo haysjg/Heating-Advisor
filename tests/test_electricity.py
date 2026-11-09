@@ -142,3 +142,28 @@ class TestParseMessage:
 
     def test_none_message_returns_none(self):
         assert parse_message(None) is None
+
+
+class TestWithClimEstimate:
+    """Part estimée de la clim dans la consommation hebdomadaire (/electricity)."""
+
+    WEEK = {"period_start": "2026-11-02", "period_end": "2026-11-08", "kwh": 100.0}
+
+    def test_full_week_tracked(self):
+        from modules.electricity import with_clim_estimate
+        daily = {f"2026-11-0{d}": 3.0 for d in range(2, 9)}
+        r = with_clim_estimate([self.WEEK], daily)[0]
+        assert (r["clim_kwh"], r["clim_share"]) == (21.0, 21)
+
+    def test_partial_week_not_estimated(self):
+        from modules.electricity import with_clim_estimate
+        daily = {f"2026-11-0{d}": 3.0 for d in range(4, 9)}
+        r = with_clim_estimate([self.WEEK], daily)[0]
+        assert (r["clim_kwh"], r["clim_share"]) == (None, None)
+
+    def test_no_period_and_share_capped(self):
+        from modules.electricity import with_clim_estimate
+        daily = {f"2026-11-0{d}": 30.0 for d in range(2, 9)}
+        no_period, week = with_clim_estimate([{"period_start": None, "period_end": None, "kwh": 50.0}, self.WEEK], daily)
+        assert no_period["clim_kwh"] is None
+        assert week["clim_share"] == 100   # estimation haute : jamais plus que le total relevé

@@ -66,6 +66,17 @@
       color: var(--text-sub);
       font-weight: 400;
     }
+    .kpi-sub {
+      font-size: 0.75rem;
+      color: var(--text-sub);
+      margin: 0.2rem 0 0;
+    }
+    .kpi-note {
+      font-size: 0.78rem;
+      color: var(--text-sub);
+      margin: 0.85rem 0 0;
+      line-height: 1.5;
+    }
     .kpi-positive { color: #22c55e; }
     .kpi-negative { color: #f87171; }
     .legend-row {
@@ -142,6 +153,7 @@
       <span style="font-size:0.82rem;">Cliquez sur &laquo; Agréger &raquo; ou attendez l'agrégation automatique (2h30).</span>
     </div>
     <div class="kpi-grid" id="kpi-grid" style="display:none;"></div>
+    <p class="kpi-note" id="kpi-note" style="display:none;"></p>
   </div>
 
   <!-- Graphique barres mensuelles -->
@@ -160,7 +172,11 @@
       </div>
       <div class="legend-item">
         <div class="legend-dot" style="background:#60a5fa;"></div>
-        <span>Équivalent clim</span>
+        <span>Coût clim (estimé)</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:rgba(148,163,184,0.25); border:1px dashed #94a3b8;"></div>
+        <span>Si tout à la clim</span>
       </div>
       <div class="legend-item">
         <div class="legend-dot" style="background:#fb923c; height:3px; width:20px; border-radius:2px;"></div>
@@ -182,9 +198,12 @@
           <tr>
             <th>Mois</th>
             <th>Poêle (h)</th>
+            <th>Clim (h)</th>
             <th>Coût poêle</th>
-            <th>Clim équiv.</th>
-            <th>Économie</th>
+            <th>Coût clim</th>
+            <th>Total</th>
+            <th title="Coût si tout le chauffage du mois avait été fait à la clim">Tout clim</th>
+            <th title="Par rapport au plus cher des scénarios « tout clim » et « tout poêle »">Économie</th>
             <th>Tempo</th>
             <th>Moy. ext.</th>
             <th>Moy. int.</th>
@@ -222,6 +241,15 @@
     return h + 'h' + (m < 10 ? '0' : '') + m;
   }
 
+  // Coût réel du mois (poêle + clim) et coût si la clim avait tout chauffé
+  function monthTotal(d) {
+    return (d.estimated_poele_cost || 0) + (d.estimated_clim_cost || 0);
+  }
+
+  function allClimCost(d) {
+    return (d.estimated_clim_equiv_cost || 0) + (d.estimated_clim_cost || 0);
+  }
+
   function setActiveBtn(months) {
     document.querySelectorAll('[data-m]').forEach(b => {
       b.classList.toggle('active', parseInt(b.dataset.m) === months);
@@ -238,53 +266,79 @@
     const seasonEnd = (startYear + 1) + '-08';
     return data.filter(d => d.month >= seasonStart && d.month <= seasonEnd);
   }
-  function renderKPIs(data) {
+  function fmtSigned(v) {
+    if (v === null || v === undefined) return '—';
+    return (v >= 0 ? '+' : '−') + fmtEuro(Math.abs(v));
+  }
+
+  function fmtDay(iso) {
+    const [y, m, d] = iso.split('-');
+    return parseInt(d) + ' ' + MONTH_NAMES[parseInt(m) - 1].toLowerCase() + ' ' + y;
+  }
+
+  function kpiSavings(label, value, sub) {
+    const cls = value === null || value === undefined ? '' : value >= 0 ? 'kpi-positive' : 'kpi-negative';
+    return `
+      <div class="kpi-card">
+        <p class="kpi-label">${label}</p>
+        <p class="kpi-value ${cls}">${fmtSigned(value)}</p>
+        ${sub ? `<p class="kpi-sub">${sub}</p>` : ''}
+      </div>`;
+  }
+
+  async function renderKPIs() {
     const grid = document.getElementById('kpi-grid');
     const noData = document.getElementById('kpi-no-data');
+    const note = document.getElementById('kpi-note');
+    let b = null;
+    try {
+      const res = await fetch('/api/reports/season');
+      b = res.ok ? await res.json() : null;
+    } catch (e) {
+      console.error('Erreur chargement bilan de saison', e);
+    }
 
-    if (!data.length) {
+    if (!b || !b.months) {
       grid.style.display = 'none';
+      note.style.display = 'none';
       noData.style.display = 'block';
       return;
     }
 
-    const src = getSeasonMonths(data);
-    if (!src.length) {
-      grid.style.display = 'none';
-      noData.style.display = 'block';
-      return;
-    }
-
-    const totalPoeleCost = src.reduce((s, d) => s + (d.estimated_poele_cost || 0), 0);
-    const totalClimEquiv = src.reduce((s, d) => s + (d.estimated_clim_equiv_cost || 0), 0);
-    const totalPoeleMin = src.reduce((s, d) => s + (d.poele_on_minutes || 0), 0);
-    // Moyenne sur les seuls mois où le poêle a tourné (les mois d'été la diluaient)
-    const nbMonths = src.filter(d => d.poele_on_minutes > 0).length;
-    const savings = totalClimEquiv - totalPoeleCost;
-    const avgPerMonth = nbMonths > 0 ? totalPoeleCost / nbMonths : 0;
-
-    const savingsClass = savings >= 0 ? 'kpi-positive' : 'kpi-negative';
-    const savingsLabel = savings >= 0 ? 'Économie vs tout-clim' : 'Surcoût vs tout-clim';
+    const climMin = b.clim_minutes || 0;
+    const heatMin = b.poele_minutes + climMin;
+    const share = heatMin ? Math.round(b.poele_minutes * 100 / heatMin) : null;
+    const split = b.clim_minutes === null
+      ? 'clim non suivie'
+      : share === null ? '' : `poêle ${share} % · clim ${100 - share} %`;
 
     grid.innerHTML = `
       <div class="kpi-card">
-        <p class="kpi-label">Coût total poêle</p>
-        <p class="kpi-value">${fmtEuro(totalPoeleCost)}</p>
+        <p class="kpi-label">Coût total chauffage</p>
+        <p class="kpi-value">${fmtEuro(b.cost_total)}</p>
+        <p class="kpi-sub">poêle ${fmtEuro(b.poele_cost)} · clim ${fmtEuro(b.clim_cost)}</p>
       </div>
+      ${kpiSavings(b.savings_vs_all_clim >= 0 ? 'Économie vs tout clim' : 'Surcoût vs tout clim',
+                   b.savings_vs_all_clim, `tout clim : ${fmtEuro(b.all_clim_cost)}`)}
+      ${kpiSavings(b.savings_vs_all_poele === null || b.savings_vs_all_poele >= 0 ? 'Économie vs tout poêle' : 'Surcoût vs tout poêle',
+                   b.savings_vs_all_poele, b.all_poele_cost === null ? 'clim non suivie' : `tout poêle : ${fmtEuro(b.all_poele_cost)}`)}
       <div class="kpi-card">
-        <p class="kpi-label">${savingsLabel}</p>
-        <p class="kpi-value ${savingsClass}">${savings >= 0 ? '+' : ''}${fmtEuro(Math.abs(savings))}</p>
-      </div>
-      <div class="kpi-card">
-        <p class="kpi-label">Heures de poêle</p>
-        <p class="kpi-value">${fmtHours(totalPoeleMin)}</p>
+        <p class="kpi-label">Heures de chauffe</p>
+        <p class="kpi-value">${fmtHours(heatMin)}</p>
+        <p class="kpi-sub">${split}</p>
       </div>
       <div class="kpi-card">
         <p class="kpi-label">Coût moyen/mois chauffé</p>
-        <p class="kpi-value">${fmtEuro(avgPerMonth)}</p>
+        <p class="kpi-value">${fmtEuro(b.avg_cost_per_heated_month)}</p>
       </div>
     `;
+    const since = b.clim_tracking_since && b.clim_tracking_since > b.season_start
+      ? ` La clim n'est suivie que depuis le ${fmtDay(b.clim_tracking_since)} : avant, seul le poêle compte.` : '';
+    note.innerHTML = 'Coûts estimés : poêle = heures × débit × prix des granulés, '
+      + 'clim = heures × 4 kW ÷ COP de la courbe × tarif Tempo (plutôt surestimé, la clim module sa puissance). '
+      + 'Chaque scénario « tout » garde les mêmes heures de chauffe.' + since;
     grid.style.display = 'grid';
+    note.style.display = 'block';
     noData.style.display = 'none';
   }
 
@@ -294,7 +348,8 @@
 
     const labels = subset.map(d => fmtMonth(d.month));
     const poeleCosts = subset.map(d => d.estimated_poele_cost || 0);
-    const climCosts = subset.map(d => d.estimated_clim_equiv_cost || 0);
+    const climCosts = subset.map(d => d.estimated_clim_cost || 0);
+    const allClimCosts = subset.map(d => allClimCost(d));
     const temps = subset.map(d => d.avg_outdoor_temp);
 
     if (chart) { chart.destroy(); chart = null; }
@@ -312,15 +367,27 @@
             borderColor: '#22c55e',
             borderWidth: 1,
             borderRadius: 4,
+            stack: 'reel',
             order: 2,
           },
           {
-            label: 'Clim équivalent',
+            label: 'Coût clim',
             data: climCosts,
-            backgroundColor: 'rgba(96,165,250,0.5)',
+            backgroundColor: 'rgba(96,165,250,0.75)',
             borderColor: '#60a5fa',
             borderWidth: 1,
             borderRadius: 4,
+            stack: 'reel',
+            order: 2,
+          },
+          {
+            label: 'Si tout à la clim',
+            data: allClimCosts,
+            backgroundColor: 'rgba(148,163,184,0.18)',
+            borderColor: '#94a3b8',
+            borderWidth: 1,
+            borderRadius: 4,
+            stack: 'scenario',
             order: 3,
           },
           {
@@ -364,12 +431,14 @@
         },
         scales: {
           x: {
+            stacked: true,
             ticks: { color: '#8892a4', maxRotation: 45 },
             grid: { color: 'rgba(42,45,62,0.8)' },
           },
           y: {
             type: 'linear',
             position: 'left',
+            stacked: true,
             beginAtZero: true,
             ticks: {
               color: '#8892a4',
@@ -419,7 +488,11 @@
     history.forEach(d => { byMonth[d.month] = d; });
 
     tbody.innerHTML = data.map(d => {
-      const savings = (d.estimated_clim_equiv_cost || 0) - (d.estimated_poele_cost || 0);
+      const total = monthTotal(d);
+      const allClim = allClimCost(d);
+      const allPoele = d.clim_on_minutes === null || d.clim_on_minutes === undefined
+        ? null : (d.estimated_poele_cost || 0) + (d.estimated_poele_equiv_cost || 0);
+      const savings = Math.max(allClim, allPoele ?? allClim) - total;
       const savClass = savings > 0 ? 'vs-positive' : savings < 0 ? 'vs-negative' : 'vs-neutral';
 
       // Comparaison N-1
@@ -428,7 +501,7 @@
       const prev = byMonth[prevYear];
       let vsN1 = '—';
       if (prev) {
-        const diff = (d.estimated_poele_cost || 0) - (prev.estimated_poele_cost || 0);
+        const diff = total - monthTotal(prev);
         if (diff > 0) vsN1 = `<span class="vs-negative">+${diff.toFixed(2)} €</span>`;
         else if (diff < 0) vsN1 = `<span class="vs-positive">${diff.toFixed(2)} €</span>`;
         else vsN1 = '<span class="vs-neutral">= 0</span>';
@@ -437,8 +510,11 @@
       return `<tr>
         <td style="font-weight:600">${fmtMonth(d.month)}</td>
         <td>${fmtHours(d.poele_on_minutes)}</td>
-        <td style="color:#22c55e; font-weight:600">${fmtEuro(d.estimated_poele_cost)}</td>
-        <td style="color:#60a5fa">${fmtEuro(d.estimated_clim_equiv_cost)}</td>
+        <td>${d.clim_on_minutes === null || d.clim_on_minutes === undefined ? '—' : fmtHours(d.clim_on_minutes)}</td>
+        <td style="color:#22c55e">${fmtEuro(d.estimated_poele_cost)}</td>
+        <td style="color:#60a5fa">${fmtEuro(d.estimated_clim_cost)}</td>
+        <td style="font-weight:600">${fmtEuro(total)}</td>
+        <td style="color:var(--text-sub)">${fmtEuro(allClim)}</td>
         <td class="${savClass}">${savings >= 0 ? '+' : '−'}${fmtEuro(Math.abs(savings))}</td>
         <td>
           ${d.tempo_blue_days ? '<span class="tempo-badge tempo-B">' + d.tempo_blue_days + 'B</span> ' : ''}${d.tempo_white_days ? '<span class="tempo-badge tempo-W">' + d.tempo_white_days + 'W</span> ' : ''}${d.tempo_red_days ? '<span class="tempo-badge tempo-R">' + d.tempo_red_days + 'R</span>' : ''}
@@ -467,7 +543,7 @@
     if (!Array.isArray(allData)) allData = [];
 
     const shown = allData.slice(0, months);
-    renderKPIs(allData);
+    renderKPIs();
     renderChart(shown, months);
     renderTable(shown, allData);
   }

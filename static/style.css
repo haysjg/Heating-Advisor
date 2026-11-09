@@ -332,8 +332,29 @@ main {
 .refill-measure:empty { display: none; }
 .refill-measure strong { color: var(--text); font-variant-numeric: tabular-nums; }
 
+/* ── Pied de la card Thermostat : allumages | bilan de la saison ── */
+.thermo-footer {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem 1.5rem;
+  margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.07);
+}
+@media (max-width: 600px) { .thermo-footer { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Bilan de la saison (card Thermostat) ─────────────────── */
+.season-savings {
+  display: block; align-self: start; color: inherit; text-decoration: none;
+  padding: 0.6rem 0.8rem; margin: -0.6rem -0.8rem; border-radius: 10px; transition: background 0.15s;
+}
+.season-savings:hover, .season-savings:focus-visible { background: rgba(255,255,255,0.04); }
+.season-main { font-size: 0.9rem; color: var(--text-sub); margin: 0 0 0.3rem; }
+.season-main strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; margin-right: 0.25rem; }
+.season-main .is-positive { color: var(--green); }
+.season-main .is-negative { color: var(--red); }
+.season-sub { font-size: 0.85rem; color: var(--text-sub); margin: 0.1rem 0 0; }
+.season-sub strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.season-link { font-size: 0.78rem; color: var(--blue); margin: 0.45rem 0 0; }
+
 /* ── Allumages du poêle (card Thermostat) ─────────────────── */
-.ignitions { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.07); }
+.ignitions { min-width: 0; }
 .ignitions-title { color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
 .ignitions-kpis { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; font-size: 0.85rem; color: var(--text-sub); }
 .ignitions-kpis strong { color: var(--text); font-variant-numeric: tabular-nums; }

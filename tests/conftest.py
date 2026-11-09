@@ -3,6 +3,14 @@
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolated_history_db(tmp_path, monkeypatch):
+    """Base SQLite temporaire par test : le thermostat tient le journal du démarrage optimisé
+    (modules/warmup.py), qui ne doit jamais écrire dans data/history.db."""
+    import modules.history as history
+    monkeypatch.setattr(history, "DB_FILE", str(tmp_path / "history.db"))
+
+
 @pytest.fixture
 def base_config():
     """Configuration complète du Heating Advisor pour les tests."""

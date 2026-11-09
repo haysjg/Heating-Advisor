@@ -558,15 +558,42 @@ def _maybe_send_no_ignition_notif(
     return state
 
 
+def _optimal_start(thermostat_cfg: dict, state: dict, effective_temp: float, outdoor_temp: float | None,
+                   recommendation: str, cost_per_hour: dict | None) -> dict | None:
+    """Démarrage optimisé : tient le journal du matin et retourne le plan si l'allumage doit être
+    reporté (mode pilotage uniquement), None sinon. Ne bloque jamais le thermostat en cas d'erreur."""
+    from modules import warmup
+    try:
+        mode = warmup.settings(thermostat_cfg)["mode"]
+        if mode == "off":
+            return None
+        now = datetime.now()
+        the_plan = warmup.plan(thermostat_cfg, now, effective_temp, outdoor_temp, recommendation,
+                               warmup.get_events())
+        system = recommendation if recommendation in ("poele", "clim") else None
+        last_on = _get_system_timestamp(state, system, "on") if system else None
+        warmup.observe(thermostat_cfg, now, effective_temp, outdoor_temp, system,
+                       datetime.fromisoformat(last_on) if last_on else None,
+                       (cost_per_hour or {}).get(system), the_plan)
+        if mode == "pilot" and the_plan and not the_plan["allow"]:
+            return the_plan
+    except Exception as e:
+        logger.error("Thermostat : démarrage optimisé indisponible : %s", e)
+    return None
+
+
 def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, email_cfg: dict = None,
                     ntfy_cfg: dict = None, outdoor_temp: float = None,
-                    comfort_min_temp: float = None, clim_fallback_ok: bool = True) -> None:
+                    comfort_min_temp: float = None, clim_fallback_ok: bool = True,
+                    cost_per_hour: dict | None = None) -> None:
     """
     Vérifie la température intérieure et pilote le poêle et/ou la clim.
     recommendation : 'poele', 'clim', 'none', None
     comfort_min_temp : seuil de confort clim (°C extérieur), pour l'hystérésis poêle → clim
     clim_fallback_ok : la clim peut remplacer le poêle en fin de plage (False un jour rouge
                        ou si la clim n'est pas opérationnelle)
+    cost_per_hour : coût horaire courant par système ({"poele": €/h, "clim": €/h}), pour le journal
+                    du démarrage optimisé
     """
     from modules.ntfy_push import send as ntfy_send
     if not thermostat_cfg.get("enabled"):
@@ -665,6 +692,8 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
         logger.debug("Thermostat : temp réelle=%.1f°C, humidité=%.0f%%, ressentie=%.1f°C", temp, humidity, effective_temp)
 
     in_schedule = is_in_schedule(thermostat_cfg)
+    optimal_delay = _optimal_start(thermostat_cfg, state, effective_temp, outdoor_temp, recommendation,
+                                   cost_per_hour)
 
     # ── Synchronisation avec l'état réel HA (poêle + clim) ───
     ha_state = ha_client.get_state(ha_cfg)
@@ -953,7 +982,11 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             _save_state(state)
 
     if current == "off":
-        if in_schedule and effective_temp < temp_on:
+        if in_schedule and effective_temp < temp_on and optimal_delay:
+            logger.info("Thermostat : démarrage optimisé — allumage %s reporté (au plus tard %s pour %s)",
+                        _system_label(recommendation), optimal_delay["latest_start"].strftime("%H:%M"),
+                        optimal_delay["comfort_time"].strftime("%H:%M"))
+        elif in_schedule and effective_temp < temp_on:
             if recommendation == "poele":
                 logger.info(
                     "Thermostat : allumage poêle (ressenti %.1f°C < %.1f°C, réel %.1f°C, recommandation=%s)",

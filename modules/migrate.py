@@ -4,8 +4,9 @@ Système de migration du schéma SQLite.
 Chaque fonction migrate_NNN applique une étape de migration.
 run(conn) est appelé à chaque connexion et n'applique que les migrations manquantes.
 """
+import bisect
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,75 @@ def _migrate_008(conn):
     """)
 
 
+def _migrate_009(conn):
+    """Historise la clim comme le poêle : readings.clim_state ("on" = clim en chauffe, NULL = état inconnu
+    ou clim non configurée), clim_daily (minutes et kWh estimés par jour, jamais purgée) et colonnes clim
+    de monthly_reports. Reprise de clim_state depuis diagnose_log (7 derniers jours), au point le plus
+    proche à ±5 min ; clim_daily est recalculée au démarrage depuis readings (history.refresh_clim_daily)."""
+    conn.executescript("""
+        ALTER TABLE readings ADD COLUMN clim_state TEXT;
+
+        CREATE TABLE IF NOT EXISTS clim_daily (
+            day        TEXT    PRIMARY KEY,
+            on_minutes INTEGER NOT NULL DEFAULT 0,
+            kwh        REAL    NOT NULL DEFAULT 0
+        );
+
+        ALTER TABLE monthly_reports ADD COLUMN clim_on_minutes INTEGER;
+        ALTER TABLE monthly_reports ADD COLUMN estimated_clim_cost REAL;
+        ALTER TABLE monthly_reports ADD COLUMN estimated_poele_equiv_cost REAL;
+    """)
+    diag = [(datetime.fromisoformat(ts), state) for ts, state in conn.execute(
+        "SELECT ts, clim_real_state FROM diagnose_log ORDER BY ts").fetchall()]
+    if not diag:
+        return
+    times = [d for d, _ in diag]
+    updates = []
+    for (ts,) in conn.execute("SELECT ts FROM readings WHERE ts >= ?",
+                              ((diag[0][0] - timedelta(minutes=5)).isoformat(timespec="seconds"),)).fetchall():
+        when = datetime.fromisoformat(ts)
+        i = bisect.bisect_left(times, when)
+        gap, state = min((abs((diag[j][0] - when).total_seconds()), diag[j][1])
+                         for j in (i - 1, i) if 0 <= j < len(diag))
+        if gap <= 300 and state not in (None, "unavailable", "unknown"):
+            updates.append(("on" if state == "heat" else "off", ts))
+    conn.executemany("UPDATE readings SET clim_state = ? WHERE ts = ?", updates)
+
+
+def _migrate_010(conn):
+    """Démarrage optimisé (modules/warmup.py) : warmup_events, une ligne par montée en température du matin
+    (jamais purgée, base de la courbe vitesse = f(temp. extérieure)), et optimal_start_log, journal des matins."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS warmup_events (
+            start_ts     TEXT PRIMARY KEY,
+            system       TEXT NOT NULL,
+            outdoor_avg  REAL NOT NULL,
+            indoor_start REAL NOT NULL,
+            indoor_peak  REAL NOT NULL,
+            lag_minutes  INTEGER NOT NULL,
+            rate         REAL NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS optimal_start_log (
+            day               TEXT PRIMARY KEY,
+            mode              TEXT NOT NULL,
+            schedule_start    TEXT NOT NULL,
+            comfort_time      TEXT NOT NULL,
+            system            TEXT,
+            need_ts           TEXT,
+            outdoor           REAL,
+            indoor_need       REAL,
+            delta             REAL,
+            predicted_minutes INTEGER,
+            planned_start     TEXT,
+            actual_start      TEXT,
+            reached_ts        TEXT,
+            indoor_at_comfort REAL,
+            cost_per_hour     REAL
+        );
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -207,6 +277,8 @@ MIGRATIONS = [
     _migrate_006,
     _migrate_007,
     _migrate_008,
+    _migrate_009,
+    _migrate_010,
 ]
 
 
