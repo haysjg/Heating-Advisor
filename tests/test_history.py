@@ -198,3 +198,47 @@ class TestConnexion:
         # Scripts et tests qui n'appellent pas init_db() : la première connexion migre quand même
         history.record(5.0, 20.0, "on", "BLUE")
         assert len(history.get_history(1)) == 1
+
+
+class TestAggregateMonth:
+    """Agrégats de la page /reports : coût poêle, équivalent clim, jours Tempo, moyennes."""
+
+    CFG = {
+        "POELE": {"consumption_kg_per_hour": 1.0, "pellet_price_per_kg": 0.6,
+                  "efficiency": 0.9, "thermal_output_kw": 7.2},
+        "CLIM": {"nominal_capacity_kw": 4.0, "cop_curve": [(0, 2.0), (10, 4.0)]},
+        "TEMPO_PRICES": {"BLUE": {"HP": 0.2, "HC": 0.1}, "RED": {"HP": 0.8, "HC": 0.1}},
+        "HP_START": 6,
+        "HP_END": 22,
+    }
+
+    @pytest.fixture(autouse=True)
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(history, "DB_FILE", str(tmp_path / "history.db"))
+
+    def _record(self, ts, outdoor, state, color):
+        from freezegun import freeze_time
+        with freeze_time(ts):
+            history.record(outdoor, 20.0, state, color)
+
+    def test_costs_and_tempo_days(self):
+        # 03/11 : 6 lectures poêle allumé en HP Bleu à 0 °C (COP 2) → 1 h
+        for i in range(6):
+            self._record(f"2026-11-03 10:{i}0:00", 0.0, "on", "BLUE")
+        # 04/11 : 6 lectures en HC Rouge à 10 °C (COP 4), puis 1 lecture éteint
+        for i in range(6):
+            self._record(f"2026-11-04 23:{i}0:00", 10.0, "on", "RED")
+        self._record("2026-11-05 12:00:00", 10.0, "off", "BLUE")
+        assert history.aggregate_month("2026-11", self.CFG)
+        r = history.get_monthly_reports(1)[0]
+        assert r["poele_on_minutes"] == 120
+        assert r["heating_days"] == 2
+        assert r["estimated_poele_cost"] == 1.2           # 2 h × 1 kg/h × 0,60 €
+        # 1 h × 4 kW / 2 × 0,20 € + 1 h × 4 kW / 4 × 0,10 € = 0,40 + 0,10
+        assert r["estimated_clim_equiv_cost"] == 0.5
+        assert (r["tempo_blue_days"], r["tempo_white_days"], r["tempo_red_days"]) == (2, 0, 1)
+        assert r["avg_outdoor_temp"] == round((0 * 6 + 10 * 7) / 13, 1)
+
+    def test_no_readings_returns_false(self):
+        assert history.aggregate_month("2026-11", self.CFG) is False
+        assert history.get_monthly_reports() == []

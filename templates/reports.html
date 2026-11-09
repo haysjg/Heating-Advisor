@@ -136,7 +136,7 @@
 {% block content %}
   <!-- KPIs saison en cours -->
   <div class="card">
-    <h2 style="margin:0 0 1rem; font-size:1rem;">Bilan saison en cours (octobre &rarr; mars)</h2>
+    <h2 style="margin:0 0 1rem; font-size:1rem;">Bilan saison en cours (septembre &rarr; août)</h2>
     <div id="kpi-no-data" class="no-data" style="display:none;">
       Aucune donnée agrégée disponible.<br>
       <span style="font-size:0.82rem;">Cliquez sur &laquo; Agréger &raquo; ou attendez l'agrégation automatique (2h30).</span>
@@ -156,7 +156,7 @@
     <div class="legend-row" style="margin-bottom:1rem;">
       <div class="legend-item">
         <div class="legend-dot" style="background:#22c55e;"></div>
-        <span>Coût poêle réel</span>
+        <span>Coût poêle (estimé)</span>
       </div>
       <div class="legend-item">
         <div class="legend-dot" style="background:#60a5fa;"></div>
@@ -229,23 +229,15 @@
   }
 
   function getSeasonMonths(data) {
-    // Saison de chauffage : octobre (10) à mars (3) de la saison en cours
+    // Saison de chauffe : 1er septembre → 31 août, pour ne perdre aucun mois chauffé
+    // (avril-mai compris). En septembre-décembre, la saison a commencé cette année.
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    // Si on est entre octobre et décembre, la saison va de oct de cette année à mars de l'année prochaine
-    // Si on est entre janvier et septembre, la saison va de oct de l'année dernière à mars de cette année
-    let seasonStart, seasonEnd;
-    if (currentMonth >= 10) {
-      seasonStart = currentYear + '-10';
-      seasonEnd = (currentYear + 1) + '-03';
-    } else {
-      seasonStart = (currentYear - 1) + '-10';
-      seasonEnd = currentYear + '-03';
-    }
+    const y = now.getFullYear();
+    const startYear = now.getMonth() + 1 >= 9 ? y : y - 1;
+    const seasonStart = startYear + '-09';
+    const seasonEnd = (startYear + 1) + '-08';
     return data.filter(d => d.month >= seasonStart && d.month <= seasonEnd);
   }
-
   function renderKPIs(data) {
     const grid = document.getElementById('kpi-grid');
     const noData = document.getElementById('kpi-no-data');
@@ -256,13 +248,18 @@
       return;
     }
 
-    const season = getSeasonMonths(data);
-    const src = season.length ? season : data;
+    const src = getSeasonMonths(data);
+    if (!src.length) {
+      grid.style.display = 'none';
+      noData.style.display = 'block';
+      return;
+    }
 
     const totalPoeleCost = src.reduce((s, d) => s + (d.estimated_poele_cost || 0), 0);
     const totalClimEquiv = src.reduce((s, d) => s + (d.estimated_clim_equiv_cost || 0), 0);
     const totalPoeleMin = src.reduce((s, d) => s + (d.poele_on_minutes || 0), 0);
-    const nbMonths = src.length;
+    // Moyenne sur les seuls mois où le poêle a tourné (les mois d'été la diluaient)
+    const nbMonths = src.filter(d => d.poele_on_minutes > 0).length;
     const savings = totalClimEquiv - totalPoeleCost;
     const avgPerMonth = nbMonths > 0 ? totalPoeleCost / nbMonths : 0;
 
@@ -283,7 +280,7 @@
         <p class="kpi-value">${fmtHours(totalPoeleMin)}</p>
       </div>
       <div class="kpi-card">
-        <p class="kpi-label">Coût moyen/mois</p>
+        <p class="kpi-label">Coût moyen/mois chauffé</p>
         <p class="kpi-value">${fmtEuro(avgPerMonth)}</p>
       </div>
     `;
@@ -406,7 +403,7 @@
     });
   }
 
-  function renderTable(data) {
+  function renderTable(data, history) {
     const tbody = document.getElementById('report-tbody');
     const table = document.getElementById('report-table');
     const noData = document.getElementById('table-no-data');
@@ -419,7 +416,7 @@
 
     // Index par mois pour lookup N-1
     const byMonth = {};
-    data.forEach(d => { byMonth[d.month] = d; });
+    history.forEach(d => { byMonth[d.month] = d; });
 
     tbody.innerHTML = data.map(d => {
       const savings = (d.estimated_clim_equiv_cost || 0) - (d.estimated_poele_cost || 0);
@@ -442,7 +439,7 @@
         <td>${fmtHours(d.poele_on_minutes)}</td>
         <td style="color:#22c55e; font-weight:600">${fmtEuro(d.estimated_poele_cost)}</td>
         <td style="color:#60a5fa">${fmtEuro(d.estimated_clim_equiv_cost)}</td>
-        <td class="${savClass}">${savings >= 0 ? '+' : ''}${fmtEuro(Math.abs(savings))}</td>
+        <td class="${savClass}">${savings >= 0 ? '+' : '−'}${fmtEuro(Math.abs(savings))}</td>
         <td>
           ${d.tempo_blue_days ? '<span class="tempo-badge tempo-B">' + d.tempo_blue_days + 'B</span> ' : ''}${d.tempo_white_days ? '<span class="tempo-badge tempo-W">' + d.tempo_white_days + 'W</span> ' : ''}${d.tempo_red_days ? '<span class="tempo-badge tempo-R">' + d.tempo_red_days + 'R</span>' : ''}
         </td>
@@ -459,7 +456,8 @@
   async function loadReports(months) {
     setActiveBtn(months);
     try {
-      const res = await fetch(`/api/reports/monthly?months=${months}`);
+      // 12 mois de plus que l'affichage : la colonne « vs N-1 » a besoin de l'année précédente
+      const res = await fetch(`/api/reports/monthly?months=${months + 12}`);
       allData = await res.json();
     } catch (e) {
       console.error('Erreur chargement rapports', e);
@@ -468,9 +466,10 @@
 
     if (!Array.isArray(allData)) allData = [];
 
+    const shown = allData.slice(0, months);
     renderKPIs(allData);
-    renderChart(allData, months);
-    renderTable(allData);
+    renderChart(shown, months);
+    renderTable(shown, allData);
   }
 
   async function aggregateNow() {
