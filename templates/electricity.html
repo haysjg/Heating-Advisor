@@ -250,10 +250,16 @@
     });
   }
 
-  function currentIsoWeek() {
+  function currentIsoWeekInfo() {
     const d = new Date();
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    return isoWeekInfo(dateStr).week;
+    return isoWeekInfo(dateStr);
+  }
+
+  function lastWeekToDate() {
+    const { year, week } = currentIsoWeekInfo();
+    const weeks = Object.keys(dataByYear[year] || {}).map(Number);
+    return weeks.length ? Math.max(...weeks) : week;
   }
 
   function _deltaCard(label, first, last) {
@@ -302,9 +308,11 @@
     }
     grid.innerHTML = cards;
 
-    // ── Cumul "à date" : semaines 1 à la semaine ISO courante, pour comparer équitablement
-    // une année en cours (incomplète) aux mêmes semaines des années précédentes ──
-    const currentWeek = currentIsoWeek();
+    // ── Cumul "à date" : semaines 1 à la dernière semaine reçue de l'année en cours, pour
+    // comparer équitablement une année incomplète aux mêmes semaines des années précédentes.
+    // Pas la semaine ISO courante : le relevé Lite arrive la semaine suivante (1 à 2 semaines
+    // de retard), les années passées compteraient des semaines absentes de l'année en cours ──
+    const currentWeek = lastWeekToDate();
     const ytdStats = years.map(y => {
       const weekData = dataByYear[y] || {};
       let total = 0, count = 0;

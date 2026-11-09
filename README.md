@@ -449,7 +449,9 @@ Le compte Gmail personnel utilisé au quotidien est protégé par la **Protectio
 2. Sur la boîte tierce, activer l'accès IMAP (souvent désactivé par défaut — ex. chez Orange : Webmail → Paramètres → Gestion du courrier → accès POP/IMAP).
 3. Noter host/port IMAP, l'identifiant (adresse complète) et le mot de passe (ou mot de passe applicatif si la double authentification est activée sur la boîte tierce).
 
-⚠️ Un transfert Gmail réemballe le mail (`Fwd:`, contenu original en blockquote) : le header custom `X-CampaignID` de Lite (utilisé pour labelliser la période) est perdu. La consommation (kWh) reste extraite normalement — seule la période affichée retombe sur la date de réception.
+⚠️ Un transfert Gmail réemballe le mail (`Fwd:`, contenu original en blockquote). En pratique le header `X-CampaignID` de Lite (période du relevé) est conservé par le filtre de transfert (vérifié en prod, novembre 2026). S'il venait à manquer, la consommation (kWh) reste extraite mais la période retombe sur la date d'import (`fetched_at`), pas sur celle de réception du mail.
+
+Le relevé d'une semaine arrive le mardi suivant : la « Comparaison à date » de `/electricity` s'arrête donc à la dernière semaine reçue de l'année en cours, pas à la semaine ISO courante.
 
 ### Configuration dans Heating Advisor
 
