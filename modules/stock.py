@@ -7,6 +7,14 @@ from datetime import datetime, timedelta
 
 RECENT_WINDOW_DAYS = 14
 
+_MOIS_FR = ("janv.", "févr.", "mars", "avr.", "mai", "juin",
+            "juil.", "août", "sept.", "oct.", "nov.", "déc.")
+
+
+def _format_date_fr(d: datetime) -> str:
+    """« 27 oct. 2039 » — strftime('%b') dépend de la locale (anglaise dans le conteneur)."""
+    return f"{d.day} {_MOIS_FR[d.month - 1]} {d.year}"
+
 
 def compute_stock_stats(
     deliveries: list,
@@ -37,14 +45,16 @@ def compute_stock_stats(
 
     days_since = max((now - datetime.strptime(oldest_date, "%Y-%m-%d")).days, 1)
 
-    # Moyenne sur les RECENT_WINDOW_DAYS derniers jours (aujourd'hui inclus) :
-    # une moyenne depuis la plus ancienne livraison est diluée par les mois
-    # poêle éteint et donne une autonomie absurde (plusieurs années).
+    # Moyenne sur les RECENT_WINDOW_DAYS derniers jours complets (aujourd'hui exclu,
+    # sa journée partielle tirerait la moyenne vers le bas) : une moyenne depuis la
+    # plus ancienne livraison est diluée par les mois poêle éteint et donne une
+    # autonomie absurde (plusieurs années).
     # Repli sur la moyenne globale si aucune conso récente (hors saison).
     window_days = min(RECENT_WINDOW_DAYS, days_since)
-    window_start = (now - timedelta(days=window_days - 1)).strftime("%Y-%m-%d")
+    today = now.strftime("%Y-%m-%d")
+    window_start = (now - timedelta(days=window_days)).strftime("%Y-%m-%d")
     recent_minutes = sum(
-        d["on_minutes"] for d in consumption_data["daily_breakdown"] if d["date"] >= window_start
+        d["on_minutes"] for d in consumption_data["daily_breakdown"] if window_start <= d["date"] < today
     )
     if recent_minutes > 0:
         avg_daily_kg = round(recent_minutes / 60 * consumption_kg_per_hour / window_days, 3)
@@ -53,7 +63,7 @@ def compute_stock_stats(
     else:
         avg_daily_kg = None
     days_remaining = round(remaining_kg / avg_daily_kg) if avg_daily_kg and avg_daily_kg > 0 else None
-    depletion_date = (now + timedelta(days=days_remaining)).strftime("%d %b %Y") if days_remaining is not None else None
+    depletion_date = _format_date_fr(now + timedelta(days=days_remaining)) if days_remaining is not None else None
 
     daily_breakdown = [
         {

@@ -112,7 +112,7 @@ class TestDaysRemainingAndDepletionDate:
         result = compute_stock_stats(deliveries, cons, 1.0, NOW)
         assert result["depletion_date"] is not None
         # 30 jours après NOW = 15 mai 2026
-        assert result["depletion_date"] == "15 May 2026"
+        assert result["depletion_date"] == "15 mai 2026"
 
     def test_depletion_date_none_when_no_consumption(self):
         # Aucune consommation → avg_daily_kg = None → pas de date
@@ -130,7 +130,7 @@ class TestRecentWindowAverage:
     def test_old_delivery_does_not_dilute_average(self):
         # Livraison il y a ~1 an, chauffe seulement les 14 derniers jours à 6 kg/j
         deliveries = [{"date": "2025-04-15", "nb_sacs": 100, "poids_sac": 15.0}]  # 1500 kg
-        daily = [{"date": f"2026-04-{d:02d}", "on_minutes": 360} for d in range(2, 16)]
+        daily = [{"date": f"2026-04-{d:02d}", "on_minutes": 360} for d in range(1, 15)]
         cons = _consumption(sum(x["on_minutes"] for x in daily), daily)
         result = compute_stock_stats(deliveries, cons, 1.0, NOW)
         assert result["avg_daily_kg"] == 6.0
@@ -140,17 +140,18 @@ class TestRecentWindowAverage:
     def test_days_outside_window_ignored(self):
         deliveries = [{"date": "2026-01-01", "nb_sacs": 100, "poids_sac": 15.0}]
         daily = [
-            {"date": "2026-04-01", "on_minutes": 6000},  # hors fenêtre (14 j → dès le 02/04)
+            {"date": "2026-03-31", "on_minutes": 6000},  # hors fenêtre (01/04 → 14/04)
             {"date": "2026-04-10", "on_minutes": 840},   # 14 kg dans la fenêtre
+            {"date": "2026-04-15", "on_minutes": 600},   # aujourd'hui, journée partielle exclue
         ]
-        cons = _consumption(6840, daily)
+        cons = _consumption(7440, daily)
         result = compute_stock_stats(deliveries, cons, 1.0, NOW)
         assert result["avg_daily_kg"] == 1.0
 
     def test_window_shorter_than_14_days_after_recent_delivery(self):
-        # Livraison il y a 5 jours : moyenne sur 5 jours, pas 14
+        # Livraison il y a 5 jours : moyenne sur les 5 jours complets, pas 14
         deliveries = [{"date": "2026-04-10", "nb_sacs": 10, "poids_sac": 15.0}]
-        daily = [{"date": f"2026-04-{d:02d}", "on_minutes": 300} for d in range(11, 16)]
+        daily = [{"date": f"2026-04-{d:02d}", "on_minutes": 300} for d in range(10, 15)]
         cons = _consumption(1500, daily)
         result = compute_stock_stats(deliveries, cons, 1.0, NOW)
         assert result["avg_daily_kg"] == 5.0
