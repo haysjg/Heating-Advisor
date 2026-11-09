@@ -198,6 +198,17 @@ Compteur d'heures de chauffe depuis le dernier remplissage de la trémie (`data/
 
 **Débit réel mesuré.** Un second compteur ne repart de 0 qu'au clic « Trémie remplie ». Chaque clic enregistre un cycle : heures de chauffe depuis le clic précédent + kg versés (⅓, ½, ⅔ ou 1 sac, poids du sac de `/config`). Le premier clic démarre la mesure, un cycle de moins d'1 h (double clic) est ignoré. L'estimation n'est jamais appliquée seule : le bouton « Appliquer » de la card met à jour « heures par sac » (`/config`) et `POELE.consumption_kg_per_hour`, donc le seuil d'alerte et le stock de `/stock` (recalculé sur tout l'historique avec ce débit).
 
+### `stock.py` — Stock de granulés
+
+Calcul pur de la page `/stock` (`compute_stock_stats`), à partir des livraisons (`data/deliveries.json`) et des minutes de chauffe de `pellet_daily`.
+
+| Statistique | Calcul |
+|---|---|
+| Kg restants | Cumul des livraisons − (minutes de chauffe depuis la 1re livraison × `consumption_kg_per_hour`). |
+| % restant / jauge | Kg restants ÷ stock juste après la dernière livraison (reliquat + livraison), pour que la jauge revienne près de 100 % à chaque livraison. |
+| Moyenne journalière | Conso des 14 derniers jours complets (aujourd'hui exclu). Si la 1re livraison a moins de 14 jours, sur les jours écoulés depuis. Repli sur la moyenne depuis la 1re livraison si aucune conso récente (hors saison). |
+| Jours restants / date d'épuisement | Kg restants ÷ moyenne journalière. Alerte « stock faible » à 15 jours ou moins. |
+
 ### `ntfy_push.py` — Notifications push
 
 | Fonction | Description |
