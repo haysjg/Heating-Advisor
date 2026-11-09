@@ -26,7 +26,7 @@ class TestPoeleStateForHistory:
         assert poele_state_for_history(real, OFF) == "off"
 
 
-from datetime import datetime
+from datetime import date, datetime
 
 import modules.history as history
 
@@ -79,6 +79,80 @@ class TestPelletDaily:
                          [("2026-10-01T08:00:00", "on"), ("2026-10-01T08:10:00", "poele"), ("2026-10-01T08:20:00", "off")])
         conn.commit(); conn.close()
         assert history.get_pellet_consumption_since("2026-10-01")["total_on_minutes"] == 20
+
+
+class TestIgnitions:
+    """Allumages du poêle : passage off → on entre deux lectures, cumul journalier non purgé."""
+
+    @pytest.fixture(autouse=True)
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(history, "DB_FILE", str(tmp_path / "history.db"))
+
+    def _feed(self, day, states):
+        from freezegun import freeze_time
+        for i, st in enumerate(states):
+            with freeze_time(f"{day} {8 + i // 6:02d}:{i % 6 * 10:02d}:00"):
+                history.record(5.0, 20.0, st, "BLUE")
+
+    def test_off_to_on_counts_once(self):
+        from freezegun import freeze_time
+        with freeze_time("2026-11-09 08:00:00"):
+            assert history.record(5.0, 20.0, "off") is False
+        with freeze_time("2026-11-09 08:10:00"):
+            assert history.record(5.0, 20.0, "on") is True
+        with freeze_time("2026-11-09 08:20:00"):
+            assert history.record(5.0, 20.0, "on") is False
+        assert history.get_ignition_stats(date(2026, 11, 9))["today"] == 1
+
+    def test_first_reading_on_is_not_an_ignition(self):
+        # Pas de lecture précédente : poêle déjà allumé au démarrage de l'app
+        assert history.record(5.0, 20.0, "on") is False
+
+    def test_stats(self):
+        self._feed("2026-11-07", ["off", "on", "on", "off", "on", "off"])   # 2 allumages, 30 min
+        self._feed("2026-11-08", ["off", "on", "on", "on", "on", "off"])    # 1 allumage, 40 min
+        self._feed("2026-11-09", ["off", "on", "off", "on", "off", "on"])   # 3 aujourd'hui
+        st = history.get_ignition_stats(date(2026, 11, 9))
+        assert st["today"] == 3
+        assert st["avg_per_day_7d"] == 1.5          # 3 allumages sur 2 jours connus, aujourd'hui exclu
+        assert st["avg_cycle_minutes_7d"] == 23     # 70 min / 3 allumages
+        assert st["season"] == 6
+        assert st["since"] == "2026-11-07"
+        assert st["daily_7d"][-3:] == [
+            {"date": "2026-11-07", "ignitions": 2}, {"date": "2026-11-08", "ignitions": 1},
+            {"date": "2026-11-09", "ignitions": 3},
+        ]
+        assert st["daily_7d"][0] == {"date": "2026-11-03", "ignitions": None}   # aucune lecture ce jour-là
+
+    def test_season_starts_september_first(self):
+        assert history.season_start(date(2026, 11, 9)) == date(2026, 9, 1)
+        assert history.season_start(date(2027, 3, 1)) == date(2026, 9, 1)
+
+    def test_ignitions_survive_purge(self):
+        from freezegun import freeze_time
+        self._feed("2026-08-01", ["off", "on"])
+        with freeze_time("2026-10-20 10:00:00"):
+            history.purge_old(30)
+        assert history.get_ignition_stats(date(2026, 9, 2))["season"] == 0
+        assert history.get_ignition_stats(date(2026, 8, 2))["season"] == 1
+
+    def test_migration_backfills_ignitions(self):
+        import sqlite3
+        from modules import migrate
+        conn = sqlite3.connect(history.DB_FILE)
+        for fn in migrate.MIGRATIONS[:7]:
+            fn(conn)
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+        conn.executemany("INSERT INTO schema_version VALUES (?, '2026-01-01')", [(i,) for i in range(1, 8)])
+        conn.executemany("INSERT INTO readings (ts, poele_state) VALUES (?, ?)", [
+            ("2026-11-08T23:50:00", "off"), ("2026-11-09T00:00:00", "on"), ("2026-11-09T00:10:00", "poele"),
+            ("2026-11-09T00:20:00", "off"), ("2026-11-09T00:30:00", "on"),
+        ])
+        conn.execute("INSERT INTO pellet_daily (day, on_minutes) VALUES ('2026-11-09', 30)")
+        conn.commit(); conn.close()
+        st = history.get_ignition_stats(date(2026, 11, 9))
+        assert st["today"] == 2
+        assert history.get_pellet_consumption_since("2026-11-09")["total_on_minutes"] == 30
 
 
 class TestConnexion:

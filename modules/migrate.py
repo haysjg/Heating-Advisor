@@ -182,6 +182,21 @@ def _migrate_007(conn):
     """)
 
 
+def _migrate_008(conn):
+    """Ajoute pellet_daily.ignitions : allumages du poêle par jour (passage off → on entre deux lectures),
+    suivi de l'usure (résistance d'allumage, creuset). Reprise sur les lectures encore présentes (~30 jours)."""
+    conn.executescript("""
+        ALTER TABLE pellet_daily ADD COLUMN ignitions INTEGER NOT NULL DEFAULT 0;
+
+        INSERT INTO pellet_daily (day, on_minutes, ignitions)
+            SELECT substr(ts, 1, 10), 0, COUNT(*)
+            FROM (SELECT ts, poele_state, LAG(poele_state) OVER (ORDER BY ts) AS prev FROM readings)
+            WHERE poele_state IN ('on', 'poele') AND prev = 'off'
+            GROUP BY substr(ts, 1, 10)
+        ON CONFLICT(day) DO UPDATE SET ignitions = excluded.ignitions;
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -191,6 +206,7 @@ MIGRATIONS = [
     _migrate_005,
     _migrate_006,
     _migrate_007,
+    _migrate_008,
 ]
 
 

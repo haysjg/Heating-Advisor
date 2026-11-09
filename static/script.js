@@ -196,6 +196,50 @@ function renderPelletRefill(p) {
   if (measure) measure.innerHTML = _refillMeasureHtml(p);
 }
 
+// Allumages du poêle (card Thermostat) : chiffres clés + histogramme des 7 derniers jours, seuil d'alerte en pointillé
+function _ignitionsChartHtml(days, threshold) {
+  const top = Math.max(threshold + 1, ...days.map(d => d.ignitions ?? 0));
+  const pct = v => `${v / top * 100}%`;
+  const fmtDay = (iso, opts) => new Date(`${iso}T00:00:00`).toLocaleDateString('fr-FR', opts);
+  const last = days.length - 1;
+  const bars = days.map((d, i) => {
+    const n = d.ignitions;
+    const tip = `${fmtDay(d.date, { weekday: 'long', day: 'numeric', month: 'long' })} : `
+      + (n === null ? 'pas de relevé' : `${n} allumage${n > 1 ? 's' : ''}`);
+    const cls = ['ign-col', i === last ? 'is-today' : '', n !== null && n >= threshold ? 'is-high' : ''].join(' ');
+    return `<div class="${cls}" title="${tip}" tabindex="0" aria-label="${tip}">
+        ${n ? `<span class="ign-bar" style="height:${pct(n)}"></span>` : ''}
+        <span class="ign-val" style="bottom:${pct(n ?? 0)}">${n ?? '–'}</span></div>`;
+  }).join('');
+  const labels = days.map((d, i) => `<span class="${i === last ? 'is-today' : ''}">${
+    i === last ? 'auj.' : fmtDay(d.date, { weekday: 'short' }).replace('.', '')}</span>`).join('');
+  return `<div class="ign-chart">
+      <div class="ign-plot">
+        <div class="ign-threshold" style="bottom:${pct(threshold)}"><span>${threshold}</span></div>
+        ${bars}
+      </div>
+      <div class="ign-days" aria-hidden="true">${labels}</div>
+    </div>`;
+}
+
+function renderIgnitions(st) {
+  const el = document.querySelector('[data-value="ignitions"]');
+  if (!el || !st) return;
+  const kpis = [`<span class="${st.today >= st.alert_threshold ? 'ignitions-high' : ''}"><strong>${st.today}</strong> aujourd'hui</span>`];
+  if (st.avg_per_day_7d !== null) kpis.push(`<span><strong>${_fmtH(st.avg_per_day_7d)}</strong>/jour (7 j)</span>`);
+  if (st.avg_cycle_minutes_7d !== null) {
+    const m = st.avg_cycle_minutes_7d;
+    kpis.push(`<span>cycle moyen <strong>${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}</strong></span>`);
+  }
+  if (st.since) {
+    const since = new Date(`${st.since}T00:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+    kpis.push(`<span><strong>${st.season}</strong> depuis le ${since}</span>`);
+  }
+  el.innerHTML = `<p class="ignitions-title">Allumages du poêle</p>
+    <p class="ignitions-kpis">${kpis.join('<span aria-hidden="true">·</span>')}</p>
+    ${st.daily_7d?.length ? _ignitionsChartHtml(st.daily_7d, st.alert_threshold) : ''}`;
+}
+
 async function _postPellet(url, body, okMessage, errPrefix) {
   try {
     const response = await fetch(url, {
@@ -233,6 +277,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const card = document.getElementById('refill-card');
   if (card?.dataset.pellet) {
     try { renderPelletRefill(JSON.parse(card.dataset.pellet)); } catch (e) { /* rendu serveur conservé */ }
+  }
+  const ign = document.querySelector('[data-value="ignitions"]');
+  if (ign?.dataset.ignitions) {
+    try { renderIgnitions(JSON.parse(ign.dataset.ignitions)); } catch (e) { /* ligne masquée */ }
   }
 });
 
@@ -423,6 +471,7 @@ const DashboardRefresh = {
       this.updateRadiateurs(data.radiateurs);
       updateControlPanel(data);
       renderPelletRefill(data.pellet_refill);
+      renderIgnitions(data.ignitions);
       this.updateTempo(data.tempo);
       this.updateTomorrow(data.tomorrow);
       this.updateTimestamp(data.timestamp);

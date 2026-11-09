@@ -6,7 +6,7 @@ import logging
 import os
 import sqlite3
 import threading
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from modules import migrate
 from modules.advisor import interpolate_cop, compute_poele_cost
@@ -70,25 +70,80 @@ def poele_state_for_history(real_state: str | None, thermostat_state: dict) -> s
     return "on" if thermostat_state.get("state") == "on" and active in (None, "poele") else "off"
 
 
-def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None) -> None:
-    """Insère une lecture. Appelé par le scheduler toutes les ~10 min."""
+def _is_on(poele_state: str | None) -> bool:
+    return poele_state in ("on", "poele")
+
+
+def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None) -> bool:
+    """Insère une lecture. Appelé par le scheduler toutes les ~10 min.
+    Retourne True si la lecture correspond à un allumage (lecture précédente « off »)."""
     now = datetime.now()
     try:
         with _connect() as conn:
+            prev = conn.execute("SELECT poele_state FROM readings ORDER BY ts DESC LIMIT 1").fetchone()
+            ignited = _is_on(poele_state) and prev is not None and prev[0] == "off"
             conn.execute(
                 "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state, tempo_color) VALUES (?, ?, ?, ?, ?)",
                 (now.isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color),
             )
             # Cumul journalier non purgé (stock de granulés) : une lecture = 10 min
             conn.execute(
-                "INSERT INTO pellet_daily (day, on_minutes) VALUES (?, ?) "
-                "ON CONFLICT(day) DO UPDATE SET on_minutes = on_minutes + excluded.on_minutes",
-                (now.strftime("%Y-%m-%d"), 10 if poele_state in ("on", "poele") else 0),
+                "INSERT INTO pellet_daily (day, on_minutes, ignitions) VALUES (?, ?, ?) "
+                "ON CONFLICT(day) DO UPDATE SET on_minutes = on_minutes + excluded.on_minutes, "
+                "ignitions = ignitions + excluded.ignitions",
+                (now.strftime("%Y-%m-%d"), 10 if _is_on(poele_state) else 0, 1 if ignited else 0),
             )
         logger.debug("History : enregistrement outdoor=%.1f indoor=%s poele=%s tempo=%s",
                      outdoor_temp or 0, indoor_temp, poele_state, tempo_color)
+        if ignited:
+            logger.info("History : allumage du poêle détecté")
+        return ignited
     except Exception as e:
         logger.error("History : erreur enregistrement : %s", e)
+        return False
+
+
+def season_start(today: date) -> date:
+    """Début de la saison de chauffe : 1er septembre (de l'année précédente avant septembre)."""
+    return date(today.year if today.month >= 9 else today.year - 1, 9, 1)
+
+
+def get_ignition_stats(today: date | None = None) -> dict:
+    """Allumages du poêle (usure) : aujourd'hui, moyenne et cycle moyen sur les 7 jours précédents,
+    cumul de la saison, détail des 7 derniers jours (aujourd'hui compris ; None = aucune lecture ce jour-là).
+    Source : pellet_daily (non purgée)."""
+    today = today or date.today()
+    week_start = (today - timedelta(days=7)).isoformat()
+    start = season_start(today).isoformat()
+    try:
+        with _connect() as conn:
+            today_n = conn.execute("SELECT ignitions FROM pellet_daily WHERE day = ?", (today.isoformat(),)).fetchone()
+            week = conn.execute(
+                "SELECT COUNT(*), SUM(ignitions), SUM(on_minutes) FROM pellet_daily WHERE day >= ? AND day < ?",
+                (week_start, today.isoformat()),
+            ).fetchone()
+            days_7 = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+            by_day = dict(conn.execute(
+                "SELECT day, ignitions FROM pellet_daily WHERE day >= ? AND day <= ?", (days_7[0], days_7[-1]),
+            ).fetchall())
+            season = conn.execute(
+                "SELECT SUM(ignitions), MIN(CASE WHEN ignitions > 0 THEN day END) FROM pellet_daily WHERE day >= ?",
+                (start,),
+            ).fetchone()
+    except Exception as e:
+        logger.error("History : erreur statistiques allumages : %s", e)
+        return {"today": 0, "avg_per_day_7d": None, "avg_cycle_minutes_7d": None, "season": 0, "since": None,
+                "daily_7d": []}
+    days, week_ign, week_min = week[0], week[1] or 0, week[2] or 0
+    return {
+        "today": today_n[0] if today_n else 0,
+        "avg_per_day_7d": round(week_ign / days, 1) if days else None,
+        "avg_cycle_minutes_7d": round(week_min / week_ign) if week_ign else None,
+        "season": season[0] or 0,
+        # Suivi récent (reprise ~30 jours) : le cumul part du premier allumage connu de la saison
+        "since": season[1],
+        "daily_7d": [{"date": d, "ignitions": by_day.get(d)} for d in days_7],
+    }
 
 
 def get_history(hours: int = 24) -> list[dict]:

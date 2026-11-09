@@ -332,6 +332,66 @@ main {
 .refill-measure:empty { display: none; }
 .refill-measure strong { color: var(--text); font-variant-numeric: tabular-nums; }
 
+/* ── Allumages du poêle (card Thermostat) ─────────────────── */
+.ignitions { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.07); }
+.ignitions-title { color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+.ignitions-kpis { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; font-size: 0.85rem; color: var(--text-sub); }
+.ignitions-kpis strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.ignitions-kpis .ignitions-high,
+.ignitions-kpis .ignitions-high strong { color: var(--red); }
+.ign-chart { max-width: 420px; margin-top: 0.75rem; padding-left: 1rem; }
+.ign-plot,
+.ign-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.ign-plot {
+  position: relative;
+  height: 72px;
+  margin-top: 1.1rem;              /* place pour l'étiquette de la plus haute barre */
+  border-bottom: 1px solid var(--border);
+}
+.ign-col { position: relative; border-radius: 4px 4px 0 0; }
+.ign-bar {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: min(60%, 28px);
+  transform: translateX(-50%);
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in oklab, var(--warm) 55%, transparent);
+}
+.ign-col.is-today .ign-bar { background: var(--warm); }
+.ign-col:hover .ign-bar, .ign-col:focus-visible .ign-bar { background: var(--warm); filter: brightness(1.15); }
+.ign-val {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin-bottom: 3px;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+}
+.ign-col.is-today .ign-val { color: var(--text); font-weight: 600; }
+.ign-col.is-high .ign-val { color: var(--red); font-weight: 600; }
+.ign-days { margin-top: 0.3rem; font-size: 0.7rem; color: var(--text-sub); text-align: center; }
+.ign-days .is-today { color: var(--text); }
+.ign-threshold {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px dashed color-mix(in oklab, var(--red) 70%, transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+.ign-threshold span {
+  position: absolute;
+  right: 100%;
+  transform: translate(-4px, -50%);
+  font-size: 0.65rem;
+  color: var(--red);
+}
+
 /* ── Seuils thermostat (widget) ───────────────────────────── */
 .thresholds-head {
   display: flex;

@@ -73,6 +73,7 @@ POELE = {
     "consumption_kg_per_hour": 1.0,   # kg/h — 1 sac de 15 kg dure ~15h (fourchette 14-16h)
     "efficiency": 0.90,               # rendement du poêle
     "thermal_output_kw": 7.2,         # puissance thermique en fonctionnement normal
+    "ignition_alert_daily": 4,        # alerte ntfy à partir du Nᵉ allumage de la journée (usure)
 }
 
 # ── Apparence ────────────────────────────────────────────────

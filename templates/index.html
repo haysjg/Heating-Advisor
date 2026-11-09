@@ -561,6 +561,10 @@
           {% endif %}
         </div>
       </div>
+      {# Allumages du poêle : suivi de l'usure (résistance d'allumage, creuset), rendu par renderIgnitions() #}
+      {% if ignitions %}
+      <div class="ignitions" data-value="ignitions" data-ignitions="{{ ignitions|tojson|forceescape }}"></div>
+      {% endif %}
       {% if radiateurs_info %}
       <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.07)">
         <p class="value-sub" style="color:#94a3b8;margin-bottom:0.4rem;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em">Radiateurs — Jours Rouges</p>

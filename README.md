@@ -170,11 +170,12 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 
 | Fonction | Description |
 |---|---|
-| `record(outdoor_temp, indoor_temp, poele_state, tempo_color)` | Insère une lecture. Appelé par le scheduler de `app.py`. |
+| `record(outdoor_temp, indoor_temp, poele_state, tempo_color)` | Insère une lecture. Appelé par le scheduler de `app.py`. Retourne `True` si la lecture est un allumage (lecture précédente « off »), compté dans `pellet_daily.ignitions`. |
 | `get_history(hours)` | Retourne les enregistrements des N dernières heures (utilisé par `/api/statistics`). |
 | `get_daily_summary(days)` | Agrège par journée : minutes allumé/éteint, température moyenne ext/int, couleur Tempo majoritaire. |
 | `purge_old(days)` | Supprime les lectures de plus de N jours, en conservant tout le mois précédent (recalculé chaque jour par l'agrégation mensuelle). Lancé chaque lundi à 3h. |
 | `get_pellet_consumption_since(date)` | Minutes de poêle par jour depuis une date, lues dans `pellet_daily` (jamais purgée) — base du suivi de stock. |
+| `get_ignition_stats(today)` | Allumages du poêle (suivi de l'usure) : aujourd'hui, moyenne par jour et cycle moyen sur les 7 jours précédents, cumul depuis le 1er septembre, détail des 7 derniers jours. Affichés dans la card « Thermostat automatique » (chiffres clés + histogramme 7 jours, seuil d'alerte en pointillé). À partir du 4ᵉ allumage de la journée (`POELE.ignition_alert_daily`), chaque nouvel allumage envoie une alerte ntfy. Lecture toutes les 10 min : un cycle plus court peut passer inaperçu. |
 | `poele_state_for_history(real_state, thermostat_state)` | État historisé : état réel HA du poêle, repli sur l'état du thermostat si HA ne répond pas. |
 
 ### `overrides.py` — Surcharges de configuration

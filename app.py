@@ -539,10 +539,35 @@ def _record_history():
         poele_ha = ha_client.get_state(config.HOME_ASSISTANT)
         heating_state = history_module.poele_state_for_history(poele_ha.get("state") if poele_ha else None, th_state)
         tempo_color = data.get("tempo", {}).get("today", {}).get("color")
-        history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color)
+        if history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color):
+            _notify_ignitions()
         pellet_refill.tick(heating_state == "on", _pellet_cycle_hours(), config.EMAIL, config.NTFY)
     except Exception as e:
         logger.error("History record échoué : %s", e)
+
+
+def _ignition_alert_threshold() -> int:
+    return int(config.POELE.get("ignition_alert_daily", 4))
+
+
+def _notify_ignitions():
+    """Alerte ntfy à chaque allumage à partir du seuil journalier (cycles courts = usure du poêle)."""
+    from modules.ntfy_push import send as ntfy_send
+    stats = history_module.get_ignition_stats()
+    count = stats["today"]
+    if count < _ignition_alert_threshold():
+        return
+    avg = stats["avg_per_day_7d"]
+    habit = f" (moyenne {avg:.1f}/jour sur 7 jours)".replace(".", ",") if avg is not None else ""
+    ntfy_send(f"🔥 Poêle : {count}ᵉ allumage aujourd'hui",
+              f"Le poêle vient de s'allumer pour la {count}ᵉ fois aujourd'hui{habit}. "
+              "Les allumages répétés usent la résistance d'allumage et encrassent le creuset.",
+              config.NTFY)
+    logger.info("Poêle : alerte allumages envoyée (%d aujourd'hui)", count)
+
+
+def _ignition_status() -> dict:
+    return {**history_module.get_ignition_stats(), "alert_threshold": _ignition_alert_threshold()}
 
 
 def _poele_purchase() -> dict:
@@ -972,7 +997,7 @@ def index():
                                weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
                                poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL,
                                next_check=_next_thermostat_check(),
-                               pellet=_pellet_status())
+                               pellet=_pellet_status(), ignitions=_ignition_status())
     except Exception as e:
         error = _internal_error_message(_log_internal_error(e))
         return render_template("index.html", data=None, error=error, config=config, thermostat_state={},
@@ -1127,6 +1152,7 @@ def api_dashboard_refresh():
             "clim_state": clim_state_value,
             "poele_state": poele_state_value,
             "pellet_refill": _pellet_status(),
+            "ignitions": _ignition_status(),
             "radiateurs": radiateurs_info,
             "tomorrow": {
                 "recommendation": {
