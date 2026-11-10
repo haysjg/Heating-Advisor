@@ -75,7 +75,9 @@
     .learn-band.has-data { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.45); color: #fbbf24; }
     .learn-band.is-ready { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.55); color: #4ade80; font-weight: 600; }
     .learn-temps { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 2px; margin-top: 0.2rem;
-      font-size: 0.65rem; color: var(--text-sub); text-align: center; }
+      font-size: 0.65rem; color: var(--text-sub); text-align: center; white-space: nowrap; }
+    /* Sur téléphone, « -8 °C » déborde de sa case : un libellé sur deux */
+    @media (max-width: 600px) { .learn-temps span:nth-child(even) { visibility: hidden; } }
     .learn-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.75rem; color: var(--text-sub); margin: 0.2rem 0 0; }
     .learn-legend span::before { content: ""; display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px;
       margin-right: 0.35rem; vertical-align: -0.1rem; border: 1px solid rgba(148,163,184,0.3); background: rgba(148,163,184,0.08); }
@@ -812,7 +814,7 @@
             + (b.ready ? ', prévision possible' : '');
           return `<div class="learn-band ${cls}" title="${title}">${b.events || ''}</div>`;
         }).join('');
-        const temps = p.bands.map(b => `<span>${b.outdoor}</span>`).join('');
+        const temps = p.bands.map(b => `<span>${b.outdoor} °C</span>`).join('');
         return `<div class="learn-system">
           <p class="learn-head">${head}</p>
           <div class="learn-bands" role="img" aria-label="Matins appris par tranche de 2 °C">${bands}</div>
@@ -821,7 +823,7 @@
       }).join('');
       el.innerHTML = blocks + `<p class="learn-legend"><span class="lg-ready">prévision possible</span>`
         + `<span class="lg-data">matins insuffisants</span><span>aucun matin</span>`
-        + `<em style="font-style:normal;opacity:0.8">chiffre = matins appris · °C extérieurs</em></p>`;
+        + `<em style="font-style:normal;opacity:0.8">chiffre = matins appris · températures extérieures</em></p>`;
     }
 
     function renderWarmupSummary(d) {
