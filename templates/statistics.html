@@ -63,6 +63,21 @@
       gap: 0.75rem;
       margin-top: 1rem;
     }
+    /* Cartes repliables (fermées par défaut) */
+    .collapsible > summary {
+      display: flex; align-items: center; gap: 0.6rem; cursor: pointer; list-style: none;
+      margin: -0.25rem 0; padding: 0.25rem 0; border-radius: 6px;
+    }
+    .collapsible > summary::-webkit-details-marker { display: none; }
+    .collapsible > summary h2 { margin: 0; font-size: 1rem; }
+    .collapsible > summary::before {
+      content: ""; width: 0.45rem; height: 0.45rem; flex-shrink: 0; margin: 0 0.15rem;
+      border-right: 2px solid var(--text-sub); border-bottom: 2px solid var(--text-sub);
+      transform: rotate(-45deg); transition: transform 0.15s;
+    }
+    .collapsible[open] > summary::before { transform: rotate(45deg); }
+    .collapsible > summary:hover h2 { color: var(--blue); }
+    .collapsible > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
     .learn-system { margin: 0 0 0.9rem; }
     .learn-head { font-size: 0.85rem; color: var(--text-sub); margin: 0 0 0.35rem; }
     .learn-head strong { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -228,9 +243,9 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:1rem;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem;">
-        <h2 style="margin:0;font-size:1rem;">Journal de diagnostic</h2>
+    <details class="card collapsible" style="margin-top:1rem;">
+      <summary><h2>Journal de diagnostic</h2></summary>
+      <div style="display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:1rem;margin:1rem 0 1.25rem;">
         <div class="range-bar">
           <button class="range-btn active" onclick="loadDiagnose(6)"  data-dh="6">6h</button>
           <button class="range-btn" onclick="loadDiagnose(24)" data-dh="24">24h</button>
@@ -257,10 +272,11 @@
           <tbody id="diagnose-tbody"></tbody>
         </table>
       </div>
-    </div>
+    </details>
 
-    <div class="card" style="margin-top:1rem;">
-      <h2 style="margin:0 0 1rem; font-size:1rem;">Résumé journalier</h2>
+    <details class="card collapsible" style="margin-top:1rem;">
+      <summary><h2>Résumé journalier</h2></summary>
+      <div style="height:1rem;"></div>
       <div id="daily-no-data" class="no-data" style="display:none;">
         Aucune donnée journalière disponible.
       </div>
@@ -281,7 +297,7 @@
           <tbody id="daily-tbody"></tbody>
         </table>
       </div>
-    </div>
+    </details>
 
     <div class="card" style="margin-top:1rem;" id="warmup-card">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:0.5rem 1rem;margin-bottom:0.25rem;">
