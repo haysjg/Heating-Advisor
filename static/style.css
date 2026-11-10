@@ -1238,6 +1238,17 @@ main {
 .dot-excluded, .dot-unknown { background: transparent; box-shadow: inset 0 0 0 1.5px #64748b; }
 .dot-unknown { box-shadow: inset 0 0 0 1.5px #94a3b8; }
 
+/* Jours Tempo restants sur la saison (carte Tempo de l'accueil) */
+.tempo-season { margin-top: 0.75rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+.tempo-season-title { color: var(--text-sub); font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 0.35rem; }
+.tempo-quota { display: grid; grid-template-columns: auto auto minmax(40px, 1fr); align-items: center; column-gap: 0.1rem; font-size: 0.85rem; color: var(--text-sub); margin-top: 0.25rem; }
+.tempo-quota-label { font-variant-numeric: tabular-nums; margin-right: 0.6rem; white-space: nowrap; }
+.tempo-quota-label strong { color: var(--text); }
+.tempo-quota-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.tempo-quota-fill { display: block; height: 100%; border-radius: inherit; }
+.tempo-quota-red   { background: #ff3b3b; }
+.tempo-quota-white { background: #f8fafc; }
+
 @media (prefers-reduced-motion: no-preference) {
   /* Entrée des cartes, en cascade */
   @keyframes card-enter {

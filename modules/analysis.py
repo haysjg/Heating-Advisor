@@ -62,6 +62,7 @@ def compute_analysis(raw: dict, cfg: dict, now: datetime | None = None) -> dict:
     result["timestamp"] = raw["fetched_at"]
     result["tomorrow"] = analyze_tomorrow(raw["tomorrow_weather"], tempo, cfg)
     result["hourly_forecast"] = raw.get("hourly_forecast")
+    result["tempo_season"] = raw.get("tempo_season")
     if raw.get("indoor"):
         result["indoor"] = raw["indoor"]
     return result

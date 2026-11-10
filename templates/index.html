@@ -307,6 +307,20 @@
         </p>
         {% set tom = data.tempo.tomorrow %}
         <p class="value-sub">Demain : <span class="dot dot-{{ tom.color | lower }}{% if tom.color | lower == 'red' %} tempo-pulse{% endif %}" aria-hidden="true"></span>{{ tom.label }}</p>
+        {% if data.tempo_season %}
+        {% set ts = data.tempo_season %}
+        <div class="tempo-season" title="Saison Tempo {{ ts.season }} (1er septembre → 31 août) : 22 jours rouges et 43 blancs au maximum. Les couleurs publiées, demain compris, sont décomptées.">
+          <p class="tempo-season-title">Saison {{ ts.label }} · jours restants</p>
+          {% for c, name in [('RED', 'rouges'), ('WHITE', 'blancs')] %}
+          {% set q = ts.colors[c] %}
+          <div class="tempo-quota">
+            <span class="dot dot-{{ c | lower }}" aria-hidden="true"></span>
+            <span class="tempo-quota-label"><strong>{{ q.left }}</strong> {{ name }} sur {{ q.total }}</span>
+            <span class="tempo-quota-bar" aria-hidden="true"><span class="tempo-quota-fill tempo-quota-{{ c | lower }}" style="width: {{ (q.left * 100 / q.total) | round(1) }}%"></span></span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
 
     </section>

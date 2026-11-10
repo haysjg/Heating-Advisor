@@ -135,3 +135,77 @@ def at_time(tempo: dict, hp_start: int, hp_end: int, now: datetime | None = None
 def get_tempo_info(hp_start: int, hp_end: int) -> dict:
     """Retourne un dictionnaire complet avec les infos Tempo du jour et de demain."""
     return at_time({"today": get_today(), "tomorrow": get_tomorrow()}, hp_start, hp_end)
+
+
+# ── Quota de la saison (1er septembre → 31 août) ──────────────
+SEASON_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "tempo_season.json")
+SEASON_QUOTAS = {"RED": 22, "WHITE": 43}
+SEASON_REFRESH_HOURS = 3   # les couleurs publiées ne changent que vers 11h (J+1)
+SEASON_FETCH_TIMEOUT = 5
+
+
+def season_of(day: date) -> str:
+    """Saison Tempo contenant `day` : « 2026-2027 » du 1er sept. 2026 au 31 août 2027."""
+    start = day.year if day.month >= 9 else day.year - 1
+    return f"{start}-{start + 1}"
+
+
+def _count_colors(days: list) -> dict:
+    counts = {"BLUE": 0, "WHITE": 0, "RED": 0}
+    for d in days:
+        color = COLOR_MAP.get(d.get("codeJour"))
+        if color:
+            counts[color] += 1
+    return counts
+
+
+def _season_summary(season: str, counts: dict) -> dict:
+    start = int(season[:4])
+    season_days = (date(start + 1, 9, 1) - date(start, 9, 1)).days
+    quotas = {**SEASON_QUOTAS, "BLUE": season_days - sum(SEASON_QUOTAS.values())}
+    return {
+        "season": season,
+        "label": f"{start}-{str(start + 1)[2:]}",
+        "colors": {
+            c: {"used": counts[c], "total": quotas[c], "left": max(quotas[c] - counts[c], 0)}
+            for c in ("RED", "WHITE", "BLUE")
+        },
+    }
+
+
+def get_season_stats(now: datetime | None = None) -> dict | None:
+    """Jours Tempo tirés et restants sur la saison en cours (quotas 22 rouges / 43 blancs).
+
+    Les couleurs publiées (demain compris, une fois annoncé) sont comptées comme tirées.
+    Le résultat est mis en cache quelques heures ; en cas de panne de l'API, le dernier
+    décompte connu de la saison est servi. None si aucun décompte n'est disponible.
+    """
+    now = now or datetime.now()
+    season = season_of(now.date())
+    cache = jsonstore.load(SEASON_FILE, {})
+    cache = cache if isinstance(cache, dict) and cache.get("season") == season else {}
+
+    try:
+        last_try = datetime.fromisoformat(cache.get("checked_at", ""))
+    except ValueError:
+        last_try = None
+    if last_try is None or now - last_try >= timedelta(hours=SEASON_REFRESH_HOURS):
+        counts = None
+        try:
+            req = urllib.request.Request(f"{BASE_URL}/joursTempo?periode={season}", headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=SEASON_FETCH_TIMEOUT) as resp:
+                days = json.loads(resp.read())
+            if isinstance(days, list):
+                counts = _count_colors(days)
+        except Exception as e:
+            logger.warning("API Tempo (saison %s) échouée : %s", season, e)
+        cache = {**cache, "season": season, "checked_at": now.isoformat(timespec="seconds")}
+        if counts is not None:
+            cache["counts"] = counts
+        try:
+            jsonstore.save(SEASON_FILE, cache)
+        except OSError as e:
+            logger.warning("Cache saison Tempo : écriture impossible : %s", e)
+
+    counts = cache.get("counts")
+    return _season_summary(season, counts) if isinstance(counts, dict) else None

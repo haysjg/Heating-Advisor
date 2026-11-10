@@ -140,6 +140,7 @@ Le système le moins cher est recommandé.
 | `is_hp(hour, hp_start, hp_end)` | Retourne `True` si l'heure est en Heure Pleine. |
 | `get_current_period(hp_start, hp_end, now=None)` | Retourne `"HP"` ou `"HC"` selon l'heure (actuelle par défaut). |
 | `at_time(tempo, hp_start, hp_end, now=None)` | Copie des infos Tempo avec période HP/HC et heure recalculées (sans appel réseau). |
+| `get_season_stats(now=None)` | Jours rouges et blancs tirés et restants sur la saison Tempo en cours (1er septembre → 31 août, quotas 22 rouges / 43 blancs, bleus = le reste). Couleurs publiées comptées, demain compris. Décompte mis en cache 3 h dans `data/tempo_season.json` ; dernier décompte servi si l'API est en panne. Affiché sur la carte Tempo de l'accueil. |
 
 ### `homeassistant.py` — Client Home Assistant
 

@@ -23,7 +23,7 @@ from markupsafe import Markup
 
 import config
 from modules.weather import get_current_conditions, get_current_temperature, get_tomorrow_weather, get_hourly_forecast
-from modules.tempo import get_tempo_info
+from modules.tempo import get_season_stats, get_tempo_info
 from modules.analysis import DataCache, build_advisor_config, compute_analysis, tariff_slot
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
 from modules.crypto import decrypt_password, encrypt_password
@@ -920,6 +920,7 @@ def _fetch_external_data() -> dict:
         "weather": get_current_temperature(config.LOCATION, config.OBSERVATIONS),
         "tomorrow_weather": tomorrow_weather,
         "tempo": get_tempo_info(config.HP_START, config.HP_END),
+        "tempo_season": get_season_stats(),
         "hourly_forecast": get_hourly_forecast(config.LOCATION["latitude"], config.LOCATION["longitude"], hours=48),
         "indoor": _indoor_with_felt(),
     }
