@@ -180,12 +180,10 @@
 {% endblock %}
 
 {% block content %}
-    <div class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem;">
-        <div>
-          <h2 style="margin:0 0 0.25rem; font-size:1rem;">Températures &amp; état du chauffage</h2>
-          <p style="margin:0; font-size:0.83rem; color:var(--text-sub);">Enregistrement toutes les ~10 min</p>
-        </div>
+    <details class="card collapsible" open>
+      <summary><h2>Températures &amp; état du chauffage</h2></summary>
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin:1rem 0 1.25rem;">
+        <p style="margin:0; font-size:0.83rem; color:var(--text-sub);">Enregistrement toutes les ~10 min</p>
         <div class="range-bar">
           <button class="range-btn" onclick="loadData(6)"   data-h="6">6h</button>
           <button class="range-btn active" onclick="loadData(24)" data-h="24">24h</button>
@@ -241,7 +239,7 @@
           </div>
         </div>
       </div>
-    </div>
+    </details>
 
     <details class="card collapsible" style="margin-top:1rem;">
       <summary><h2>Journal de diagnostic</h2></summary>
@@ -299,9 +297,9 @@
       </div>
     </details>
 
-    <div class="card" style="margin-top:1rem;" id="warmup-card">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:0.5rem 1rem;margin-bottom:0.25rem;">
-        <h2 style="margin:0;font-size:1rem;">Démarrage optimisé <span id="warmup-mode" style="font-size:0.8rem;font-weight:400;color:var(--text-sub);"></span></h2>
+    <details class="card collapsible" style="margin-top:1rem;" id="warmup-card" open>
+      <summary><h2>Démarrage optimisé <span id="warmup-mode" style="font-size:0.8rem;font-weight:400;color:var(--text-sub);"></span></h2></summary>
+      <div style="display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:0.5rem 1rem;margin:1rem 0 0.5rem;">
         <div class="range-bar">
           <button class="range-btn active" onclick="loadWarmup('30d')" data-wr="30d">30 jours</button>
           <button class="range-btn" onclick="loadWarmup('season')" data-wr="season">Saison</button>
@@ -347,7 +345,7 @@
           <tbody id="warmup-tbody"></tbody>
         </table>
       </div>
-    </div>
+    </details>
 {% endblock %}
 
 {% block extra_scripts %}
