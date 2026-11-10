@@ -1756,7 +1756,7 @@ def api_warmup():
             "settings": warmup_module.settings(config.THERMOSTAT),
             "curves": {s: warmup_module.curve(events, s) for s in ("poele", "clim")},
             "events": events[-500:],
-            "event_counts": {s: sum(1 for e in events if e["system"] == s) for s in ("poele", "clim")},
+            "progress": {s: warmup_module.progress(events, s) for s in ("poele", "clim")},
             "log": log,
             "summary": warmup_module.summarize(log, config.THERMOSTAT.get("temp_on", 20.0)),
         })

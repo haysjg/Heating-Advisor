@@ -297,7 +297,7 @@ Allume le matin **le plus tard possible** pour atteindre la consigne d'allumage 
 - **Apprentissage** : chaque nuit à 2h30 (et au démarrage), chaque montée en température du matin (départ entre 4h et 11h, un seul système en marche) des lectures encore présentes devient une ligne de `warmup_events`, jamais purgée. Mesures : latence (démarrage → +0,2 °C) et vitesse en °C/h (fin de latence → maximum atteint). Montées écartées : moins de 0,5 °C, moins de 20 min de montée, vitesse hors 0,1–6 °C/h.
 - **Modèle** : par système, `durée = latence + écart ÷ vitesse(temp. extérieure)`. Vitesse moyenne pondérée des matins à ±4 °C (noyau gaussien σ = 2 °C), latence médiane. Moins de 3 matins proches : pas de prévision, allumage au début de plage comme avant.
 - **Décision** (fenêtre début de plage → heure de confort) : démarrage au plus tard = heure de confort − durée − marge ; le thermostat allume au cycle où attendre le suivant ferait dépasser cette heure. Une erreur du module ne bloque jamais l'allumage.
-- **Journal** (`optimal_start_log`, un matin par ligne) : besoin constaté, durée prévue, allumage réel et optimisé, durée réelle jusqu'à la consigne, température à l'heure de confort, chauffe évitée (en simulation : celle qui l'aurait été). Affiché sur `/statistics` (carte « Démarrage optimisé », avec la courbe apprise), sur 30 jours ou depuis le début de la saison (1er septembre). « Prévision juste » : matins où la durée réelle de montée (allumage → consigne d'allumage) est à 10 min ou moins de la durée prévue — l'indicateur pour décider du passage en pilotage.
+- **Journal** (`optimal_start_log`, un matin par ligne) : besoin constaté, durée prévue, allumage réel et optimisé, durée réelle jusqu'à la consigne, température à l'heure de confort, chauffe évitée (en simulation : celle qui l'aurait été). Affiché sur `/statistics` (carte « Démarrage optimisé », avec la courbe apprise), sur 30 jours ou depuis le début de la saison (1er septembre). « Avancement de l'apprentissage » : par système, matins appris et premier matin, puis une barre par tranche de 2 °C extérieurs (−8 à 18 °C) avec le nombre de matins, en vert quand la prévision est possible à cette température. « Prévision juste » : matins où la durée réelle de montée (allumage → consigne d'allumage) est à 10 min ou moins de la durée prévue — l'indicateur pour décider du passage en pilotage.
 
 ---
 
@@ -506,7 +506,7 @@ Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherch
 | `GET /api/refresh` | Force le rechargement des données |
 | `GET /api/statistics?hours=N` | Historique des N dernières heures |
 | `GET /api/statistics/daily?days=N` | Résumé journalier sur N jours |
-| `GET /api/warmup?range=30d\|season` | Démarrage optimisé : réglages, courbes apprises, montées mesurées, journal des matins et bilan (30 jours ou saison) |
+| `GET /api/warmup?range=30d\|season` | Démarrage optimisé : réglages, avancement de l'apprentissage, courbes apprises, montées mesurées, journal des matins et bilan (30 jours ou saison) |
 | `GET /api/reports/season` | Bilan de la saison : coûts poêle + clim, économies vs « tout clim » / « tout poêle », début du suivi de la clim |
 | `GET /api/weather/conditions` | État du ciel (Open-Meteo, cache 15 min) pour l'illustration de la carte météo |
 | `GET /api/thermostat/state` | État courant du thermostat |

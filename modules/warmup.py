@@ -155,6 +155,29 @@ def curve(events: list[dict], system: str, temps=range(-10, 21, 2)) -> list[dict
     return points
 
 
+# Tranches de température extérieure affichées pour l'avancement de l'apprentissage (°C, centre ± 1)
+PROGRESS_TEMPS = range(-8, 19, 2)
+
+
+def progress(events: list[dict], system: str) -> dict:
+    """Avancement de l'apprentissage d'un système : matins appris, premier matin, et par tranche de 2 °C
+    le nombre de matins et si une prévision est possible (sinon : allumage au début de plage)."""
+    mine = [e for e in events if e["system"] == system]
+    bands = [{
+        "outdoor": t,
+        "events": sum(1 for e in mine if t - 1 <= e["outdoor_avg"] < t + 1),
+        "ready": predict(mine, system, float(t), 1.0) is not None,
+    } for t in PROGRESS_TEMPS]
+    ready = [b["outdoor"] for b in bands if b["ready"]]
+    return {
+        "mornings": len(mine),
+        "first_day": mine[0]["start_ts"][:10] if mine else None,
+        "bands": bands,
+        "ready_min": min(ready) if ready else None,
+        "ready_max": max(ready) if ready else None,
+    }
+
+
 # ── Réglages et plan du matin ───────────────────────────────
 
 def settings(thermostat_cfg: dict) -> dict:

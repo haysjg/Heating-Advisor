@@ -84,6 +84,17 @@ class TestPredict:
         p = warmup.predict(events, "poele", 1.0, 1.0)
         assert 0.5 < p["rate"] < 1.0   # plus proche des matins à 0 °C
 
+    def test_progress(self):
+        events = _events(temps=(4.0, 4.5, 5.0, 6.2)) + _events(system="clim", temps=(10.0,))
+        p = warmup.progress(events, "poele")
+        assert p["mornings"] == 4 and p["first_day"] == "2026-11-01"
+        bands = {b["outdoor"]: b for b in p["bands"]}
+        assert (bands[4]["events"], bands[6]["events"], bands[0]["events"]) == (2, 2, 0)   # [3,5[ et [5,7[
+        assert bands[4]["ready"] and bands[6]["ready"] and not bands[0]["ready"]
+        assert (p["ready_min"], p["ready_max"]) == (4, 6)
+        empty = warmup.progress([], "clim")
+        assert (empty["mornings"], empty["first_day"], empty["ready_min"]) == (0, None, None)
+
     def test_curve(self):
         # Matins à 4, 5 et 6 °C : la courbe ne couvre que les températures assez proches
         points = warmup.curve(_events(), "poele")

@@ -63,6 +63,24 @@
       gap: 0.75rem;
       margin-top: 1rem;
     }
+    .learn-system { margin: 0 0 0.9rem; }
+    .learn-head { font-size: 0.85rem; color: var(--text-sub); margin: 0 0 0.35rem; }
+    .learn-head strong { color: var(--text); font-variant-numeric: tabular-nums; }
+    .learn-bands { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 2px; }
+    .learn-band {
+      height: 1.6rem; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--text-sub);
+      background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.15);
+    }
+    .learn-band.has-data { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.45); color: #fbbf24; }
+    .learn-band.is-ready { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.55); color: #4ade80; font-weight: 600; }
+    .learn-temps { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 2px; margin-top: 0.2rem;
+      font-size: 0.65rem; color: var(--text-sub); text-align: center; }
+    .learn-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.75rem; color: var(--text-sub); margin: 0.2rem 0 0; }
+    .learn-legend span::before { content: ""; display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px;
+      margin-right: 0.35rem; vertical-align: -0.1rem; border: 1px solid rgba(148,163,184,0.3); background: rgba(148,163,184,0.08); }
+    .learn-legend .lg-data::before { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.45); }
+    .learn-legend .lg-ready::before { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.55); }
     .stat-card {
       background: var(--bg2);
       border: 1px solid var(--border);
@@ -275,10 +293,13 @@
         Vitesse de montée en température apprise sur les matins de chauffe, et heure d'allumage au plus tard
         pour atteindre la consigne à l'heure de confort (jamais avant le début de plage). <a href="/config">Réglages</a>
       </p>
-      <div id="warmup-summary" class="stat-grid" style="display:none;"></div>
+      <p style="margin:0 0 0.5rem;font-size:0.78rem;color:var(--text-sub);font-weight:500;">Avancement de l'apprentissage</p>
+      <div id="warmup-progress"></div>
+
+      <div id="warmup-summary" class="stat-grid" style="display:none;margin-top:1rem;"></div>
 
       <p style="margin:1.25rem 0 0.5rem;font-size:0.78rem;color:var(--text-sub);font-weight:500;">
-        Vitesse de montée selon la température extérieure <span id="warmup-counts"></span>
+        Vitesse de montée selon la température extérieure
       </p>
       <div id="warmup-curve-empty" class="no-data" style="display:none;padding:1.5rem 1rem;">
         Pas encore de montée mesurée. Les matins de chauffe sont analysés chaque nuit.
@@ -775,6 +796,34 @@
       });
     }
 
+    function renderWarmupProgress(progress) {
+      const el = document.getElementById('warmup-progress');
+      const blocks = ['poele', 'clim'].map(sys => {
+        const p = progress[sys];
+        const n = p.mornings;
+        let head = `<strong>${SYSTEM_LABELS[sys]}</strong> : <strong>${n}</strong> matin${n > 1 ? 's' : ''} appris`;
+        if (p.first_day) head += ` depuis le ${fmtDate(p.first_day)}`;
+        head += p.ready_min === null
+          ? ' · pas encore de prévision'
+          : ` · prévision possible de ${p.ready_min} à ${p.ready_max} °C dehors`;
+        const bands = p.bands.map(b => {
+          const cls = b.ready ? 'is-ready' : b.events ? 'has-data' : '';
+          const title = `${b.outdoor - 1} à ${b.outdoor + 1} °C : ${b.events} matin${b.events > 1 ? 's' : ''}`
+            + (b.ready ? ', prévision possible' : '');
+          return `<div class="learn-band ${cls}" title="${title}">${b.events || ''}</div>`;
+        }).join('');
+        const temps = p.bands.map(b => `<span>${b.outdoor}</span>`).join('');
+        return `<div class="learn-system">
+          <p class="learn-head">${head}</p>
+          <div class="learn-bands" role="img" aria-label="Matins appris par tranche de 2 °C">${bands}</div>
+          <div class="learn-temps" aria-hidden="true">${temps}</div>
+        </div>`;
+      }).join('');
+      el.innerHTML = blocks + `<p class="learn-legend"><span class="lg-ready">prévision possible</span>`
+        + `<span class="lg-data">matins insuffisants</span><span>aucun matin</span>`
+        + `<em style="font-style:normal;opacity:0.8">chiffre = matins appris · °C extérieurs</em></p>`;
+    }
+
     function renderWarmupSummary(d) {
       const s = d.summary;
       const el = document.getElementById('warmup-summary');
@@ -850,8 +899,7 @@
       }
       if (!d) return;
       document.getElementById('warmup-mode').textContent = WARMUP_MODES[d.settings.mode] || '';
-      const c = d.event_counts;
-      document.getElementById('warmup-counts').textContent = `(${c.poele} matin${c.poele > 1 ? 's' : ''} poêle, ${c.clim} clim)`;
+      renderWarmupProgress(d.progress);
       renderWarmupSummary(d);
       renderWarmupChart(d);
       renderWarmupLog(d);
