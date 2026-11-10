@@ -806,11 +806,17 @@
     function renderWarmupLog(d) {
       const table = document.getElementById('warmup-table');
       const empty = document.getElementById('warmup-log-empty');
-      const rows = d.log.filter(e => e.need_ts);
+      const rows = d.log.filter(e => e.need_ts || e.mode === 'day_off');
       if (!rows.length) { table.style.display = 'none'; empty.style.display = 'block'; return; }
       empty.style.display = 'none';
       const tempOn = {{ config.THERMOSTAT.get('temp_on', 20.0) | tojson }};
       document.getElementById('warmup-tbody').innerHTML = rows.map(e => {
+        if (e.mode === 'day_off') {
+          return `<tr>
+            <td>${fmtDate(e.day)}</td>
+            <td colspan="9" style="color:var(--text-sub);">Démarrage optimisé désactivé ce jour-là (heure de confort = début de plage)</td>
+          </tr>`;
+        }
         const real = e.real_minutes;
         const comfort = e.indoor_at_comfort;
         const comfortColor = comfort == null ? 'var(--text-sub)' : comfort >= tempOn - 0.2 ? '#22c55e' : '#f87171';

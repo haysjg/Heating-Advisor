@@ -174,9 +174,9 @@ def _hm(value: str, day: datetime) -> datetime | None:
         return None
 
 
-def morning_window(thermostat_cfg: dict, now: datetime) -> tuple[datetime, datetime] | None:
-    """(début de plage, heure de confort) du jour ; heure de confort = « comfort » de la plage,
-    sinon début + 45 min. None sans plage ou si l'heure de confort n'est pas après le début."""
+def _day_times(thermostat_cfg: dict, now: datetime) -> tuple[datetime, datetime] | None:
+    """(début de plage, heure de confort) du jour, sans contrôle ; heure de confort = « comfort »
+    de la plage, sinon début + 45 min. None sans plage."""
     sched = (thermostat_cfg.get("schedule") or {}).get(DAY_KEYS[now.weekday()])
     if not sched:
         return None
@@ -184,8 +184,20 @@ def morning_window(thermostat_cfg: dict, now: datetime) -> tuple[datetime, datet
     if start is None:
         return None
     comfort = _hm(sched.get("comfort"), now) if sched.get("comfort") else None
-    comfort = comfort or start + timedelta(minutes=DEFAULT_COMFORT_OFFSET_MINUTES)
-    return (start, comfort) if comfort > start else None
+    return start, comfort or start + timedelta(minutes=DEFAULT_COMFORT_OFFSET_MINUTES)
+
+
+def morning_window(thermostat_cfg: dict, now: datetime) -> tuple[datetime, datetime] | None:
+    """(début de plage, heure de confort) du jour, None sans plage ou si l'heure de confort n'est pas
+    après le début : heure de confort = début de plage désactive le démarrage optimisé ce jour-là."""
+    times = _day_times(thermostat_cfg, now)
+    return times if times and times[1] > times[0] else None
+
+
+def disabled_today(thermostat_cfg: dict, now: datetime) -> bool:
+    """Heure de confort réglée égale au début de plage : pas de démarrage optimisé ce jour-là."""
+    times = _day_times(thermostat_cfg, now)
+    return bool(times) and times[1] <= times[0]
 
 
 def plan(thermostat_cfg: dict, now: datetime, effective_temp: float, outdoor: float | None,
@@ -296,6 +308,9 @@ def observe(thermostat_cfg: dict, now: datetime, effective_temp: float, outdoor:
     if mode == "off":
         return
     window = morning_window(thermostat_cfg, now)
+    if not window and disabled_today(thermostat_cfg, now):
+        _log_day_off(thermostat_cfg, now)
+        return
     if not window or now < window[0]:
         return
     start, comfort = window
@@ -327,6 +342,21 @@ def observe(thermostat_cfg: dict, now: datetime, effective_temp: float, outdoor:
                 f"INSERT OR REPLACE INTO optimal_start_log ({', '.join(_LOG_KEYS)}) "
                 f"VALUES ({', '.join('?' for _ in _LOG_KEYS)})",
                 [entry[k] for k in _LOG_KEYS],
+            )
+    except Exception as e:
+        logger.error("Démarrage optimisé : erreur journal du matin : %s", e)
+
+
+def _log_day_off(thermostat_cfg: dict, now: datetime) -> None:
+    """Trace un matin sans démarrage optimisé (heure de confort = début de plage), une fois par jour."""
+    start, comfort = _day_times(thermostat_cfg, now)
+    if now < start:
+        return
+    try:
+        with _connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO optimal_start_log (day, mode, schedule_start, comfort_time) VALUES (?, ?, ?, ?)",
+                (now.date().isoformat(), "day_off", _iso(start), _iso(comfort)),
             )
     except Exception as e:
         logger.error("Démarrage optimisé : erreur journal du matin : %s", e)

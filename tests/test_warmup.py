@@ -194,6 +194,19 @@ class TestJournal:
              "actual_start": "2026-11-09T06:00:00"}
         assert warmup.saved_minutes(e) == 15
 
+    def test_day_off(self):
+        cfg = {**CFG, "optimal_start": {"mode": "pilot"},
+               "schedule": {"mon": {"start": "05:45", "end": "22:00", "comfort": "05:45"}}}
+        assert warmup.disabled_today(cfg, MON.replace(hour=5, minute=45))
+        assert warmup.plan(cfg, MON.replace(hour=5, minute=45), 19.0, 5.0, "poele", _events()) is None
+        self._tick(cfg, 5, 30, 19.0)                 # avant la plage : rien
+        assert warmup.get_log(30) == []
+        self._tick(cfg, 5, 45, 19.0)
+        self._tick(cfg, 5, 55, 19.0)
+        [e] = warmup.get_log(30)
+        assert (e["mode"], e["need_ts"]) == ("day_off", None)
+        assert warmup.summarize([e], 20.0)["mornings"] == 0
+
     def test_off_mode_writes_nothing(self):
         self._tick({**CFG, "optimal_start": {"mode": "off"}}, 5, 45, 19.8)
         assert warmup.get_log(30) == []

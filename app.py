@@ -1927,16 +1927,17 @@ def _optimal_start_settings(data: dict) -> dict:
 
 
 def _schedule_with_comfort(schedule: dict) -> dict:
-    """Plages du thermostat : l'heure de confort (démarrage optimisé) est facultative ; vide = début + 45 min.
-    Refusée si elle n'est pas après le début de la plage."""
+    """Plages du thermostat : l'heure de confort (démarrage optimisé) est facultative ; vide = début + 45 min,
+    égale au début = pas de démarrage optimisé ce jour-là. Refusée avant le début : il faudrait chauffer
+    avant la plage (l'allumage n'est jamais avancé)."""
     result = {}
     for day, sched in (schedule or {}).items():
         sched = dict(sched or {})
         comfort = str(sched.get("comfort") or "").strip()
         if not comfort:
             sched.pop("comfort", None)
-        elif not re.fullmatch(r"\d{2}:\d{2}", comfort) or comfort <= str(sched.get("start", "")):
-            raise ValueError(f"Heure de confort ({day}) : format HH:MM, après le début de la plage")
+        elif not re.fullmatch(r"\d{2}:\d{2}", comfort) or comfort < str(sched.get("start", "")):
+            raise ValueError(f"Heure de confort ({day}) : format HH:MM, pas avant le début de la plage")
         else:
             sched["comfort"] = comfort
         result[day] = sched

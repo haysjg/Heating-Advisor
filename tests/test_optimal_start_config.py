@@ -26,7 +26,12 @@ def test_comfort_optional(app_module):
     assert "comfort" not in out["tue"]
 
 
-@pytest.mark.parametrize("comfort", ["05:30", "05:45", "6h"])
+def test_comfort_equal_to_start_allowed(app_module):
+    out = app_module._schedule_with_comfort({"mon": {"start": "05:45", "end": "22:00", "comfort": "05:45"}})
+    assert out["mon"]["comfort"] == "05:45"
+
+
+@pytest.mark.parametrize("comfort", ["05:30", "6h"])
 def test_comfort_rejected(app_module, comfort):
     with pytest.raises(ValueError):
         app_module._schedule_with_comfort({"mon": {"start": "05:45", "end": "22:00", "comfort": comfort}})

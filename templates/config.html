@@ -743,6 +743,10 @@
                style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.4rem 0.6rem;font-size:0.9rem">
         {% endfor %}
       </div>
+      <p class="hint" style="font-size:0.75rem;color:var(--text-sub);opacity:0.7;margin:0.5rem 0 0">
+        Confort : heure à laquelle la température d'allumage doit être atteinte (démarrage optimisé).
+        Vide = début + 45 min. Égale au début = pas de démarrage optimisé ce jour-là.
+      </p>
 
       {% set _os = config.THERMOSTAT.get('optimal_start') or {} %}
       <p style="font-size:0.82rem;color:var(--text-sub);margin:1.25rem 0 0.5rem">Démarrage optimisé</p>

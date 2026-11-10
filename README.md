@@ -292,7 +292,7 @@ Si la sonde est inaccessible ≥ 3 fois consécutives (~30 min), une alerte emai
 
 Allume le matin **le plus tard possible** pour atteindre la consigne d'allumage (`temp_on`) à l'**heure de confort**, et **jamais avant le début de plage** : la consommation ne peut pas augmenter, au pire elle reste la même (`modules/warmup.py`).
 
-- **Heure de confort** : colonne « Confort » des plages dans `/config` (vide = début de plage + 45 min).
+- **Heure de confort** : colonne « Confort » des plages dans `/config` (vide = début de plage + 45 min ; égale au début = pas de démarrage optimisé ce jour-là, tracé « désactivé » dans le journal ; avant le début : refusée).
 - **Mode** (`THERMOSTAT.optimal_start.mode`) : `off`, `simulation` (par défaut : journal seulement, le thermostat allume comme avant) ou `pilot` (le thermostat attend l'heure de démarrage calculée). Marge de sécurité : `safety_margin_minutes` (15 min).
 - **Apprentissage** : chaque nuit à 2h30 (et au démarrage), chaque montée en température du matin (départ entre 4h et 11h, un seul système en marche) des lectures encore présentes devient une ligne de `warmup_events`, jamais purgée. Mesures : latence (démarrage → +0,2 °C) et vitesse en °C/h (fin de latence → maximum atteint). Montées écartées : moins de 0,5 °C, moins de 20 min de montée, vitesse hors 0,1–6 °C/h.
 - **Modèle** : par système, `durée = latence + écart ÷ vitesse(temp. extérieure)`. Vitesse moyenne pondérée des matins à ±4 °C (noyau gaussien σ = 2 °C), latence médiane. Moins de 3 matins proches : pas de prévision, allumage au début de plage comme avant.
