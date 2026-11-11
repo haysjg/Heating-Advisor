@@ -48,6 +48,12 @@
     .tariff-h3 { margin: 0 0 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--text-sub); }
     .tariff-pct { display: inline-block; min-width: 3.2em; color: var(--text-sub); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
     .raw-table tr.tariff-total td { border-top: 1px solid var(--border); font-weight: 600; }
+    .tariff-redday { display: flex; gap: 0.6rem; align-items: flex-start; margin: 0.85rem 0 0; padding: 0.7rem 0.9rem;
+      border-radius: 10px; font-size: 0.86rem; line-height: 1.5; border: 1px solid var(--border); background: var(--bg2); }
+    .tariff-redday svg { flex-shrink: 0; width: 1.1em; height: 1.1em; margin-top: 0.15em; }
+    .tariff-redday.is-warn { border-color: rgba(245,158,11,0.5); }
+    .tariff-redday.is-warn svg { color: #f59e0b; }
+    .tariff-redday.is-ok svg { color: #22c55e; }
     .tariff-months { margin-top: 1rem; }
     .tariff-months summary { cursor: pointer; font-size: 0.85rem; color: var(--text-sub); margin-bottom: 0.5rem; }
     .tariff-note { margin: 1rem 0 0; font-size: 0.76rem; color: var(--text-sub); line-height: 1.5; }
@@ -75,8 +81,10 @@
       </div>
       <div class="tariff-split">
         <h3 class="tariff-h3">Répartition de la consommation</h3>
-        <p class="tariff-sub" style="margin-bottom:0.5rem">% heures pleines / creuses au sein de chaque couleur · colonne Total : part de chaque couleur</p>
+        <p class="tariff-sub" style="margin-bottom:0.5rem">% heures pleines / creuses au sein de chaque couleur · Total : part de chaque couleur ·
+          Par jour : moyenne par jour Tempo (6&nbsp;h&nbsp;→&nbsp;6&nbsp;h) et écart au jour moyen</p>
         <div class="raw-table-wrapper"><table class="raw-table" id="tariff-breakdown"></table></div>
+        <p class="tariff-redday" id="tariff-redday" style="display:none"></p>
       </div>
       <details class="tariff-months">
         <summary>Détail mois par mois</summary>
@@ -87,6 +95,8 @@
         ({{ config.TARIFF_OPTIONS.kva }} kVA, abonnement compris) sur toute la période. Heures creuses de l'option
         Heures Creuses supposées identiques à celles de Tempo ({{ config.HP_END }}h–{{ config.HP_START }}h).
         L'option Base n'est plus ouverte à la souscription au-delà de 6 kVA : sa ligne reste indicative.
+        Jours rouges et blancs tombent tous deux par temps froid : le relais du poêle se juge en comparant les heures
+        pleines d'un jour rouge à celles d'un jour blanc (alerte au-delà de 90 %, à partir de 3 jours de chaque).
       </p>
     </div>
     <p class="tariff-status" id="tariff-status"></p>
@@ -743,20 +753,29 @@
     const colorRows = [['BLUE', 'Bleu'], ['WHITE', 'Blanc'], ['RED', 'Rouge']];
     const pct = (part, whole) => whole > 0 ? Math.round(part / whole * 100) + ' %' : '—';
     const cell = (kwh, whole) => `${fmtKwh(kwh)} <span class="tariff-pct">${pct(kwh, whole)}</span>`;
-    const sum = { HP: 0, HC: 0 };
-    colorRows.forEach(([key]) => { sum.HP += c.breakdown[key].HP; sum.HC += c.breakdown[key].HC; });
+    const fmtDays = d => d.toLocaleString('fr-FR', { maximumFractionDigits: d < 10 ? 1 : 0 }) + ' j';
+    const sum = { HP: 0, HC: 0, days: 0 };
+    colorRows.forEach(([key]) => {
+      const b = c.breakdown[key];
+      sum.HP += b.HP; sum.HC += b.HC; sum.days += b.days;
+    });
     const grand = sum.HP + sum.HC;
-    let html = '<thead><tr><th>Jours</th><th>Heures pleines</th><th>Heures creuses</th><th>Total</th></tr></thead><tbody>';
+    const avgDay = sum.days ? grand / sum.days : null;
+    const perDay = b => b.per_day == null ? '—'
+      : `${fmtKwh(b.per_day)} <span class="tariff-pct">×${(b.per_day / avgDay).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`;
+    let html = '<thead><tr><th>Jours</th><th>Heures pleines</th><th>Heures creuses</th><th>Total</th><th>Par jour</th></tr></thead><tbody>';
     colorRows.forEach(([key, label]) => {
       const b = c.breakdown[key];
       const total = b.HP + b.HC;
-      html += `<tr><td><span class="dot dot-${key.toLowerCase()}" aria-hidden="true"></span>${label}</td>`
-            + `<td>${cell(b.HP, total)}</td><td>${cell(b.HC, total)}</td><td>${cell(total, grand)}</td></tr>`;
+      html += `<tr><td><span class="dot dot-${key.toLowerCase()}" aria-hidden="true"></span>${label} <span class="tariff-pct">${fmtDays(b.days)}</span></td>`
+            + `<td>${cell(b.HP, total)}</td><td>${cell(b.HC, total)}</td><td>${cell(total, grand)}</td><td>${perDay(b)}</td></tr>`;
     });
-    html += `<tr class="tariff-total"><td>Total</td><td>${cell(sum.HP, grand)}</td><td>${cell(sum.HC, grand)}</td>`
-          + `<td>${fmtKwh(grand)}</td></tr>`;
+    html += `<tr class="tariff-total"><td>Total <span class="tariff-pct">${fmtDays(sum.days)}</span></td>`
+          + `<td>${cell(sum.HP, grand)}</td><td>${cell(sum.HC, grand)}</td><td>${fmtKwh(grand)}</td>`
+          + `<td>${avgDay == null ? '—' : fmtKwh(avgDay)}</td></tr>`;
     html += '</tbody>';
     document.getElementById('tariff-breakdown').innerHTML = html;
+    renderRedDayVerdict(c.red_day);
 
     const monthName = m => new Date(m + '-01T12:00:00').toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
     html = '<thead><tr><th>Mois</th><th>kWh</th><th>Tempo</th><th>Base</th><th>Heures Creuses</th></tr></thead><tbody>';
@@ -774,6 +793,23 @@
   }
 
   let tariffChart = null;
+
+  function renderRedDayVerdict(v) {
+    const el = document.getElementById('tariff-redday');
+    if (!v) { el.style.display = 'none'; return; }
+    const red = fmtKwh(v.red_hp_per_day), white = fmtKwh(v.white_hp_per_day);
+    if (v.status === 'warn') {
+      const how = v.ratio > 1 ? "plus qu'un jour blanc" : "presque autant qu'un jour blanc";
+      el.innerHTML = `${icon('triangle-alert')}<span><strong>Relais insuffisant.</strong> Un jour rouge, tu consommes ${red} en heures pleines, `
+        + `${how} (${white}) : le poêle ne prend pas assez le relais de la clim et des radiateurs.</span>`;
+    } else {
+      const less = Math.round((1 - v.ratio) * 100);
+      el.innerHTML = `${icon('circle-check')}<span><strong>Bon relais.</strong> Un jour rouge, tu consommes ${less} % de moins en heures pleines `
+        + `qu'un jour blanc (${red} contre ${white}) : le poêle prend bien le relais.</span>`;
+    }
+    el.className = 'tariff-redday is-' + v.status;
+    el.style.display = 'flex';
+  }
 
   function fmtSaving(v) {
     return v >= 0 ? `${fmtEur(v, 2)} d'économie` : `${fmtEur(-v, 2)} de surcoût`;

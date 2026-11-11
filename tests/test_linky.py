@@ -211,3 +211,48 @@ class TestAccessCheck:
             "valid": True, "consent_expiration_date": "2029-11-11T00:00:00", "call_number": 3, "quota_limit": 50})
         ok, message = linky.test_access(CFG)
         assert ok and "11/11/2029" in message and "3/50" in message
+
+
+def _day_curve(day: date, kwh_hp: float, kwh_hc: float) -> list:
+    """Jour Tempo complet (6 h → 6 h le lendemain), 48 demi-heures, kWh répartis HP/HC."""
+    rows = []
+    t = datetime.combine(day, datetime.min.time()) + timedelta(hours=6)
+    for _ in range(48):
+        hp = 6 <= t.hour < 22
+        rows.append((t.isoformat(timespec="seconds"), kwh_hp / 32 if hp else kwh_hc / 16))
+        t += timedelta(minutes=30)
+    return rows
+
+
+class TestPerDayAndVerdict:
+    def _compare(self, days):
+        curve, colors = [], {}
+        for i, (color, hp, hc) in enumerate(days):
+            d = date(2026, 12, 1) + timedelta(days=i)
+            colors[d.isoformat()] = color
+            curve += _day_curve(d, hp, hc)
+        return linky.compare_options(curve, colors, TEMPO_PRICES, OPTIONS, 6, 22)
+
+    def test_days_and_per_day(self):
+        r = self._compare([("BLUE", 16, 8)] * 4 + [("RED", 8, 8)] * 2)
+        assert r["breakdown"]["BLUE"]["days"] == 4.0
+        assert r["breakdown"]["BLUE"]["per_day"] == 24.0
+        assert r["breakdown"]["RED"]["hp_per_day"] == 8.0
+
+    def test_partial_day_counted_pro_rata(self):
+        curve = _day_curve(date(2026, 12, 1), 16, 8)[:24]
+        r = linky.compare_options(curve, {"2026-12-01": "BLUE"}, TEMPO_PRICES, OPTIONS, 6, 22)
+        assert r["breakdown"]["BLUE"]["days"] == 0.5
+
+    def test_warn_when_red_close_to_white(self):
+        r = self._compare([("WHITE", 20, 10)] * 3 + [("RED", 19, 10)] * 3)
+        assert r["red_day"]["status"] == "warn"
+        assert r["red_day"]["ratio"] == 0.95
+
+    def test_ok_when_red_well_below_white(self):
+        r = self._compare([("WHITE", 20, 10)] * 3 + [("RED", 10, 10)] * 3)
+        assert r["red_day"] == {"status": "ok", "ratio": 0.5, "red_hp_per_day": 10.0, "white_hp_per_day": 20.0}
+
+    def test_no_verdict_with_too_few_days(self):
+        r = self._compare([("WHITE", 20, 10)] * 3 + [("RED", 19, 10)] * 2)
+        assert r["red_day"] is None

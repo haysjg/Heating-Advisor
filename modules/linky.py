@@ -35,6 +35,8 @@ DAILY_CALL_BUDGET = 40      # sous la limite MyElectricalData (50/jour sans cach
 CALL_PAUSE_SECONDS = 1.0    # bien sous la limite de 5 appels/s
 REQUEST_TIMEOUT = 30
 OPTIONS = ("TEMPO", "BASE", "HPHC")
+VERDICT_MIN_DAYS = 3        # jours rouges et blancs nécessaires pour juger le relais du poêle
+RED_VS_WHITE_WARN = 0.9     # HP d'un jour rouge ≥ 90 % de celles d'un jour blanc → relais insuffisant
 
 _PDL_RE = re.compile(r"\d{14}")
 _INTERVAL_RE = re.compile(r"PT(\d+)M")
@@ -276,6 +278,7 @@ def compare_options(curve: list, colors: dict, tempo_prices: dict, options: dict
     subs = options["subscription_monthly"]
     months: dict = {}
     breakdown = {c: {"HP": 0.0, "HC": 0.0} for c in ("BLUE", "WHITE", "RED")}
+    intervals = {c: 0 for c in breakdown}
     unpriced = 0.0
     days = set()
 
@@ -295,6 +298,7 @@ def compare_options(curve: list, colors: dict, tempo_prices: dict, options: dict
         m["HPHC"] += kwh * hphc[period]
         m["days"].add(day)
         breakdown[color][period] += kwh
+        intervals[color] += 1
 
     def _subscription(option: str, n_days: int) -> float:
         return subs[option] * 12 / 365 * n_days
@@ -313,6 +317,7 @@ def compare_options(curve: list, colors: dict, tempo_prices: dict, options: dict
         month_rows.append(row)
 
     total_kwh = sum(m["kwh"] for m in months.values())
+    by_color = _breakdown_with_days(breakdown, intervals, _interval_minutes(curve))
     return {
         "first_day": min(days) if days else None,
         "last_day": max(days) if days else None,
@@ -323,7 +328,55 @@ def compare_options(curve: list, colors: dict, tempo_prices: dict, options: dict
         "subscription": {o: round(totals[o] - energy[o], 2) for o in OPTIONS},
         "savings": {o: round(totals[o] - totals["TEMPO"], 2) for o in ("BASE", "HPHC")},
         "best": min(OPTIONS, key=lambda o: totals[o]) if days else None,
-        "breakdown": {c: {p: round(v, 1) for p, v in b.items()} for c, b in breakdown.items()},
+        "breakdown": by_color,
+        "red_day": red_day_verdict(by_color),
         "months": month_rows,
         "unpriced_kwh": round(unpriced, 1),
+    }
+
+
+def _interval_minutes(curve: list) -> int:
+    """Pas de mesure de la courbe (30 min par défaut chez Enedis) : écart le plus fréquent entre deux points."""
+    gaps: dict = {}
+    for (a, _), (b, _) in zip(curve[:200], curve[1:201]):
+        minutes = int((datetime.fromisoformat(b) - datetime.fromisoformat(a)).total_seconds() // 60)
+        if 0 < minutes <= 60:
+            gaps[minutes] = gaps.get(minutes, 0) + 1
+    return max(gaps, key=gaps.get) if gaps else 30
+
+
+def _breakdown_with_days(breakdown: dict, intervals: dict, step_minutes: int) -> dict:
+    """kWh HP/HC par couleur, nombre de jours Tempo couverts (6 h → 6 h, au prorata des mesures)
+    et consommation moyenne par jour (totale et en heures pleines)."""
+    result = {}
+    for color, b in breakdown.items():
+        days = intervals[color] * step_minutes / 1440
+        result[color] = {
+            "HP": round(b["HP"], 1),
+            "HC": round(b["HC"], 1),
+            "days": round(days, 1),
+            "per_day": round((b["HP"] + b["HC"]) / days, 1) if days else None,
+            "hp_per_day": round(b["HP"] / days, 1) if days else None,
+        }
+    return result
+
+
+def red_day_verdict(breakdown: dict) -> dict | None:
+    """Le poêle prend-il le relais les jours rouges ?
+
+    Compare les heures pleines d'un jour rouge à celles d'un jour blanc : deux couleurs tirées par
+    temps froid, donc à besoin de chauffage comparable, mais au kWh HP 3,8 fois plus cher en rouge.
+    None tant qu'il y a moins de VERDICT_MIN_DAYS jours rouges ou blancs.
+    """
+    red, white = breakdown.get("RED", {}), breakdown.get("WHITE", {})
+    if (red.get("days") or 0) < VERDICT_MIN_DAYS or (white.get("days") or 0) < VERDICT_MIN_DAYS:
+        return None
+    if not white.get("hp_per_day"):
+        return None
+    ratio = red["hp_per_day"] / white["hp_per_day"]
+    return {
+        "status": "warn" if ratio >= RED_VS_WHITE_WARN else "ok",
+        "ratio": round(ratio, 2),
+        "red_hp_per_day": red["hp_per_day"],
+        "white_hp_per_day": white["hp_per_day"],
     }
