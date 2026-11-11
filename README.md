@@ -249,7 +249,7 @@ Calcul pur de la page `/stock` (`compute_stock_stats`), à partir des livraisons
 | Fonction | Description |
 |---|---|
 | `sync(linky_cfg)` | Job quotidien : récupère via MyElectricalData les jours manquants (d'abord les récents, puis l'historique en remontant, par tranches de 7 jours), dans la limite de 40 appels par jour. Stocke dans `linky_load_curve`. |
-| `compare_options(curve, colors, tempo_prices, options, hp_start, hp_end)` | Pur : coût de la même consommation en Tempo, Base et Heures Creuses (abonnement au prorata des jours), répartition kWh par couleur et HP/HC, détail mensuel. |
+| `compare_options(curve, colors, tempo_prices, options, hp_start, hp_end)` | Pur : coût de la même consommation en Tempo, Base et Heures Creuses (abonnement au prorata des jours), répartition kWh par couleur et HP/HC (avec % HP/HC par couleur, part de chaque couleur et ligne Total), détail mensuel. |
 | `test_access(linky_cfg)` | Vérifie la clé et le consentement (`/valid_access`) : date de fin du consentement, appels du jour. |
 
 ---

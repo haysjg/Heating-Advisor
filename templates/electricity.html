@@ -46,6 +46,8 @@
     .tariff-chart-wrapper { position: relative; height: 240px; }
     .tariff-split { margin-top: 1.25rem; }
     .tariff-h3 { margin: 0 0 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--text-sub); }
+    .tariff-pct { display: inline-block; min-width: 3.2em; color: var(--text-sub); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .raw-table tr.tariff-total td { border-top: 1px solid var(--border); font-weight: 600; }
     .tariff-months { margin-top: 1rem; }
     .tariff-months summary { cursor: pointer; font-size: 0.85rem; color: var(--text-sub); margin-bottom: 0.5rem; }
     .tariff-note { margin: 1rem 0 0; font-size: 0.76rem; color: var(--text-sub); line-height: 1.5; }
@@ -73,6 +75,7 @@
       </div>
       <div class="tariff-split">
         <h3 class="tariff-h3">Répartition de la consommation</h3>
+        <p class="tariff-sub" style="margin-bottom:0.5rem">% heures pleines / creuses au sein de chaque couleur · colonne Total : part de chaque couleur</p>
         <div class="raw-table-wrapper"><table class="raw-table" id="tariff-breakdown"></table></div>
       </div>
       <details class="tariff-months">
@@ -738,12 +741,20 @@
     }).join('');
 
     const colorRows = [['BLUE', 'Bleu'], ['WHITE', 'Blanc'], ['RED', 'Rouge']];
+    const pct = (part, whole) => whole > 0 ? Math.round(part / whole * 100) + ' %' : '—';
+    const cell = (kwh, whole) => `${fmtKwh(kwh)} <span class="tariff-pct">${pct(kwh, whole)}</span>`;
+    const sum = { HP: 0, HC: 0 };
+    colorRows.forEach(([key]) => { sum.HP += c.breakdown[key].HP; sum.HC += c.breakdown[key].HC; });
+    const grand = sum.HP + sum.HC;
     let html = '<thead><tr><th>Jours</th><th>Heures pleines</th><th>Heures creuses</th><th>Total</th></tr></thead><tbody>';
     colorRows.forEach(([key, label]) => {
       const b = c.breakdown[key];
+      const total = b.HP + b.HC;
       html += `<tr><td><span class="dot dot-${key.toLowerCase()}" aria-hidden="true"></span>${label}</td>`
-            + `<td>${fmtKwh(b.HP)}</td><td>${fmtKwh(b.HC)}</td><td>${fmtKwh(b.HP + b.HC)}</td></tr>`;
+            + `<td>${cell(b.HP, total)}</td><td>${cell(b.HC, total)}</td><td>${cell(total, grand)}</td></tr>`;
     });
+    html += `<tr class="tariff-total"><td>Total</td><td>${cell(sum.HP, grand)}</td><td>${cell(sum.HC, grand)}</td>`
+          + `<td>${fmtKwh(grand)}</td></tr>`;
     html += '</tbody>';
     document.getElementById('tariff-breakdown').innerHTML = html;
 
