@@ -14,6 +14,7 @@ Application Flask de recommandation de chauffage. Compare en temps réel le coû
 6. [Mode Absence](#mode-absence)
 7. [Notifications push](#notifications-push)
 8. [Suivi électricité (IMAP)](#suivi-électricité-imap)
+   - [Compteur Linky et comparatif des options](#compteur-linky-et-comparatif-des-options)
 9. [API REST](#api-rest)
 10. [Configuration](#configuration)
 11. [Déploiement](#déploiement)
@@ -242,6 +243,14 @@ Calcul pur de la page `/stock` (`compute_stock_stats`), à partir des livraisons
 | `get_readings(weeks)` | Retourne l'historique des lectures sur N semaines. |
 | `get_latest_reading()` | Retourne la dernière lecture (carte dashboard). |
 | `with_clim_estimate(readings, clim_kwh_by_day)` | Ajoute la part estimée de la clim à chaque semaine (`clim_kwh`, `clim_share` en %), à partir de `clim_daily` ; `None` si un jour de la semaine n'est pas suivi. |
+
+### `linky.py` — Courbe de charge Linky et comparatif des options
+
+| Fonction | Description |
+|---|---|
+| `sync(linky_cfg)` | Job quotidien : récupère via MyElectricalData les jours manquants (d'abord les récents, puis l'historique en remontant, par tranches de 7 jours), dans la limite de 40 appels par jour. Stocke dans `linky_load_curve`. |
+| `compare_options(curve, colors, tempo_prices, options, hp_start, hp_end)` | Pur : coût de la même consommation en Tempo, Base et Heures Creuses (abonnement au prorata des jours), répartition kWh par couleur et HP/HC, détail mensuel. |
+| `test_access(linky_cfg)` | Vérifie la clé et le consentement (`/valid_access`) : date de fin du consentement, appels du jour. |
 
 ---
 
@@ -493,6 +502,33 @@ Une fois les identifiants renseignés et enregistrés, cliquer sur **🔌 Tester
 ### Fonctionnement
 
 Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherche les emails correspondant au filtre, extrait la consommation (kWh) et la période (via le header `X-CampaignID: WEEKLY_YYYY-MM-DD_YYYY-MM-DD`, si préservé), et historise chaque email une seule fois (dédup par `Message-ID` — le polling peut donc être plus fréquent que la fréquence d'envoi réelle sans créer de doublons). Une page dédiée **`/electricity`** affiche l'historique (graphique + indicateurs).
+
+### Compteur Linky et comparatif des options
+
+Les mails « flash élec » ne donnent qu'un total hebdomadaire. Pour savoir si Tempo est vraiment l'option la moins
+chère, l'appli récupère la **courbe de charge** du compteur Linky (consommation toutes les 30 min) via la passerelle
+[MyElectricalData](https://www.myelectricaldata.fr), puis facture chaque demi-heure selon les trois options du Tarif Bleu.
+
+**Mise en place (une fois)** : créer un compte MyElectricalData et donner le consentement Enedis, vérifier que la
+collecte de la courbe de charge est activée sur le compte Enedis, puis renseigner dans `/config` → **Compteur Linky**
+le numéro PDL (14 chiffres) et la clé d'accès (chiffrée au repos). **Tester l'accès** affiche la date de fin du consentement.
+
+**Récupération** (`linky_job`, chaque jour à 10h30, et dans la minute qui suit un enregistrement de `/config`) :
+- Enedis limite la courbe de charge à 7 jours par appel et 24 mois d'historique ; MyElectricalData à 50 appels/jour
+  sans son cache (non utilisé : les données ne font que transiter). L'appli s'arrête à 40 appels par jour et attend
+  1 s entre deux appels.
+- Premier lancement : les 7 derniers jours, puis l'historique en remontant jusqu'à `LINKY.backfill_days` (365 j),
+  soit environ 2 jours de récupération. Une réponse vide ou une erreur définitive marque la fin de l'historique
+  disponible (collecte activée récemment) ; une panne passagère (réseau, quota, clé) est retentée le lendemain.
+- État dans `data/linky_state.json` (dernier passage, dernière erreur, appels du jour, historique terminé).
+
+**Calcul** (`/api/electricity/tariff-comparison`, carte « Tempo ou une autre option ? » en haut de `/electricity`) :
+- 12 derniers mois disponibles ; couleurs Tempo passées lues sur `api-couleur-tempo.fr` (`joursTempo?periode=…`),
+  gardées dans `data/tempo_history.json`.
+- Le jour Tempo va de 6 h à 6 h : une heure creuse avant 6 h prend la couleur de la veille.
+- Tarifs et abonnements de `TARIFF_OPTIONS` (config.py, grille EDF du 1er août 2026, 12 kVA) et `TEMPO_PRICES`,
+  appliqués à toute la période. Heures creuses de l'option HP/HC supposées identiques à celles de Tempo (22h–6h).
+  L'option Base n'est plus ouverte à la souscription au-delà de 6 kVA : comparaison indicative.
 
 ---
 

@@ -23,7 +23,7 @@ from markupsafe import Markup
 
 import config
 from modules.weather import get_current_conditions, get_current_temperature, get_tomorrow_weather, get_hourly_forecast
-from modules.tempo import get_season_stats, get_tempo_info
+from modules.tempo import get_day_colors, get_season_stats, get_tempo_info
 from modules.analysis import DataCache, build_advisor_config, compute_analysis, tariff_slot
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
 from modules.crypto import decrypt_password, encrypt_password
@@ -40,6 +40,7 @@ import modules.pellet_refill as pellet_refill
 from modules.stock import compute_stock_stats
 import modules.imap_client as imap_client
 import modules.electricity as electricity_module
+import modules.linky as linky_module
 import modules.backup as backup_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -779,6 +780,39 @@ def _run_electricity_fetch():
     logger.info("Électricité : fetch terminé — %s", result)
 
 
+def _run_linky_sync():
+    """Récupère la courbe de charge Linky manquante (appelé par le scheduler)."""
+    try:
+        linky_module.sync(config.LINKY)
+    except Exception as e:
+        logger.error("Linky : synchronisation échouée : %s", e)
+
+
+def _reschedule_linky_sync(run_soon: bool = False):
+    """(Re)planifie la récupération quotidienne de la courbe de charge (Enedis publie la veille le matin).
+
+    run_soon : passage supplémentaire dans la minute (après une modification de /config).
+    """
+    for job_id in ("linky_job", "linky_now_job"):
+        try:
+            _scheduler.remove_job(job_id)
+        except Exception:
+            pass
+    if not linky_module.is_configured(config.LINKY):
+        logger.info("Linky désactivé ou incomplet — aucun job planifié")
+        return
+    _scheduler.add_job(
+        _run_linky_sync,
+        CronTrigger(hour=10, minute=30, timezone="Europe/Paris"),
+        id="linky_job",
+        misfire_grace_time=3600,
+    )
+    if run_soon:
+        _scheduler.add_job(_run_linky_sync, "date", run_date=datetime.now() + timedelta(seconds=20),
+                           id="linky_now_job")
+    logger.info("Linky : courbe de charge récupérée chaque jour à 10h30")
+
+
 def _reschedule_electricity_fetch():
     """(Re)planifie le job de suivi électricité selon la config courante."""
     try:
@@ -803,6 +837,7 @@ _reschedule_notify()
 _reschedule_thermostat()
 _reschedule_radiateurs()
 _reschedule_electricity_fetch()
+_reschedule_linky_sync()
 
 # ── Historique des températures ───────────────────────────
 _scheduler.add_job(
@@ -1838,6 +1873,42 @@ def api_electricity_import_log():
         return _internal_error(e)
 
 
+@app.route("/api/electricity/tariff-comparison")
+def api_electricity_tariff_comparison():
+    """Coût de la consommation Linky des 12 derniers mois en Tempo, Base et Heures Creuses."""
+    try:
+        state = linky_module.get_state()
+        result = {
+            "configured": linky_module.is_configured(config.LINKY),
+            "last_sync": state.get("last_sync"),
+            "last_error": state.get("last_error"),
+            "backfill_done": bool(state.get("backfill_done")),
+            "kva": config.TARIFF_OPTIONS.get("kva"),
+            "comparison": None,
+        }
+        until = date.today() - timedelta(days=1)
+        curve = linky_module.get_curve(until - timedelta(days=364), until)
+        if curve:
+            first = date.fromisoformat(curve[0][0][:10])
+            colors = get_day_colors(first - timedelta(days=1), until)
+            result["comparison"] = linky_module.compare_options(
+                curve, colors, config.TEMPO_PRICES, config.TARIFF_OPTIONS, config.HP_START, config.HP_END)
+        return jsonify(result)
+    except Exception as e:
+        return _internal_error(e)
+
+
+@app.route("/api/linky/test", methods=["POST"])
+def api_linky_test():
+    """Vérifie la clé MyElectricalData et le consentement Enedis enregistrés."""
+    try:
+        ok, message = linky_module.test_access(config.LINKY)
+        return jsonify({"status": "ok" if ok else "error", "message": message})
+    except Exception as e:
+        error_id = _log_internal_error(e)
+        return jsonify({"status": "error", "message": _internal_error_message(error_id), "error_id": error_id}), 500
+
+
 @app.route("/api/electricity/imap/test", methods=["POST"])
 def api_electricity_imap_test():
     """Teste la connexion IMAP avec les identifiants actuellement enregistrés."""
@@ -1993,6 +2064,11 @@ def api_config_save():
             final_mf_app_id = encrypt_password(new_mf_app_id)
         else:
             final_mf_app_id = config.OBSERVATIONS.get("meteofrance_application_id", "")
+        new_linky_token = str(data.get("linky_token", "")).strip()
+        final_linky_token = encrypt_password(new_linky_token) if new_linky_token else config.LINKY.get("token", "")
+        linky_pdl = re.sub(r"\s", "", str(data.get("linky_pdl", config.LINKY.get("usage_point_id", ""))))
+        if linky_pdl and not linky_module.valid_pdl(linky_pdl):
+            raise ValueError("Numéro PDL Linky : 14 chiffres attendus")
         new_ic_token = str(data.get("infoclimat_token", "")).strip()
         if new_ic_token:
             final_ic_token = encrypt_password(new_ic_token)
@@ -2120,6 +2196,11 @@ def api_config_save():
                 "check_interval_hours": int(data.get("electricity_interval_hours", config.ELECTRICITY.get("check_interval_hours", 24))),
                 "lookback_days": int(data.get("electricity_lookback_days", config.ELECTRICITY.get("lookback_days", 90))),
             },
+            "LINKY": {
+                "enabled": bool(data.get("linky_enabled", config.LINKY.get("enabled", False))),
+                "usage_point_id": linky_pdl,
+                "token": final_linky_token,
+            },
         }
         thermostat_override = override["THERMOSTAT"]
         thermostat_override["temp_on"], thermostat_override["temp_off"] = thermostat_module.validate_thresholds(
@@ -2135,6 +2216,7 @@ def api_config_save():
         _reschedule_notify()
         _reschedule_radiateurs()
         _reschedule_electricity_fetch()
+        _reschedule_linky_sync(run_soon=True)
 
         # Consigne clim alignée sur temp_off si elle chauffe déjà (sinon envoyée au prochain allumage)
         clim_setpoint = None

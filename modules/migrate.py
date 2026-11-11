@@ -267,6 +267,17 @@ def _migrate_010(conn):
     """)
 
 
+def _migrate_011(conn):
+    """Courbe de charge Linky (modules/linky.py, via MyElectricalData) : linky_load_curve, une ligne par
+    intervalle de mesure (début en heure locale, kWh consommés), jamais purgée — base du comparatif d'options."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS linky_load_curve (
+            ts  TEXT PRIMARY KEY,
+            kwh REAL NOT NULL
+        );
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -279,6 +290,7 @@ MIGRATIONS = [
     _migrate_008,
     _migrate_009,
     _migrate_010,
+    _migrate_011,
 ]
 
 

@@ -150,6 +150,18 @@ def season_of(day: date) -> str:
     return f"{start}-{start + 1}"
 
 
+def _fetch_season(season: str) -> list | None:
+    """Jours de la saison publiés par l'API ({dateJour, codeJour}), None en cas d'échec."""
+    try:
+        req = urllib.request.Request(f"{BASE_URL}/joursTempo?periode={season}", headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=SEASON_FETCH_TIMEOUT) as resp:
+            days = json.loads(resp.read())
+        return days if isinstance(days, list) else None
+    except Exception as e:
+        logger.warning("API Tempo (saison %s) échouée : %s", season, e)
+        return None
+
+
 def _count_colors(days: list) -> dict:
     counts = {"BLUE": 0, "WHITE": 0, "RED": 0}
     for d in days:
@@ -190,15 +202,8 @@ def get_season_stats(now: datetime | None = None) -> dict | None:
     except ValueError:
         last_try = None
     if last_try is None or now - last_try >= timedelta(hours=SEASON_REFRESH_HOURS):
-        counts = None
-        try:
-            req = urllib.request.Request(f"{BASE_URL}/joursTempo?periode={season}", headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=SEASON_FETCH_TIMEOUT) as resp:
-                days = json.loads(resp.read())
-            if isinstance(days, list):
-                counts = _count_colors(days)
-        except Exception as e:
-            logger.warning("API Tempo (saison %s) échouée : %s", season, e)
+        days = _fetch_season(season)
+        counts = _count_colors(days) if days is not None else None
         cache = {**cache, "season": season, "checked_at": now.isoformat(timespec="seconds")}
         if counts is not None:
             cache["counts"] = counts
@@ -209,3 +214,56 @@ def get_season_stats(now: datetime | None = None) -> dict | None:
 
     counts = cache.get("counts")
     return _season_summary(season, counts) if isinstance(counts, dict) else None
+
+
+# ── Couleurs passées, jour par jour (comparatif des options tarifaires) ──
+HISTORY_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "tempo_history.json")
+
+
+def get_day_colors(start: date, end: date, now: datetime | None = None) -> dict:
+    """Couleur Tempo de chaque jour de [start, end] : {"AAAA-MM-JJ": "BLUE" | "WHITE" | "RED"}.
+
+    Les couleurs publiées ne changent plus : elles sont gardées dans data/tempo_history.json.
+    Une saison n'est redemandée à l'API que s'il lui manque des jours passés, au plus toutes les
+    SEASON_REFRESH_HOURS heures. Les jours sans couleur connue sont absents du résultat.
+    """
+    now = now or datetime.now()
+    end = min(end, now.date())
+    cache = jsonstore.load(HISTORY_FILE, {})
+    cache = cache if isinstance(cache, dict) else {}
+    colors = cache.get("colors") if isinstance(cache.get("colors"), dict) else {}
+    checked = cache.get("checked") if isinstance(cache.get("checked"), dict) else {}
+
+    missing_seasons = []
+    day = start
+    while day <= end:
+        if day.isoformat() not in colors:
+            season = season_of(day)
+            if season not in missing_seasons:
+                missing_seasons.append(season)
+        day += timedelta(days=1)
+
+    changed = False
+    for season in missing_seasons:
+        try:
+            last_try = datetime.fromisoformat(checked.get(season, ""))
+        except ValueError:
+            last_try = None
+        if last_try is not None and now - last_try < timedelta(hours=SEASON_REFRESH_HOURS):
+            continue
+        days = _fetch_season(season)
+        checked[season] = now.isoformat(timespec="seconds")
+        changed = True
+        for d in days or []:
+            color = COLOR_MAP.get(d.get("codeJour"))
+            if color and isinstance(d.get("dateJour"), str):
+                colors[d["dateJour"]] = color
+
+    if changed:
+        try:
+            jsonstore.save(HISTORY_FILE, {"colors": colors, "checked": checked}, indent=None)
+        except OSError as e:
+            logger.warning("Historique Tempo : écriture impossible : %s", e)
+
+    first, last = start.isoformat(), end.isoformat()
+    return {d: c for d, c in colors.items() if first <= d <= last}

@@ -871,6 +871,43 @@
 
     <hr class="section-divider">
 
+    {# ── Compteur Linky (MyElectricalData) ── #}
+    <div class="card form-section">
+      <h3>{{ icon('plug') }}Compteur Linky <small style="font-weight:400;font-size:0.8em">(MyElectricalData — optionnel)</small></h3>
+      <p class="hint" style="margin-top:-0.5rem;margin-bottom:1rem">
+        Consommation réelle toutes les 30 min, récupérée chaque matin : sert au comparatif Tempo / Base / Heures Creuses
+        de la page Électricité. Clé obtenue sur myelectricaldata.fr après le consentement Enedis ; le cache de la passerelle
+        n'est pas utilisé.
+      </p>
+
+      <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem">
+        <input type="checkbox" id="linky_enabled" style="width:1.1rem;height:1.1rem;accent-color:var(--blue);cursor:pointer"
+               {% if config.LINKY.enabled %}checked{% endif %}>
+        <label for="linky_enabled" style="font-size:0.9rem;cursor:pointer">
+          Récupérer la courbe de charge du compteur Linky
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Numéro PDL (14 chiffres)</label>
+          <input type="text" id="linky_pdl" value="{{ config.LINKY.usage_point_id }}" inputmode="numeric" maxlength="20" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Clé d'accès MyElectricalData</label>
+          <input type="password" id="linky_token" autocomplete="new-password"
+                 placeholder="{{ 'Déjà configurée — laisser vide pour conserver' if config.LINKY.token else 'Clé fournie par myelectricaldata.fr' }}">
+        </div>
+      </div>
+
+      <div style="margin-top:1rem; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap">
+        <button type="button" class="btn-back" onclick="testLinkyAccess()" id="btn-linky-test">{{ icon('plug') }}Tester l'accès</button>
+        <span class="hint" style="margin:0">Enregistrer d'abord : le test utilise la clé enregistrée.</span>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
     {# ── Radiateurs Tempo Rouge ── #}
     <div class="card form-section">
       <h3><span class="dot dot-red" aria-hidden="true"></span>Radiateurs — Jours Tempo Rouge</h3>
@@ -1167,6 +1204,9 @@
       electricity_subject: getVal('electricity_subject'),
       electricity_interval_hours: parseInt(getVal('electricity_interval_hours')),
       electricity_lookback_days: parseInt(getVal('electricity_lookback_days')),
+      linky_enabled: document.getElementById('linky_enabled').checked,
+      linky_pdl: getVal('linky_pdl'),
+      linky_token: getVal('linky_token'),
     };
 
     fetch('/api/config', {
@@ -1457,6 +1497,8 @@
       electricity_subject: getVal('electricity_subject'),
       electricity_interval_hours: parseInt(getVal('electricity_interval_hours')),
       electricity_lookback_days: parseInt(getVal('electricity_lookback_days')),
+      linky_enabled: document.getElementById('linky_enabled').checked,
+      linky_pdl: getVal('linky_pdl'),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1628,6 +1670,16 @@
         showToast((d.status === 'ok' ? '✓ ' : '✗ ') + d.message, d.status === 'ok');
         refreshElectricityStatus();
       })
+      .catch(() => showToast('Erreur réseau', false))
+      .finally(() => { btn.disabled = false; });
+  }
+
+  function testLinkyAccess() {
+    const btn = document.getElementById('btn-linky-test');
+    btn.disabled = true;
+    fetch('/api/linky/test', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => showToast((d.status === 'ok' ? '✓ ' : '✗ ') + d.message, d.status === 'ok'))
       .catch(() => showToast('Erreur réseau', false))
       .finally(() => { btn.disabled = false; });
   }

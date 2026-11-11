@@ -170,6 +170,25 @@ ELECTRICITY = {
     "lookback_days": 2200,  # couvre depuis mars 2021 (1ers mails Lite), avec marge
 }
 
+# ── Compteur Linky (courbe de charge via MyElectricalData) ───
+# Consommation réelle toutes les 30 min : base du comparatif Tempo / Base / Heures Creuses.
+LINKY = {
+    "enabled": False,
+    "usage_point_id": "",   # PDL, 14 chiffres (zéros de tête compris)
+    "token": "",            # clé d'accès MyElectricalData (chiffrée au repos)
+    "backfill_days": 365,   # historique récupéré au premier lancement
+}
+
+# ── Autres options du Tarif Bleu (comparatif avec Tempo) ─────
+# Grille officielle EDF « Tarif Bleu » applicable au 1er août 2026, 12 kVA, TTC.
+# NB : l'option Base n'est plus ouverte à la souscription au-delà de 6 kVA (comparaison indicative).
+TARIFF_OPTIONS = {
+    "kva": 12,
+    "subscription_monthly": {"TEMPO": 23.50, "BASE": 23.76, "HPHC": 23.76},   # €/mois
+    "BASE_PRICE": 0.1985,                    # €/kWh
+    "HPHC_PRICES": {"HP": 0.2142, "HC": 0.1589},   # €/kWh, HC aux mêmes heures que Tempo
+}
+
 # ── Radiateurs Tempo Rouge ───────────────────────────────────
 RADIATEURS_TEMPO_ROUGE = {
     "enabled": False,

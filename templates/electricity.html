@@ -37,6 +37,18 @@
     .status-badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 6px; font-size: 0.78rem; font-weight: 700; }
     .status-success { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; }
     .status-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
+    .tariff-sub { margin: 0 0 1rem; font-size: 0.82rem; color: var(--text-sub); }
+    .tariff-verdict { margin: 0 0 1rem; font-size: 1rem; line-height: 1.5; }
+    .tariff-verdict strong { font-variant-numeric: tabular-nums; }
+    .kpi-card.is-best { border-color: rgba(34,197,94,0.55); box-shadow: inset 0 0 0 1px rgba(34,197,94,0.25); }
+    .kpi-sub { font-size: 0.78rem; color: var(--text-sub); margin: 0.25rem 0 0; font-variant-numeric: tabular-nums; }
+    .tariff-split { margin-top: 1.25rem; }
+    .tariff-h3 { margin: 0 0 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--text-sub); }
+    .tariff-months { margin-top: 1rem; }
+    .tariff-months summary { cursor: pointer; font-size: 0.85rem; color: var(--text-sub); margin-bottom: 0.5rem; }
+    .tariff-note { margin: 1rem 0 0; font-size: 0.76rem; color: var(--text-sub); line-height: 1.5; }
+    .tariff-status { margin: 0.75rem 0 0; font-size: 0.76rem; color: var(--text-sub); }
+    .tariff-status.is-error { color: #f87171; }
   </style>
 {% endblock %}
 
@@ -45,6 +57,31 @@
 {% endblock %}
 
 {% block content %}
+  <div class="card tariff-card" id="tariff-card" style="margin-bottom:1rem; display:none;">
+    <h2 style="margin:0 0 0.35rem; font-size:1rem;">Tempo ou une autre option ?</h2>
+    <p class="tariff-sub" id="tariff-period"></p>
+    <div id="tariff-empty" class="no-data" style="display:none; padding:1.5rem 1rem;"></div>
+    <div id="tariff-body" style="display:none;">
+      <p class="tariff-verdict" id="tariff-verdict"></p>
+      <div class="kpi-grid" id="tariff-grid"></div>
+      <div class="tariff-split">
+        <h3 class="tariff-h3">Répartition de la consommation</h3>
+        <div class="raw-table-wrapper"><table class="raw-table" id="tariff-breakdown"></table></div>
+      </div>
+      <details class="tariff-months">
+        <summary>Détail mois par mois</summary>
+        <div class="raw-table-wrapper"><table class="raw-table" id="tariff-months"></table></div>
+      </details>
+      <p class="tariff-note">
+        Consommation réelle du compteur Linky, demi-heure par demi-heure, facturée avec la grille EDF actuelle
+        ({{ config.TARIFF_OPTIONS.kva }} kVA, abonnement compris) sur toute la période. Heures creuses de l'option
+        Heures Creuses supposées identiques à celles de Tempo ({{ config.HP_END }}h–{{ config.HP_START }}h).
+        L'option Base n'est plus ouverte à la souscription au-delà de 6 kVA : sa ligne reste indicative.
+      </p>
+    </div>
+    <p class="tariff-status" id="tariff-status"></p>
+  </div>
+
   <div id="not-connected" class="card no-data" style="display:none;">
     Boîte mail non configurée.<br>
     <span style="font-size:0.82rem;">Rendez-vous dans <a href="/config">{{ icon('settings') }}Config</a> pour renseigner les identifiants IMAP.</span>
@@ -630,6 +667,102 @@
       btn.disabled = false;
     }
   }
+
+  // ── Comparatif des options tarifaires (courbe Linky) ──
+  const OPTION_LABELS = { TEMPO: 'Tempo', BASE: 'Base', HPHC: 'Heures Creuses' };
+
+  function fmtEur(v, digits = 0) {
+    return v.toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits }) + ' €';
+  }
+
+  function fmtLongDate(iso) {
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  function tariffVerdict(c) {
+    const parts = ['BASE', 'HPHC'].map(o => {
+      const diff = c.savings[o];
+      return diff >= 0
+        ? `<strong class="kpi-positive">${fmtEur(diff)}</strong> d'économie par rapport à l'option ${OPTION_LABELS[o]}`
+        : `<strong class="kpi-negative">${fmtEur(-diff)}</strong> de plus que l'option ${OPTION_LABELS[o]}`;
+    });
+    return `Sur cette période, Tempo t'a fait ${parts[0]}, et ${parts[1]}.`;
+  }
+
+  function renderTariff(d) {
+    const card = document.getElementById('tariff-card');
+    const status = document.getElementById('tariff-status');
+    if (!d.configured && !d.comparison) return;
+    card.style.display = 'block';
+
+    const bits = [];
+    if (d.last_sync) bits.push('Dernière récupération Linky : ' + fmtDateTime(d.last_sync));
+    if (d.configured && !d.backfill_done) bits.push("historique en cours de récupération (jusqu'à 12 mois, sur 2 jours)");
+    status.textContent = bits.join(' · ');
+    if (d.last_error) {
+      status.textContent += (bits.length ? ' · ' : '') + 'Erreur : ' + d.last_error;
+      status.classList.add('is-error');
+    }
+
+    const c = d.comparison;
+    if (!c || !c.days) {
+      const empty = document.getElementById('tariff-empty');
+      empty.textContent = "Pas encore de données Linky. La récupération démarre dans la minute qui suit l'enregistrement de /config, puis chaque matin à 10h30.";
+      empty.style.display = 'block';
+      return;
+    }
+    document.getElementById('tariff-period').textContent =
+      `Du ${fmtLongDate(c.first_day)} au ${fmtLongDate(c.last_day)} · ${c.days} jours · ${fmtKwh(c.kwh)}`;
+    document.getElementById('tariff-verdict').innerHTML = tariffVerdict(c);
+
+    document.getElementById('tariff-grid').innerHTML = ['TEMPO', 'BASE', 'HPHC'].map(o => {
+      const diff = o === 'TEMPO' ? null : c.savings[o];
+      const sub = diff == null
+        ? `dont abonnement ${fmtEur(c.subscription[o])}`
+        : `${diff >= 0 ? '+' : '−'}${fmtEur(Math.abs(diff))} vs Tempo`;
+      return `
+        <div class="kpi-card${c.best === o ? ' is-best' : ''}">
+          <p class="kpi-label">${OPTION_LABELS[o]}${c.best === o ? ' · la moins chère' : ''}</p>
+          <p class="kpi-value">${fmtEur(c.costs[o])}</p>
+          <p class="kpi-sub">${sub}</p>
+        </div>`;
+    }).join('');
+
+    const colorRows = [['BLUE', 'Bleu'], ['WHITE', 'Blanc'], ['RED', 'Rouge']];
+    let html = '<thead><tr><th>Jours</th><th>Heures pleines</th><th>Heures creuses</th><th>Total</th></tr></thead><tbody>';
+    colorRows.forEach(([key, label]) => {
+      const b = c.breakdown[key];
+      html += `<tr><td><span class="dot dot-${key.toLowerCase()}" aria-hidden="true"></span>${label}</td>`
+            + `<td>${fmtKwh(b.HP)}</td><td>${fmtKwh(b.HC)}</td><td>${fmtKwh(b.HP + b.HC)}</td></tr>`;
+    });
+    html += '</tbody>';
+    document.getElementById('tariff-breakdown').innerHTML = html;
+
+    const monthName = m => new Date(m + '-01T12:00:00').toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+    html = '<thead><tr><th>Mois</th><th>kWh</th><th>Tempo</th><th>Base</th><th>Heures Creuses</th></tr></thead><tbody>';
+    c.months.slice().reverse().forEach(m => {
+      html += `<tr><td>${monthName(m.month)}</td><td>${m.kwh.toLocaleString('fr-FR')}</td>`
+            + `<td>${fmtEur(m.TEMPO, 2)}</td><td>${fmtEur(m.BASE, 2)}</td><td>${fmtEur(m.HPHC, 2)}</td></tr>`;
+    });
+    html += '</tbody>';
+    document.getElementById('tariff-months').innerHTML = html;
+    if (c.unpriced_kwh > 0) {
+      status.textContent += ` · ${fmtKwh(c.unpriced_kwh)} écartés (couleur Tempo inconnue)`;
+    }
+    document.getElementById('tariff-body').style.display = 'block';
+  }
+
+  async function loadTariffComparison() {
+    try {
+      const res = await fetch('/api/electricity/tariff-comparison');
+      if (res.ok) renderTariff(await res.json());
+    } catch (e) {
+      // carte simplement masquée
+    }
+  }
+
+  loadTariffComparison();
 
   (async function init() {
     try {
