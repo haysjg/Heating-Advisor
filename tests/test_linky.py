@@ -256,3 +256,31 @@ class TestPerDayAndVerdict:
     def test_no_verdict_with_too_few_days(self):
         r = self._compare([("WHITE", 20, 10)] * 3 + [("RED", 19, 10)] * 2)
         assert r["red_day"] is None
+
+
+class TestDailyTotalsAndResume:
+    def test_only_complete_days(self):
+        rows = linky.parse_load_curve(_payload(date(2026, 11, 1), date(2026, 11, 3)), date(2026, 11, 1), date(2026, 11, 3))
+        linky.store(rows[:-10])   # 2 novembre incomplet
+        assert linky.get_daily_totals() == {"2026-11-01": 24.0}
+
+    def test_spring_dst_day_counts_as_complete(self):
+        rows = linky.parse_load_curve(_payload(date(2026, 3, 29), date(2026, 3, 30)), date(2026, 3, 29), date(2026, 3, 30))
+        linky.store(rows[:46])    # 23 h de mesures
+        assert "2026-03-29" in linky.get_daily_totals()
+
+    def test_deeper_backfill_resumes(self, monkeypatch):
+        calls = []
+
+        def fake(cfg, start, end):
+            calls.append(start)
+            return linky.parse_load_curve(_payload(start, end), start, end)
+
+        monkeypatch.setattr(linky, "fetch_load_curve", fake)
+        now = datetime(2026, 11, 11)
+        linky.sync({**CFG, "backfill_days": 14}, today=now.date(), sleep=lambda s: None, now=now)
+        assert linky.get_state()["backfill_done_for"] == 14
+        calls.clear()
+        r = linky.sync({**CFG, "backfill_days": 28}, today=now.date(), sleep=lambda s: None, now=now)
+        assert calls == [date(2026, 10, 21), date(2026, 10, 14)]
+        assert r["backfill_done"] and linky.get_state()["backfill_done_for"] == 28

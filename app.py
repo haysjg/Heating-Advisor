@@ -1832,9 +1832,13 @@ def api_electricity_history():
         weeks_param = request.args.get("weeks", "52")
         if weeks_param == "all":
             data = electricity_module.get_readings(weeks=None)
+            window_start = None
         else:
             weeks = min(max(int(weeks_param), 1), 260)
             data = electricity_module.get_readings(weeks=weeks)
+            window_start = (date.today() - timedelta(weeks=weeks)).isoformat()
+        # Courbe Linky prioritaire sur les semaines qu'elle couvre entièrement, mails Lite sinon
+        data, _ = electricity_module.merge_with_linky(data, linky_module.get_daily_totals(), since=window_start)
         since = min((r["period_start"] for r in data if r.get("period_start")), default=None)
         clim_daily = history_module.get_clim_daily(since) if since else {}
         return jsonify(electricity_module.with_clim_estimate(data, clim_daily))
@@ -1848,6 +1852,8 @@ def api_electricity_status():
         "enabled": config.ELECTRICITY.get("enabled", False),
         "connected": imap_client.is_connected(config.ELECTRICITY),
         "latest": electricity_module.get_latest_reading(),
+        "concordance": electricity_module.merge_with_linky(
+            electricity_module.get_readings(weeks=None), linky_module.get_daily_totals())[1],
     })
 
 
@@ -1875,19 +1881,21 @@ def api_electricity_import_log():
 
 @app.route("/api/electricity/tariff-comparison")
 def api_electricity_tariff_comparison():
-    """Coût de la consommation Linky des 12 derniers mois en Tempo, Base et Heures Creuses."""
+    """Coût de la consommation Linky des 12 (ou 24, ?months=24) derniers mois en Tempo, Base et Heures Creuses."""
     try:
         state = linky_module.get_state()
+        months = 24 if request.args.get("months") == "24" else 12
         result = {
             "configured": linky_module.is_configured(config.LINKY),
             "last_sync": state.get("last_sync"),
             "last_error": state.get("last_error"),
             "backfill_done": bool(state.get("backfill_done")),
             "kva": config.TARIFF_OPTIONS.get("kva"),
+            "months": months,
             "comparison": None,
         }
         until = date.today() - timedelta(days=1)
-        curve = linky_module.get_curve(until - timedelta(days=364), until)
+        curve = linky_module.get_curve(until - timedelta(days=365 * months // 12 - 1), until)
         if curve:
             first = date.fromisoformat(curve[0][0][:10])
             colors = get_day_colors(first - timedelta(days=1), until)

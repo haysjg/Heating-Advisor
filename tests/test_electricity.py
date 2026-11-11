@@ -167,3 +167,57 @@ class TestWithClimEstimate:
         no_period, week = with_clim_estimate([{"period_start": None, "period_end": None, "kwh": 50.0}, self.WEEK], daily)
         assert no_period["clim_kwh"] is None
         assert week["clim_share"] == 100   # estimation haute : jamais plus que le total relevé
+
+
+# ── Fusion avec la courbe Linky ──────────────────────────────────────────
+
+from modules.electricity import merge_with_linky
+
+
+def _lite(start, end, kwh, delta=None):
+    return {"message_id": f"<{start}>", "period_start": start, "period_end": end, "kwh": kwh,
+            "delta_percent": delta, "delta_direction": "plus" if delta else None, "fetched_at": end}
+
+
+def _linky_week(monday, per_day):
+    from datetime import date, timedelta
+    d0 = date.fromisoformat(monday)
+    return {(d0 + timedelta(days=i)).isoformat(): per_day for i in range(7)}
+
+
+class TestMergeWithLinky:
+    def test_linky_replaces_fully_covered_week(self):
+        merged, conc = merge_with_linky([_lite("2026-11-02", "2026-11-08", 200.0)], _linky_week("2026-11-02", 30.0))
+        assert merged[0]["kwh"] == 210.0 and merged[0]["source"] == "linky" and merged[0]["lite_kwh"] == 200.0
+        assert conc == {"weeks": 1, "mean_abs_pct": 5.0, "mean_pct": 5.0, "max_abs_pct": 5.0}
+
+    def test_partial_coverage_keeps_lite(self):
+        daily = _linky_week("2026-11-02", 30.0)
+        daily.pop("2026-11-05")
+        merged, conc = merge_with_linky([_lite("2026-11-02", "2026-11-08", 200.0)], daily)
+        assert merged[0]["kwh"] == 200.0 and merged[0]["source"] == "lite"
+        assert conc is None
+
+    def test_linky_only_week_added(self):
+        lite = [_lite("2026-10-26", "2026-11-01", 180.0)]
+        merged, _ = merge_with_linky(lite, _linky_week("2026-11-02", 20.0))
+        assert [(r["period_start"], r["source"], r["kwh"]) for r in merged] == [
+            ("2026-10-26", "lite", 180.0), ("2026-11-02", "linky", 140.0)]
+        # Variation recalculée vs la semaine précédente
+        assert merged[1]["delta_direction"] == "moins" and merged[1]["delta_percent"] == 22.2
+
+    def test_linky_week_overlapping_lite_period_not_duplicated(self):
+        # Semaine Lite décalée (mercredi → mardi) : la semaine ISO Linky qui la chevauche n'est pas ajoutée
+        lite = [_lite("2026-11-04", "2026-11-10", 150.0)]
+        merged, _ = merge_with_linky(lite, _linky_week("2026-11-02", 20.0))
+        assert len(merged) == 1
+
+    def test_since_filters_added_weeks(self):
+        merged, _ = merge_with_linky([], _linky_week("2026-11-02", 20.0), since="2026-11-03")
+        assert merged == []
+
+    def test_lite_without_period_kept(self):
+        r = {"message_id": "<x>", "period_start": None, "period_end": None, "kwh": 99.0,
+             "delta_percent": None, "delta_direction": None, "fetched_at": "2026-11-01T10:00:00"}
+        merged, _ = merge_with_linky([r], {})
+        assert merged[0]["kwh"] == 99.0 and merged[0]["source"] == "lite"

@@ -4,7 +4,7 @@ et comparatif du coût réel en Tempo avec les options Base et Heures Creuses du
 
 - Récupération : API MyElectricalData sans le cache de la passerelle (les données ne font que transiter).
   Enedis limite la courbe de charge à 7 jours par appel ; MyElectricalData à 50 appels par jour sans cache.
-  Chaque passage rattrape d'abord les jours récents, puis remonte l'historique (LINKY.backfill_days)
+  Chaque passage rattrape d'abord les jours récents, puis remonte l'historique (LINKY.backfill_days, 24 mois)
   par tranches de 7 jours, dans la limite de DAILY_CALL_BUDGET appels par jour.
 - Stockage : table linky_load_curve de data/history.db (début de l'intervalle en heure locale, kWh).
 - Comparatif (compare_options, pur) : chaque demi-heure est facturée selon les trois options ; la
@@ -179,6 +179,20 @@ def get_curve(since: date, until: date) -> list:
         ).fetchall()
 
 
+def get_daily_totals() -> dict:
+    """{"AAAA-MM-JJ": kWh} des jours civils complets de la courbe stockée.
+
+    Tolérance d'une heure pour les jours de changement d'heure (23 h de mesures au printemps).
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT substr(ts, 1, 10), SUM(kwh), COUNT(*) FROM linky_load_curve GROUP BY substr(ts, 1, 10)"
+        ).fetchall()
+        sample = conn.execute("SELECT ts, kwh FROM linky_load_curve ORDER BY ts DESC LIMIT 200").fetchall()[::-1]
+    step = _interval_minutes(sample)
+    return {day: round(kwh, 3) for day, kwh, count in rows if count * step >= 1440 - 60}
+
+
 def get_state() -> dict:
     state = jsonstore.load(STATE_FILE, {})
     return state if isinstance(state, dict) else {}
@@ -200,7 +214,11 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
     state = get_state()
     if state.get("calls_day") != today.isoformat():
         state["calls_day"], state["calls"] = today.isoformat(), 0
-    target = today - timedelta(days=int(linky_cfg.get("backfill_days", 365)))
+    backfill_days = int(linky_cfg.get("backfill_days", 730))
+    target = today - timedelta(days=backfill_days)
+    # Historique terminé pour une profondeur plus courte (passage de 12 à 24 mois) : on reprend
+    if state.get("backfill_done") and state.get("backfill_done_for", 365) < backfill_days:
+        state["backfill_done"] = False
     added = 0
 
     def _call(start: date, end: date) -> list:
@@ -237,6 +255,8 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
             oldest = start
         if oldest <= target:
             state["backfill_done"] = True
+        if state.get("backfill_done"):
+            state["backfill_done_for"] = backfill_days
         state["last_error"] = None
         status = "ok"
     except LinkyError as e:

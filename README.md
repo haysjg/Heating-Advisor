@@ -507,6 +507,18 @@ Une fois les identifiants renseignés et enregistrés, cliquer sur **🔌 Tester
 
 Le job planifié (`electricity_job`, toutes les `check_interval_hours`) recherche les emails correspondant au filtre, extrait la consommation (kWh) et la période (via le header `X-CampaignID: WEEKLY_YYYY-MM-DD_YYYY-MM-DD`, si préservé), et historise chaque email une seule fois (dédup par `Message-ID` — le polling peut donc être plus fréquent que la fréquence d'envoi réelle sans créer de doublons). Une page dédiée **`/electricity`** affiche l'historique (graphique + indicateurs).
 
+### Historique hebdomadaire : Linky d'abord, Lite en secours
+
+La page `/electricity` (graphique, comparaison annuelle, données brutes, export CSV, part de la clim) s'appuie sur
+une seule série hebdomadaire (`electricity.merge_with_linky`), sans rien modifier en base :
+- une semaine Lite entièrement couverte par des jours Linky complets prend la somme Linky (`source: "linky"`,
+  valeur du mail gardée dans `lite_kwh`) ; sinon la valeur du mail Lite est conservée (`source: "lite"`) ;
+- les semaines ISO couvertes par Linky mais sans mail Lite sont ajoutées ; la variation vs semaine précédente est
+  recalculée pour les semaines Linky ;
+- les mails Lite continuent d'être importés (historique depuis 2021, secours si Linky s'arrête) ;
+- concordance des deux sources sur les semaines communes (`/api/electricity/status` → `concordance`), affichée
+  sous le résumé : un écart de plusieurs % signalerait une mauvaise datation des demi-heures Linky.
+
 ### Compteur Linky et comparatif des options
 
 Les mails « flash élec » ne donnent qu'un total hebdomadaire. Pour savoir si Tempo est vraiment l'option la moins
@@ -521,15 +533,16 @@ le numéro PDL (14 chiffres ; espaces, tirets et points tolérés) et la clé d'
 - Enedis limite la courbe de charge à 7 jours par appel et 24 mois d'historique ; MyElectricalData à 50 appels/jour
   sans son cache (non utilisé : les données ne font que transiter). L'appli s'arrête à 40 appels par jour et attend
   1 s entre deux appels.
-- Premier lancement : les 7 derniers jours, puis l'historique en remontant jusqu'à `LINKY.backfill_days` (365 j),
-  soit environ 2 jours de récupération. Une réponse vide ou une erreur définitive marque la fin de l'historique
+- Premier lancement : les 7 derniers jours, puis l'historique en remontant jusqu'à `LINKY.backfill_days` (730 j,
+  maximum Enedis), soit 3 à 4 jours de récupération. Si la profondeur augmente (passage de 12 à 24 mois),
+  la remontée reprend là où elle s'était arrêtée (`backfill_done_for` dans l'état). Une réponse vide ou une erreur définitive marque la fin de l'historique
   disponible (collecte activée récemment) ; une panne passagère (réseau, quota, clé) est retentée le lendemain.
 - État dans `data/linky_state.json` (dernier passage, dernière erreur, appels du jour, historique terminé).
 
 **Calcul** (`/api/electricity/tariff-comparison`, carte « Tempo ou une autre option ? » en haut de `/electricity`) :
 - Carte : verdict, coût total des trois options, **courbe des économies de Tempo mois par mois** (écart avec
   Heures Creuses et avec Base ; au-dessus de 0 = Tempo moins cher), répartition kWh par couleur et HP/HC, détail mensuel.
-- 12 derniers mois disponibles ; couleurs Tempo passées lues sur `api-couleur-tempo.fr` (`joursTempo?periode=…`),
+- 12 ou 24 derniers mois (boutons de la carte) ; couleurs Tempo passées lues sur `api-couleur-tempo.fr` (`joursTempo?periode=…`),
   gardées dans `data/tempo_history.json`.
 - Le jour Tempo va de 6 h à 6 h : une heure creuse avant 6 h prend la couleur de la veille.
 - Tarifs et abonnements de `TARIFF_OPTIONS` (config.py, grille EDF du 1er août 2026, 12 kVA) et `TEMPO_PRICES`,

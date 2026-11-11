@@ -37,6 +37,8 @@
     .status-badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 6px; font-size: 0.78rem; font-weight: 700; }
     .status-success { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; }
     .status-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
+    .src-lite { color: var(--text-sub) !important; font-style: italic; }
+    .source-note { margin: 0.75rem 0 0; font-size: 0.78rem; color: var(--text-sub); line-height: 1.5; }
     .tariff-sub { margin: 0 0 1rem; font-size: 0.82rem; color: var(--text-sub); }
     .tariff-verdict { margin: 0 0 1rem; font-size: 1rem; line-height: 1.5; }
     .tariff-verdict strong { font-variant-numeric: tabular-nums; }
@@ -68,7 +70,13 @@
 
 {% block content %}
   <div class="card tariff-card" id="tariff-card" style="margin-bottom:1rem; display:none;">
-    <h2 style="margin:0 0 0.35rem; font-size:1rem;">Tempo ou une autre option ?</h2>
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.35rem;">
+      <h2 style="margin:0; font-size:1rem;">Tempo ou une autre option ?</h2>
+      <div class="range-bar" id="tariff-range">
+        <button class="range-btn active" data-months="12" onclick="loadTariffComparison(12)">12 mois</button>
+        <button class="range-btn" data-months="24" onclick="loadTariffComparison(24)">24 mois</button>
+      </div>
+    </div>
     <p class="tariff-sub" id="tariff-period"></p>
     <div id="tariff-empty" class="no-data" style="display:none; padding:1.5rem 1rem;"></div>
     <div id="tariff-body" style="display:none;">
@@ -115,6 +123,7 @@
         <span style="font-size:0.82rem;">Cliquez sur « Synchroniser » pour vérifier les nouveaux emails.</span>
       </div>
       <div class="kpi-grid" id="kpi-grid" style="display:none;"></div>
+      <p id="source-summary" class="source-note" style="display:none;"></p>
       <p id="clim-note" style="display:none; margin:0.85rem 0 0; font-size:0.78rem; color:var(--text-sub); line-height:1.5;">
         Part de la clim estimée : heures de chauffe × 4 kW ÷ COP de la courbe (plutôt surestimée, la clim module
         sa puissance). Seules les semaines entièrement suivies sont comptées.
@@ -157,6 +166,7 @@
       <div class="raw-table-wrapper">
         <table class="raw-table" id="raw-table"></table>
       </div>
+      <p class="source-note">kWh par semaine · en gris italique : semaine issue des mails Lite (non couverte par le compteur Linky)</p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
@@ -176,6 +186,7 @@
   let mode = 'chrono';
   let allData = null;
   let dataByYear = null;
+  let sourceByYear = {};   // année → semaine → "linky" | "lite"
   let selectedYears = new Set();
 
   const YEAR_COLORS = ['#f59e0b', '#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#06b6d4', '#eab308', '#ec4899'];
@@ -198,6 +209,8 @@
       const { year, week } = isoWeekInfo(dateStr.slice(0, 10));
       if (!byYear[year]) byYear[year] = {};
       byYear[year][week] = d.kwh;
+      if (!sourceByYear[year]) sourceByYear[year] = {};
+      sourceByYear[year][week] = d.source;
     }
     return byYear;
   }
@@ -418,7 +431,8 @@
       html += `<tr><td>${y}</td>`;
       for (let w = 1; w <= maxWeek; w++) {
         const v = dataByYear[y][w];
-        html += `<td>${v != null ? v.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</td>`;
+        const lite = v != null && sourceByYear[y]?.[w] === 'lite';
+        html += `<td${lite ? ' class="src-lite" title="Mail Lite"' : ' title="Compteur Linky"'}>${v != null ? v.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'}</td>`;
       }
       html += '</tr>';
     });
@@ -580,7 +594,7 @@
     if (chart) { chart.destroy(); chart = null; }
     if (!data.length) return;
 
-    const points = data.map(d => ({ x: d.period_start || d.fetched_at, y: d.kwh }));
+    const points = data.map(d => ({ x: d.period_start || d.fetched_at, y: d.kwh, source: d.source }));
     const climPoints = data.filter(d => d.clim_kwh != null).map(d => ({ x: d.period_start, y: d.clim_kwh }));
 
     const ctx = document.getElementById('electricityChart').getContext('2d');
@@ -624,7 +638,7 @@
             callbacks: {
               label: item => item.datasetIndex === 1
                 ? `Clim (estimé) : ${item.parsed.y.toFixed(1)} kWh`
-                : `Total : ${item.parsed.y.toFixed(1)} kWh`,
+                : `Total : ${item.parsed.y.toFixed(1)} kWh (${item.raw.source === 'linky' ? 'Linky' : 'mail Lite'})`,
             },
           },
         },
@@ -688,6 +702,18 @@
     }
   }
 
+  function renderSourceSummary(c) {
+    const el = document.getElementById('source-summary');
+    let text = 'Source : compteur Linky pour les semaines entièrement couvertes, mails Lite sinon.';
+    if (c) {
+      const fmt = v => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+      text += ` Sur les ${c.weeks} semaine${c.weeks > 1 ? 's' : ''} présentes dans les deux, écart moyen ${fmt(c.mean_abs_pct)} %`
+            + ` (Linky ${c.mean_pct >= 0 ? '+' : '−'}${fmt(Math.abs(c.mean_pct))} % en moyenne, ${fmt(c.max_abs_pct)} % au plus).`;
+    }
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
   // ── Comparatif des options tarifaires (courbe Linky) ──
   const OPTION_LABELS = { TEMPO: 'Tempo', BASE: 'Base', HPHC: 'Heures Creuses' };
 
@@ -715,10 +741,13 @@
     const status = document.getElementById('tariff-status');
     if (!d.configured && !d.comparison) return;
     card.style.display = 'block';
+    status.classList.remove('is-error');
+    document.getElementById('tariff-empty').style.display = 'none';
+    document.getElementById('tariff-body').style.display = 'none';
 
     const bits = [];
     if (d.last_sync) bits.push('Dernière récupération Linky : ' + fmtDateTime(d.last_sync));
-    if (d.configured && !d.backfill_done) bits.push("historique en cours de récupération (jusqu'à 12 mois, sur 2 jours)");
+    if (d.configured && !d.backfill_done) bits.push("historique en cours de récupération (jusqu'à 24 mois, sur 3 à 4 jours)");
     const statusText = bits.join(' · ');
     status.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
     if (d.last_error) {
@@ -883,9 +912,11 @@
     });
   }
 
-  async function loadTariffComparison() {
+  async function loadTariffComparison(months = 12) {
+    document.querySelectorAll('#tariff-range .range-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.months === String(months)));
     try {
-      const res = await fetch('/api/electricity/tariff-comparison');
+      const res = await fetch(`/api/electricity/tariff-comparison?months=${months}`);
       if (res.ok) renderTariff(await res.json());
     } catch (e) {
       // carte simplement masquée
@@ -898,6 +929,7 @@
     try {
       const res = await fetch('/api/electricity/status');
       const status = await res.json();
+      renderSourceSummary(status.concordance);
       if (!status.connected) {
         document.getElementById('not-connected').style.display = 'block';
         document.getElementById('electricity-content').style.display = 'none';

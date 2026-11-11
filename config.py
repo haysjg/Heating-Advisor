@@ -176,7 +176,7 @@ LINKY = {
     "enabled": False,
     "usage_point_id": "",   # PDL, 14 chiffres (zéros de tête compris)
     "token": "",            # clé d'accès MyElectricalData (chiffrée au repos)
-    "backfill_days": 365,   # historique récupéré au premier lancement
+    "backfill_days": 730,   # historique récupéré au premier lancement (Enedis : 24 mois au plus)
 }
 
 # ── Autres options du Tarif Bleu (comparatif avec Tempo) ─────

@@ -313,3 +313,72 @@ def with_clim_estimate(readings: list, clim_kwh_by_day: dict) -> list:
                 pass
         result.append({**r, "clim_kwh": clim_kwh, "clim_share": share})
     return result
+
+
+def _period_days(start: str, end: str) -> list:
+    day = datetime.strptime(start, "%Y-%m-%d")
+    stop = datetime.strptime(end, "%Y-%m-%d")
+    days = []
+    while day <= stop:
+        days.append(day.strftime("%Y-%m-%d"))
+        day += timedelta(days=1)
+    return days
+
+
+def merge_with_linky(readings: list, linky_daily: dict, since: str | None = None) -> tuple[list, dict | None]:
+    """Série hebdomadaire unique : courbe Linky quand la semaine est entièrement couverte, mails Lite sinon.
+
+    readings    : lectures Lite (get_readings), jamais modifiées en base
+    linky_daily : {"AAAA-MM-JJ": kWh} des jours Linky complets (linky.get_daily_totals)
+    since       : borne basse (AAAA-MM-JJ) des semaines Linky ajoutées, comme le filtre des lectures Lite
+
+    Chaque lecture reçoit `source` ("linky" | "lite") et, si Linky la remplace, `lite_kwh` (valeur du mail).
+    Les semaines ISO (lundi → dimanche) couvertes par Linky mais absentes de Lite sont ajoutées.
+    La variation vs semaine précédente est recalculée pour les semaines Linky consécutives.
+    Retourne aussi la concordance des deux sources sur les semaines communes (None s'il n'y en a pas).
+    """
+    merged, lite_days, diffs = [], set(), []
+    for r in readings:
+        row = {**r, "source": "lite"}
+        if r.get("period_start") and r.get("period_end"):
+            try:
+                days = _period_days(r["period_start"], r["period_end"])
+            except ValueError:
+                days = []
+            lite_days.update(days)
+            if days and all(d in linky_daily for d in days):
+                linky_kwh = round(sum(linky_daily[d] for d in days), 1)
+                row.update({"kwh": linky_kwh, "lite_kwh": r.get("kwh"), "source": "linky"})
+                if r.get("kwh"):
+                    diffs.append((linky_kwh - r["kwh"]) / r["kwh"] * 100)
+        merged.append(row)
+
+    mondays = sorted({d for d in linky_daily
+                      if datetime.strptime(d, "%Y-%m-%d").weekday() == 0 and (since is None or d >= since)})
+    for monday in mondays:
+        sunday = (datetime.strptime(monday, "%Y-%m-%d") + timedelta(days=6)).strftime("%Y-%m-%d")
+        days = _period_days(monday, sunday)
+        if all(d in linky_daily for d in days) and not any(d in lite_days for d in days):
+            merged.append({"message_id": None, "period_start": monday, "period_end": sunday,
+                           "kwh": round(sum(linky_daily[d] for d in days), 1), "delta_percent": None,
+                           "delta_direction": None, "fetched_at": None, "source": "linky"})
+
+    merged.sort(key=lambda r: r.get("period_start") or r.get("fetched_at") or "")
+    for prev, cur in zip(merged, merged[1:]):
+        if cur["source"] != "linky" or not prev.get("kwh") or not prev.get("period_end") or not cur.get("period_start"):
+            continue
+        gap = datetime.strptime(cur["period_start"], "%Y-%m-%d") - datetime.strptime(prev["period_end"], "%Y-%m-%d")
+        if gap == timedelta(days=1):
+            delta = (cur["kwh"] - prev["kwh"]) / prev["kwh"] * 100
+            cur["delta_percent"] = round(abs(delta), 1)
+            cur["delta_direction"] = "plus" if delta >= 0 else "moins"
+
+    concordance = None
+    if diffs:
+        concordance = {
+            "weeks": len(diffs),
+            "mean_abs_pct": round(sum(abs(d) for d in diffs) / len(diffs), 1),
+            "mean_pct": round(sum(diffs) / len(diffs), 1),
+            "max_abs_pct": round(max(abs(d) for d in diffs), 1),
+        }
+    return merged, concordance
