@@ -523,6 +523,8 @@ le numéro PDL (14 chiffres ; espaces, tirets et points tolérés) et la clé d'
 - État dans `data/linky_state.json` (dernier passage, dernière erreur, appels du jour, historique terminé).
 
 **Calcul** (`/api/electricity/tariff-comparison`, carte « Tempo ou une autre option ? » en haut de `/electricity`) :
+- Carte : verdict, coût total des trois options, **courbe des économies de Tempo mois par mois** (écart avec
+  Heures Creuses et avec Base ; au-dessus de 0 = Tempo moins cher), répartition kWh par couleur et HP/HC, détail mensuel.
 - 12 derniers mois disponibles ; couleurs Tempo passées lues sur `api-couleur-tempo.fr` (`joursTempo?periode=…`),
   gardées dans `data/tempo_history.json`.
 - Le jour Tempo va de 6 h à 6 h : une heure creuse avant 6 h prend la couleur de la veille.

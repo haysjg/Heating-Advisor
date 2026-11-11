@@ -42,6 +42,8 @@
     .tariff-verdict strong { font-variant-numeric: tabular-nums; }
     .kpi-card.is-best { border-color: rgba(34,197,94,0.55); box-shadow: inset 0 0 0 1px rgba(34,197,94,0.25); }
     .kpi-sub { font-size: 0.78rem; color: var(--text-sub); margin: 0.25rem 0 0; font-variant-numeric: tabular-nums; }
+    .tariff-trend { margin-top: 1.25rem; }
+    .tariff-chart-wrapper { position: relative; height: 240px; }
     .tariff-split { margin-top: 1.25rem; }
     .tariff-h3 { margin: 0 0 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--text-sub); }
     .tariff-months { margin-top: 1rem; }
@@ -64,6 +66,11 @@
     <div id="tariff-body" style="display:none;">
       <p class="tariff-verdict" id="tariff-verdict"></p>
       <div class="kpi-grid" id="tariff-grid"></div>
+      <div class="tariff-trend">
+        <h3 class="tariff-h3">Économies de Tempo, mois par mois</h3>
+        <p class="tariff-sub" style="margin-bottom:0.5rem">Au-dessus de 0 : Tempo moins cher · en dessous : Tempo plus cher</p>
+        <div class="tariff-chart-wrapper"><canvas id="tariffChart" aria-label="Économies mensuelles de Tempo par rapport aux options Heures Creuses et Base"></canvas></div>
+      </div>
       <div class="tariff-split">
         <h3 class="tariff-h3">Répartition de la consommation</h3>
         <div class="raw-table-wrapper"><table class="raw-table" id="tariff-breakdown"></table></div>
@@ -699,7 +706,8 @@
     const bits = [];
     if (d.last_sync) bits.push('Dernière récupération Linky : ' + fmtDateTime(d.last_sync));
     if (d.configured && !d.backfill_done) bits.push("historique en cours de récupération (jusqu'à 12 mois, sur 2 jours)");
-    status.textContent = bits.join(' · ');
+    const statusText = bits.join(' · ');
+    status.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
     if (d.last_error) {
       status.textContent += (bits.length ? ' · ' : '') + 'Erreur : ' + d.last_error;
       status.classList.add('is-error');
@@ -747,10 +755,85 @@
     });
     html += '</tbody>';
     document.getElementById('tariff-months').innerHTML = html;
+    renderTariffChart(c.months);
     if (c.unpriced_kwh > 0) {
       status.textContent += ` · ${fmtKwh(c.unpriced_kwh)} écartés (couleur Tempo inconnue)`;
     }
     document.getElementById('tariff-body').style.display = 'block';
+  }
+
+  let tariffChart = null;
+
+  function fmtSaving(v) {
+    return v >= 0 ? `${fmtEur(v, 2)} d'économie` : `${fmtEur(-v, 2)} de surcoût`;
+  }
+
+  function renderTariffChart(months) {
+    if (tariffChart) { tariffChart.destroy(); tariffChart = null; }
+    if (!months.length) return;
+    const labels = months.map(m => new Date(m.month + '-01T12:00:00')
+      .toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }));
+    const series = [
+      { key: 'HPHC', label: 'vs Heures Creuses', color: '#3b82f6', dash: [] },
+      { key: 'BASE', label: 'vs Base (indicatif)', color: '#ec4899', dash: [6, 4] },
+    ];
+    const ctx = document.getElementById('tariffChart').getContext('2d');
+    tariffChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: series.map(s => ({
+          label: s.label,
+          data: months.map(m => Math.round((m[s.key] - m.TEMPO) * 100) / 100),
+          borderColor: s.color,
+          backgroundColor: s.color,
+          borderDash: s.dash,
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBorderColor: '#1a1d27',
+          pointBorderWidth: 2,
+          tension: 0,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#8892a4', usePointStyle: true, boxHeight: 6 } },
+          tooltip: {
+            backgroundColor: '#1a1d27',
+            borderColor: '#2a2d3e',
+            borderWidth: 1,
+            titleColor: '#e2e8f0',
+            bodyColor: '#cbd5e1',
+            padding: 10,
+            callbacks: {
+              title: items => {
+                const m = months[items[0].dataIndex];
+                const name = new Date(m.month + '-01T12:00:00').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+                return `${name} · ${m.days} j · ${m.kwh.toLocaleString('fr-FR')} kWh`;
+              },
+              label: item => `${item.dataset.label} : ${fmtSaving(item.parsed.y)}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#8892a4' },
+            grid: { display: false },
+          },
+          y: {
+            ticks: { color: '#8892a4', callback: v => (v > 0 ? '+' : '') + v.toLocaleString('fr-FR') + ' €' },
+            grid: {
+              color: c => c.tick.value === 0 ? 'rgba(203,213,225,0.55)' : 'rgba(42,45,62,0.8)',
+              lineWidth: c => c.tick.value === 0 ? 1.5 : 1,
+            },
+          },
+        },
+      },
+    });
   }
 
   async function loadTariffComparison() {
