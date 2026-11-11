@@ -157,3 +157,20 @@ def test_evaluation_forcee_avance_le_passage(client, app_module, monkeypatch):
 
     monkeypatch.setattr(app_module._scheduler, "get_job", lambda job_id: None)
     assert client.post("/api/thermostat/check-now", headers=FETCH).status_code == 409
+
+
+# ── Linky : le test d'accès utilise le PDL et la clé saisis ──────────────
+
+def test_linky_test_utilise_les_valeurs_du_formulaire(client, app_module, monkeypatch):
+    seen = {}
+
+    def fake_test_access(cfg):
+        seen.update(cfg)
+        return True, "ok"
+
+    monkeypatch.setattr(app_module.linky_module, "test_access", fake_test_access)
+    _login(client)
+    resp = client.post("/api/linky/test", json={"pdl": "0123 4567 8901 23", "token": "cle-saisie"}, headers=FETCH)
+    assert resp.get_json()["status"] == "ok"
+    assert seen["usage_point_id"] == "01234567890123"
+    assert seen["token"] == "cle-saisie"

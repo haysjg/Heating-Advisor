@@ -188,3 +188,26 @@ class TestValidPdl:
     @pytest.mark.parametrize("value", ["", "1234", "0123456789012a", None, "012345678901234"])
     def test_invalid(self, value):
         assert not linky.valid_pdl(value)
+
+
+class TestNormalizePdl:
+    @pytest.mark.parametrize("raw", ["01234567890123", " 0123 4567 8901 23 ", "0123-4567-8901-23", "0123.4567.8901.23",
+                                     "0123 4567 890123"])
+    def test_separators_removed(self, raw):
+        assert linky.normalize_pdl(raw) == "01234567890123"
+
+
+class TestAccessCheck:
+    def test_missing_pdl(self):
+        ok, message = linky.test_access({**CFG, "usage_point_id": ""})
+        assert not ok and "non renseigné" in message
+
+    def test_wrong_length_reports_count(self):
+        ok, message = linky.test_access({**CFG, "usage_point_id": "1234"})
+        assert not ok and "4 caractères" in message
+
+    def test_valid_access(self, monkeypatch):
+        monkeypatch.setattr(linky, "_get", lambda cfg, path: {
+            "valid": True, "consent_expiration_date": "2029-11-11T00:00:00", "call_number": 3, "quota_limit": 50})
+        ok, message = linky.test_access(CFG)
+        assert ok and "11/11/2029" in message and "3/50" in message

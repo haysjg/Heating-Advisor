@@ -58,6 +58,11 @@ def is_configured(linky_cfg: dict) -> bool:
                 and linky_cfg.get("token"))
 
 
+def normalize_pdl(value) -> str:
+    """PDL tel que saisi (espaces, tirets, points tolérés) → chiffres seuls."""
+    return re.sub(r"[\s.\-]", "", str(value or ""))
+
+
 def valid_pdl(value) -> bool:
     return bool(_PDL_RE.fullmatch(str(value or "")))
 
@@ -122,8 +127,10 @@ def fetch_load_curve(linky_cfg: dict, start: date, end: date) -> list:
 
 def test_access(linky_cfg: dict) -> tuple[bool, str]:
     """Vérifie la clé et le consentement auprès de MyElectricalData (1 appel)."""
+    if not linky_cfg.get("usage_point_id"):
+        return False, "Numéro PDL non renseigné"
     if not valid_pdl(linky_cfg.get("usage_point_id")):
-        return False, "Numéro PDL invalide (14 chiffres attendus)"
+        return False, f"Numéro PDL invalide : {len(str(linky_cfg['usage_point_id']))} caractères, 14 chiffres attendus"
     if not linky_cfg.get("token"):
         return False, "Clé d'accès MyElectricalData non renseignée"
     try:

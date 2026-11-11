@@ -1900,9 +1900,18 @@ def api_electricity_tariff_comparison():
 
 @app.route("/api/linky/test", methods=["POST"])
 def api_linky_test():
-    """Vérifie la clé MyElectricalData et le consentement Enedis enregistrés."""
+    """Vérifie la clé MyElectricalData et le consentement Enedis.
+
+    PDL et clé saisis dans le formulaire (pas encore enregistrés) priment sur ceux de la configuration.
+    """
     try:
-        ok, message = linky_module.test_access(config.LINKY)
+        data = request.get_json(silent=True) or {}
+        cfg = dict(config.LINKY)
+        if str(data.get("pdl", "")).strip():
+            cfg["usage_point_id"] = linky_module.normalize_pdl(data["pdl"])
+        if str(data.get("token", "")).strip():
+            cfg["token"] = str(data["token"]).strip()
+        ok, message = linky_module.test_access(cfg)
         return jsonify({"status": "ok" if ok else "error", "message": message})
     except Exception as e:
         error_id = _log_internal_error(e)
@@ -2066,7 +2075,7 @@ def api_config_save():
             final_mf_app_id = config.OBSERVATIONS.get("meteofrance_application_id", "")
         new_linky_token = str(data.get("linky_token", "")).strip()
         final_linky_token = encrypt_password(new_linky_token) if new_linky_token else config.LINKY.get("token", "")
-        linky_pdl = re.sub(r"\s", "", str(data.get("linky_pdl", config.LINKY.get("usage_point_id", ""))))
+        linky_pdl = linky_module.normalize_pdl(data.get("linky_pdl", config.LINKY.get("usage_point_id", "")))
         if linky_pdl and not linky_module.valid_pdl(linky_pdl):
             raise ValueError("Numéro PDL Linky : 14 chiffres attendus")
         new_ic_token = str(data.get("infoclimat_token", "")).strip()

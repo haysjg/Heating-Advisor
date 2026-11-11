@@ -511,7 +511,7 @@ chère, l'appli récupère la **courbe de charge** du compteur Linky (consommati
 
 **Mise en place (une fois)** : créer un compte MyElectricalData et donner le consentement Enedis, vérifier que la
 collecte de la courbe de charge est activée sur le compte Enedis, puis renseigner dans `/config` → **Compteur Linky**
-le numéro PDL (14 chiffres) et la clé d'accès (chiffrée au repos). **Tester l'accès** affiche la date de fin du consentement.
+le numéro PDL (14 chiffres ; espaces, tirets et points tolérés) et la clé d'accès (chiffrée au repos). **Tester l'accès** vérifie les valeurs saisies, même pas encore enregistrées, et affiche la date de fin du consentement.
 
 **Récupération** (`linky_job`, chaque jour à 10h30, et dans la minute qui suit un enregistrement de `/config`) :
 - Enedis limite la courbe de charge à 7 jours par appel et 24 mois d'historique ; MyElectricalData à 50 appels/jour
