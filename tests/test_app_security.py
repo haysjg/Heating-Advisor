@@ -185,12 +185,16 @@ def test_heating_flow_jour_rouge(app_module, monkeypatch):
     monkeypatch.setattr(app_module.ha_client, "is_clim_configured", lambda cfg: True)
     data = {"tempo": {"today": {"color": "RED", "label": "Rouge"}, "current_period": "HP"},
             "weather": {"temperature": 3.0}, "indoor": {"temperature": 20.1}}
-    radiateurs = [{"entity_id": "switch.r1", "enabled": True, "state": "off", "managed_off": True}]
+    radiateurs = [{"entity_id": "switch.r1", "name": "Combles", "enabled": True, "state": "off", "managed_off": True},
+                  {"entity_id": "switch.r2", "name": "Coin lecture", "enabled": True, "state": "on", "managed_off": False}]
     f = app_module._heating_flow(data, {"state": "heat"}, {"state": "off"}, radiateurs)
     assert f["poele"]["on"] and f["poele"]["since"] == "2026-11-14T13:00:00"
     assert f["poele"]["cost_per_hour"] > 0 and f["cost_per_hour"] == f["poele"]["cost_per_hour"]
     assert f["clim"]["excluded"] and not f["clim"]["on"]
-    assert f["radiateurs"] == {"count": 1, "on": 0, "cut": True}
+    assert f["radiateurs"]["count"] == 2 and f["radiateurs"]["on"] == 1 and f["radiateurs"]["cut"]
+    assert f["radiateurs"]["items"] == [
+        {"name": "Combles", "known": True, "on": False, "cut": True},
+        {"name": "Coin lecture", "known": True, "on": True, "cut": False}]
     assert f["today_cost"] == 1.2 and f["indoor"] == 20.1
 
 

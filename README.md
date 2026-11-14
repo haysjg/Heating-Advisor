@@ -73,7 +73,8 @@ Météo (Infoclimat / Météo-France / Open-Meteo)
 
 En tête de l'accueil, la carte **« D'où vient la chaleur »** montre en un coup d'œil ce qui chauffe la maison :
 sources (granulés, électricité à la couleur Tempo et à la période du moment) → appareils (poêle, clim, radiateurs)
-→ maison (température de la sonde, plage de confort du thermostat). Des impulsions animées circulent dans les
+→ maison (température de la sonde, plage de confort du thermostat). Un nœud par radiateur géré (nom et état
+de chacun), la hauteur du schéma s'adapte au nombre d'appareils. Des impulsions animées circulent dans les
 tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux absents de la configuration sont masqués.
 
 - État réel lu dans Home Assistant (allumages manuels compris) ; durée de marche depuis la première lecture « on »
