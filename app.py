@@ -1071,6 +1071,7 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
         "comfort": [config.THERMOSTAT.get("temp_on"), config.THERMOSTAT.get("temp_off")],
         "cost_per_hour": round(poele_cost + clim_cost + radiators_cost, 2),
         "today_cost": today["today_cost"]["total"],
+        "today_cost_as_of": today.get("as_of"),
     }
 
 

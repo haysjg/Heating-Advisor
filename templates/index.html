@@ -302,7 +302,9 @@
       </ul>
       <div class="flow-total">
         <div class="flow-eur"><span id="ft-eur">—</span><small>/h en ce moment</small></div>
-        <div class="flow-today" id="ft-today"></div>
+        <div class="flow-eur flow-today">
+          <span class="odo" id="ft-today-odo" aria-live="off"></span><small>dépensés depuis minuit</small>
+        </div>
       </div>
     </section>
     {% endif %}

@@ -235,11 +235,65 @@ function renderHeatingFlow(f) {
   if (glow) glow.style.opacity = anyOn ? 1 : 0.12;
 
   set('ft-eur', flowEur(f.cost_per_hour));
-  set('ft-today', `Aujourd'hui : ${flowEur(f.today_cost)}`);
+  flowCounter.sync(f);
 
   card.classList.remove('flow-poele', 'flow-clim', 'flow-radi');
   const main = p.on ? 'poele' : c.on ? 'clim' : radiators.some(rad => rad.on) ? 'radi' : null;
   if (main) card.classList.add('flow-' + main);
+}
+
+// Compteur « dépensés depuis minuit » : coût du serveur + coût horaire en cours depuis son horodatage.
+// Ne recule jamais dans la journée (le serveur compte par pas de 10 min), repart de zéro au changement de jour.
+const flowCounter = {
+  base: 0, asOf: null, perHour: 0, shown: 0, day: null, timer: null,
+
+  sync(f) {
+    this.base = f.today_cost || 0;
+    this.asOf = f.today_cost_as_of ? new Date(f.today_cost_as_of).getTime() : Date.now();
+    this.perHour = f.cost_per_hour || 0;
+    const el = document.getElementById('ft-today-odo');
+    if (el) el.classList.toggle('is-live', this.perHour > 0);
+    this.tick();
+    if (!this.timer) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      this.timer = setInterval(() => this.tick(), reduce ? 5000 : 250);
+    }
+  },
+
+  tick() {
+    const now = Date.now();
+    const day = new Date(now).toDateString();
+    if (day !== this.day) { this.day = day; this.shown = 0; }
+    // asOf est en général dans le futur (la dernière lecture compte d'avance ses 10 min) : on retire la part
+    // pas encore écoulée, puis on avance au coût horaire en cours une fois asOf dépassé
+    const extra = (now - this.asOf) / 3600000 * this.perHour;
+    this.shown = Math.max(this.shown, this.base + extra, 0);
+    renderOdometer(document.getElementById('ft-today-odo'), this.shown);
+  },
+};
+
+// Montant en euros avec 4 décimales, les 2 dernières en petit ; chaque chiffre roule vers sa nouvelle valeur
+function renderOdometer(el, value) {
+  if (!el) return;
+  const text = value.toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  if (el.dataset.layout !== String(text.length)) {
+    el.dataset.layout = String(text.length);
+    let html = '';
+    [...text].forEach((ch, i) => {
+      const fine = i >= text.length - 2;
+      const cell = /\d/.test(ch)
+        ? `<span class="odo-d"><span class="odo-col">${'0123456789'.split('').map(d => `<span>${d}</span>`).join('')}</span></span>`
+        : `<span class="odo-sep">${ch}</span>`;
+      html += fine ? `<span class="odo-fine">${cell}</span>` : cell;
+    });
+    el.innerHTML = html + '<span class="odo-sep">&nbsp;€</span>';
+  }
+  const cols = el.querySelectorAll('.odo-col');
+  let k = 0;
+  [...text].forEach(ch => {
+    if (/\d/.test(ch)) cols[k++].style.transform = `translateY(-${Number(ch) * 1.15}em)`;
+  });
+  el.setAttribute('aria-label', `${value.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € dépensés depuis minuit`);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

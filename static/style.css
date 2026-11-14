@@ -2151,7 +2151,16 @@ html[data-stove="on"] #recommendation .embers { display: block; }
               margin-top: 0.6rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
 .flow-eur { font: 800 1.6rem 'Manrope', 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .flow-eur small { font: 500 0.8rem 'Inter', system-ui, sans-serif; color: var(--text-sub); margin-left: 0.35rem; }
-.flow-today { font-size: 0.82rem; color: var(--text-sub); font-variant-numeric: tabular-nums; }
+.flow-today { text-align: right; }
+/* Compteur odomètre : chaque chiffre est une colonne 0-9 qui roule */
+.odo { display: inline-flex; align-items: baseline; }
+.odo-d { display: inline-block; height: 1.15em; line-height: 1.15em; overflow: hidden; vertical-align: bottom; }
+.odo-col { display: flex; flex-direction: column; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+.odo-col span { height: 1.15em; }
+.odo-sep { display: inline-block; }
+.odo-fine { font-size: 0.62em; color: var(--text-sub); }
+.odo-fine .odo-d, .odo-fine .odo-col span { height: 1.15em; line-height: 1.15em; }
+.odo.is-live .odo-fine { color: color-mix(in oklab, var(--warm) 70%, var(--text-sub)); }
 .flow-legend { display: none; list-style: none; margin: 0.5rem 0 0; padding: 0; }
 .flow-legend li { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.3rem 0; font-weight: 600; }
 .flow-legend li span:last-child { margin-left: auto; color: var(--text-sub); font-weight: 400; font-variant-numeric: tabular-nums; }
@@ -2164,5 +2173,6 @@ html[data-stove="on"] #recommendation .embers { display: block; }
   .flow-legend { display: block; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .odo-col { transition: none; }
   .flow-pulse.live { animation: none; stroke-dasharray: none; opacity: .8; }
 }

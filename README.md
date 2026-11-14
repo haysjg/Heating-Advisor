@@ -85,6 +85,9 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
   thermostat intégré peut couper).
 - Coût du jour : poêle et clim calculés comme l'agrégation mensuelle ; radiateurs depuis `radiator_daily`
   (minutes, kWh et coût par jour et par radiateur, alimentée toutes les 10 min avec l'historique).
+- **Compteur « dépensés depuis minuit »** façon odomètre (4 décimales, chiffres qui roulent) : coût du jour du
+  serveur (`today_cost`, compté jusqu'à `today_cost_as_of` = dernière lecture + 10 min) interpolé côté navigateur
+  au coût horaire en cours, recalé à chaque rafraîchissement sans jamais reculer, remis à zéro à minuit.
 - Jour rouge : clim « exclue », radiateurs « coupés » quand l'appli les a éteints.
 - Mise à jour avec le rafraîchissement automatique du tableau de bord (`heating_flow` dans `/api/dashboard/refresh`).
   Sous 600 px, les libellés passent dans une légende sous le schéma.

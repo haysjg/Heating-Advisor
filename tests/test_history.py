@@ -444,3 +444,10 @@ class TestRecordRadiators:
         r = history.heating_today(base_config, now=self.NOW)
         assert r["today_cost"]["radiateurs"] == round(2.0 / 6 * 0.18, 2)
         assert r["today_cost"]["total"] == r["today_cost"]["radiateurs"]
+
+
+def test_heating_today_as_of(base_config):
+    _insert_readings([("2026-11-14T14:50:00", 5.0, "on", "BLUE", "off")])
+    r = history.heating_today(base_config, now=datetime(2026, 11, 14, 14, 55))
+    assert r["as_of"] == "2026-11-14T15:00:00"
+    assert history.heating_today(base_config, now=datetime(2026, 11, 15, 0, 5))["as_of"] is None

@@ -693,6 +693,7 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
 
     Lu sur les lectures toutes les 10 min (allumages manuels compris) : `since` est l'heure de la première
     lecture « on » de la série en cours, None si l'appareil est arrêté à la dernière lecture.
+    `as_of` : instant jusqu'auquel le coût du jour est compté (dernière lecture + 10 min), pour le compteur animé.
     Coûts du jour comme l'agrégation mensuelle : poêle au coût horaire fixe, clim à sa puissance électrique
     estimée (courbe COP) au tarif Tempo de chaque lecture ; radiateurs depuis radiator_daily.
     """
@@ -704,7 +705,7 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
     tempo_prices = config.get("TEMPO_PRICES", {})
     hp_start, hp_end = config.get("HP_START", 6), config.get("HP_END", 22)
     result = {"since": {"poele": None, "clim": None},
-              "today_cost": {"poele": 0.0, "clim": 0.0, "radiateurs": 0.0, "total": 0.0}}
+              "today_cost": {"poele": 0.0, "clim": 0.0, "radiateurs": 0.0, "total": 0.0}, "as_of": None}
     try:
         with _connect() as conn:
             rows = conn.execute(
@@ -731,6 +732,10 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
             result["today_cost"]["clim"] += (10 / 60) * clim_electric_kw(outdoor_temp, clim_cfg) * _elec_price(
                 tempo_prices, tempo_color, period)
     result["since"] = runs
+    # Chaque lecture compte les 10 min qui la suivent : le coût du jour vaut jusqu'à la dernière lecture + 10 min
+    today_rows = [r[0] for r in rows if r[0][:10] == today]
+    if today_rows:
+        result["as_of"] = (datetime.fromisoformat(today_rows[-1]) + timedelta(minutes=10)).isoformat(timespec="seconds")
     costs = result["today_cost"]
     costs["radiateurs"] = radiator_cost
     costs["total"] = costs["poele"] + costs["clim"] + costs["radiateurs"]
