@@ -24,6 +24,7 @@ from markupsafe import Markup
 import config
 from modules.weather import get_current_conditions, get_current_temperature, get_tomorrow_weather, get_hourly_forecast
 from modules.tempo import get_day_colors, get_season_stats, get_tempo_info
+from modules.advisor import compute_poele_cost
 from modules.analysis import DataCache, build_advisor_config, compute_analysis, tariff_slot
 from modules.overrides import apply as apply_overrides, load as load_overrides, OVERRIDE_FILE, patch_override as _patch_override
 from modules.crypto import decrypt_password, encrypt_password
@@ -988,6 +989,50 @@ def get_analysis(force_refresh: bool = False) -> dict:
     return compute_analysis(raw, _build_config_dict())
 
 
+def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radiateurs_info: list) -> dict:
+    """État de la carte « flux d'énergie » : appareils en chauffe, depuis quand, coût horaire et coût du jour.
+
+    poele_ha / clim_ha : entités Home Assistant (None = injoignable ou non configurée).
+    """
+    tempo = data.get("tempo") or {}
+    color = (tempo.get("today") or {}).get("color") or "UNKNOWN"
+    period = tempo.get("current_period") or "HP"
+    price = config.TEMPO_PRICES.get(color, config.TEMPO_PRICES["UNKNOWN"]).get(period, 0)
+    outdoor = (data.get("weather") or {}).get("temperature")
+    today = history_module.heating_today(_build_config_dict())
+
+    poele_state = (poele_ha or {}).get("state")
+    poele_known = poele_state not in (None, "unavailable", "unknown")
+    poele_on = poele_known and poele_state != "off"
+    clim_configured = ha_client.is_clim_configured(config.HOME_ASSISTANT)
+    clim_state = (clim_ha or {}).get("state")
+    clim_known = clim_state not in (None, "unavailable", "unknown")
+    clim_on = clim_state == "heat"
+    pellet = _pellet_status()
+    radiateurs = [r for r in radiateurs_info if r.get("enabled")]
+
+    poele_cost = compute_poele_cost(config.POELE).get("cost_per_hour", 0) if poele_on else 0
+    clim_cost = history_module.clim_electric_kw(outdoor, config.CLIM) * price if clim_on else 0
+    indoor = data.get("indoor") or {}
+    return {
+        "tempo": {"color": color, "period": period, "label": (tempo.get("today") or {}).get("label", "")},
+        "pellet_price": config.POELE.get("pellet_price_per_kg"),
+        "poele": {"known": poele_known, "on": poele_on, "since": today["since"]["poele"] if poele_on else None,
+                  "cost_per_hour": round(poele_cost, 2), "hopper_left": round(100 - pellet.get("percent", 0))},
+        "clim": {"configured": clim_configured, "known": clim_known, "on": clim_on,
+                 "since": today["since"]["clim"] if clim_on else None, "cost_per_hour": round(clim_cost, 2),
+                 "setpoint": ((clim_ha or {}).get("attributes") or {}).get("temperature"),
+                 "excluded": color == "RED"},
+        "radiateurs": {"count": len(radiateurs),
+                       "on": sum(1 for r in radiateurs if r.get("state") in ("on", "heat")),
+                       "cut": any(r.get("managed_off") for r in radiateurs)},
+        "indoor": indoor.get("temperature"),
+        "comfort": [config.THERMOSTAT.get("temp_on"), config.THERMOSTAT.get("temp_off")],
+        "cost_per_hour": round(poele_cost + clim_cost, 2),
+        "today_cost": today["today_cost"]["total"],
+    }
+
+
 @app.route("/")
 def index():
     try:
@@ -1007,12 +1052,15 @@ def index():
             thermostat_state["presence_status"] = None
         next_start = thermostat_module.next_schedule_start(config.THERMOSTAT) if config.THERMOSTAT.get("enabled") else None
 
-        # État réel du poêle depuis Home Assistant
+        # État réel du poêle et de la clim depuis Home Assistant
         poele_state_value = None
+        poele_ha = clim_ha = None
         if ha_client.is_configured(config.HOME_ASSISTANT):
             poele_ha = ha_client.get_state(config.HOME_ASSISTANT)
             if poele_ha:
                 poele_state_value = poele_ha.get("state")
+        if ha_client.is_clim_configured(config.HOME_ASSISTANT):
+            clim_ha = ha_client.get_clim_state(config.HOME_ASSISTANT)
 
         # Statut radiateurs pour l'affichage index avec état réel depuis HA
         managed_off = _load_managed_off()
@@ -1045,7 +1093,8 @@ def index():
                                poele_state=poele_state_value, ajax_interval=config.AJAX_REFRESH_INTERVAL,
                                next_check=_next_thermostat_check(),
                                pellet=_pellet_status(), ignitions=_ignition_status(),
-                               season=history_module.season_balance(history_module.get_monthly_reports(12)))
+                               season=history_module.season_balance(history_module.get_monthly_reports(12)),
+                               heating_flow=_heating_flow(data, poele_ha, clim_ha, radiateurs_info))
     except Exception as e:
         error = _internal_error_message(_log_internal_error(e))
         return render_template("index.html", data=None, error=error, config=config, thermostat_state={},
@@ -1132,6 +1181,7 @@ def api_dashboard_refresh():
 
         # État clim
         clim_state_value = None
+        clim_ha = poele_ha = None
         if ha_client.is_clim_configured(config.HOME_ASSISTANT):
             clim_ha = ha_client.get_clim_state(config.HOME_ASSISTANT)
             if clim_ha:
@@ -1202,6 +1252,7 @@ def api_dashboard_refresh():
             "pellet_refill": _pellet_status(),
             "ignitions": _ignition_status(),
             "radiateurs": radiateurs_info,
+            "heating_flow": _heating_flow(data, poele_ha, clim_ha, radiateurs_info),
             "tomorrow": {
                 "recommendation": {
                     "system": tomorrow_rec.get("system"),

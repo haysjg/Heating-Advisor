@@ -7,6 +7,7 @@ Application Flask de recommandation de chauffage. Compare en temps réel le coû
 ## Table des matières
 
 1. [Architecture](#architecture)
+2. [Accueil : flux d'énergie](#accueil--flux-dénergie)
 2. [Règles métier](#règles-métier)
 3. [Modules](#modules)
 4. [Thermostat automatique](#thermostat-automatique)
@@ -65,6 +66,24 @@ Météo (Infoclimat / Météo-France / Open-Meteo)
         ↓
     ntfy_push.py → notification push (allumage / extinction)
 ```
+
+---
+
+## Accueil : flux d'énergie
+
+En tête de l'accueil, la carte **« D'où vient la chaleur »** montre en un coup d'œil ce qui chauffe la maison :
+sources (granulés, électricité à la couleur Tempo et à la période du moment) → appareils (poêle, clim, radiateurs)
+→ maison (température de la sonde, plage de confort du thermostat). Des impulsions animées circulent dans les
+tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux absents de la configuration sont masqués.
+
+- État réel lu dans Home Assistant (allumages manuels compris) ; durée de marche depuis la première lecture « on »
+  de la série en cours (`history.heating_today`, lectures toutes les 10 min).
+- Coût horaire en cours : poêle au coût fixe, clim à sa puissance électrique estimée (courbe COP) au tarif Tempo
+  du moment. Coût du jour (poêle + clim) calculé comme l'agrégation mensuelle. Radiateurs non chiffrés
+  (puissance inconnue).
+- Jour rouge : clim « exclue », radiateurs « coupés » quand l'appli les a éteints.
+- Mise à jour avec le rafraîchissement automatique du tableau de bord (`heating_flow` dans `/api/dashboard/refresh`).
+  Sous 600 px, les libellés passent dans une légende sous le schéma.
 
 ---
 

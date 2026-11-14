@@ -174,6 +174,82 @@ function _refillMeasureHtml(p) {
     + (differs ? `<button type="button" class="btn-thresholds btn-thresholds-save" onclick="applyPelletEstimate(${e.hours_per_bag})">Appliquer ${_fmtH(e.hours_per_bag)} h</button>` : '');
 }
 
+// ── Flux d'énergie (accueil) : sources → appareils → maison ──
+const FLOW_TEMPO = { BLUE: ['bleu', '#2b8cff'], WHITE: ['blanc', '#f8fafc'], RED: ['rouge', '#ff3b3b'], UNKNOWN: ['inconnu', '#94a3b8'] };
+
+function flowEur(v) {
+  return v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+
+function flowDuration(iso) {
+  if (!iso) return '';
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function renderHeatingFlow(f) {
+  const card = document.getElementById('flow-card');
+  if (!card || !f) return;
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  const [tname, tcolor] = FLOW_TEMPO[f.tempo.color] || FLOW_TEMPO.UNKNOWN;
+  const p = f.poele, c = f.clim, r = f.radiateurs;
+  const radiOn = r.on > 0;
+  const live = { poele: p.on, clim: c.on, radi: radiOn };
+
+  // Appareils absents de la configuration : nœud et tuyaux masqués
+  const shown = { poele: true, clim: c.configured, radi: r.count > 0 };
+  card.querySelectorAll('[data-link]').forEach(el => el.classList.toggle('flow-hidden', !shown[el.dataset.link]));
+
+  card.querySelectorAll('.flow-pulse').forEach(el => el.classList.toggle('live', !!live[el.dataset.link]));
+  card.querySelectorAll('.flow-elec').forEach(el => el.setAttribute('stroke', tcolor));
+  document.getElementById('fn-gr').classList.toggle('idle', !p.on);
+  document.getElementById('fn-el').classList.toggle('idle', !(c.on || radiOn));
+  ['poele', 'clim', 'radi'].forEach(k => document.getElementById('fn-' + k).classList.toggle('idle', !live[k]));
+
+  set('ft-gr', f.pellet_price != null ? `${flowEur(f.pellet_price)}/kg` : '');
+  set('ft-el', `Tempo ${tname} · ${f.tempo.period}`);
+  set('ft-poele', !p.known ? 'état inconnu'
+    : p.on ? [flowDuration(p.since), `${flowEur(p.cost_per_hour)}/h`].filter(Boolean).join(' · ')
+    : `éteint · trémie ~${p.hopper_left} %`);
+  set('ft-clim', !c.known ? 'état inconnu'
+    : c.on ? [flowDuration(c.since), `${flowEur(c.cost_per_hour)}/h`].filter(Boolean).join(' · ')
+    : (c.excluded ? 'exclue (jour rouge)' : 'arrêtée'));
+  set('ft-radi', r.cut && !radiOn ? 'coupés (jour rouge)'
+    : radiOn ? `${r.on}/${r.count} allumé${r.on > 1 ? 's' : ''}` : 'éteints');
+
+  const fmtDeg = v => v.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' °C';
+  set('ft-in', f.indoor != null ? fmtDeg(f.indoor) : '—');
+  const [lo, hi] = f.comfort || [];
+  const fmtShort = v => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+  set('ft-comfort', lo != null && hi != null ? `confort ${fmtShort(lo)}–${fmtShort(hi)} °C` : '');
+  const glow = document.getElementById('flow-house-glow-circle');
+  if (glow) glow.style.opacity = (p.on || c.on || radiOn) ? 1 : 0.12;
+
+  // Légende (mobile) : mêmes textes que le schéma
+  set('fl-poele', document.getElementById('ft-poele')?.textContent || '');
+  set('fl-clim', document.getElementById('ft-clim')?.textContent || '');
+  set('fl-radi', document.getElementById('ft-radi')?.textContent || '');
+  set('fl-el', `Tempo ${tname} · ${f.tempo.period}`);
+  const tdot = document.getElementById('fl-tempo-dot');
+  if (tdot) tdot.style.setProperty('--dot', tcolor);
+  card.querySelectorAll('.flow-legend li[data-link]').forEach(li => li.classList.toggle('is-idle', !live[li.dataset.link]));
+
+  set('ft-eur', flowEur(f.cost_per_hour));
+  set('ft-today', `Aujourd'hui : ${flowEur(f.today_cost)} (poêle + clim)` + (radiOn ? ' · radiateurs non comptés' : ''));
+
+  card.classList.remove('flow-poele', 'flow-clim', 'flow-radi');
+  const main = p.on ? 'poele' : c.on ? 'clim' : radiOn ? 'radi' : null;
+  if (main) card.classList.add('flow-' + main);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const card = document.getElementById('flow-card');
+  if (card && card.dataset.flow) {
+    try { renderHeatingFlow(JSON.parse(card.dataset.flow)); } catch (e) { /* carte laissée vide */ }
+  }
+});
+
 function renderPelletRefill(p) {
   const card = document.getElementById('refill-card');
   if (!card || !p) return;
@@ -472,6 +548,7 @@ const DashboardRefresh = {
       updateControlPanel(data);
       renderPelletRefill(data.pellet_refill);
       renderIgnitions(data.ignitions);
+      renderHeatingFlow(data.heating_flow);
       this.updateTempo(data.tempo);
       this.updateTomorrow(data.tomorrow);
       this.updateTimestamp(data.timestamp);

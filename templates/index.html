@@ -227,6 +227,73 @@
       </div>
     {% else %}
 
+    {# ── Flux d'énergie : appareils en chauffe, des sources jusqu'à la maison ── #}
+    {% if heating_flow %}
+    <section class="card card-labeled flow-card" id="flow-card" data-flow="{{ heating_flow|tojson|forceescape }}">
+      <h3>{{ icon('zap') }}D'où vient la chaleur</h3>
+      <svg class="flow-svg" viewBox="0 6 640 244" role="img" aria-labelledby="flow-desc">
+        <desc id="flow-desc">Flux d'énergie des sources (granulés, électricité) vers les appareils de chauffage puis la maison</desc>
+        <defs>
+          <radialGradient id="flow-house-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#fb923c" stop-opacity=".35"/><stop offset="1" stop-color="#fb923c" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <g class="flow-pipes">
+          <path class="flow-pipe" data-link="poele" d="M120 62 C 200 62, 210 62, 290 62"/>
+          <path class="flow-pipe" data-link="clim" d="M120 188 C 200 188, 210 125, 290 125"/>
+          <path class="flow-pipe" data-link="radi" d="M120 188 C 200 188, 210 188, 290 188"/>
+          <path class="flow-pipe" data-link="poele" d="M350 62 C 430 62, 440 125, 500 125"/>
+          <path class="flow-pipe" data-link="clim" d="M350 125 C 430 125, 440 125, 500 125"/>
+          <path class="flow-pipe" data-link="radi" d="M350 188 C 430 188, 440 125, 500 125"/>
+          <path class="flow-pulse" id="fp-gr" data-link="poele" stroke="#fb923c" d="M120 62 C 200 62, 210 62, 290 62"/>
+          <path class="flow-pulse flow-elec" id="fp-el-clim" data-link="clim" d="M120 188 C 200 188, 210 125, 290 125"/>
+          <path class="flow-pulse flow-elec" id="fp-el-radi" data-link="radi" d="M120 188 C 200 188, 210 188, 290 188"/>
+          <path class="flow-pulse" id="fp-poele" data-link="poele" stroke="#fb923c" d="M350 62 C 430 62, 440 125, 500 125"/>
+          <path class="flow-pulse" id="fp-clim" data-link="clim" stroke="#60a5fa" d="M350 125 C 430 125, 440 125, 500 125"/>
+          <path class="flow-pulse" id="fp-radi" data-link="radi" stroke="#f472b6" d="M350 188 C 430 188, 440 125, 500 125"/>
+        </g>
+        <g class="flow-node" id="fn-gr">
+          <rect x="16" y="38" width="104" height="48" rx="12" fill="#1c1a1a" stroke="#4a3526"/>
+          <text class="flow-lbl" x="30" y="58">Granulés</text><text class="flow-sub" x="30" y="75" id="ft-gr"></text>
+        </g>
+        <g class="flow-node" id="fn-el">
+          <rect x="16" y="164" width="104" height="48" rx="12" fill="#161c28" stroke="#2c3a55"/>
+          <text class="flow-lbl" x="30" y="184">Électricité</text><text class="flow-sub" x="30" y="201" id="ft-el"></text>
+        </g>
+        <g class="flow-node" id="fn-poele" data-link="poele">
+          <circle cx="320" cy="62" r="26" fill="#1f1712" stroke="#fb923c"/>
+          <svg x="308" y="50" width="24" height="24" class="flow-ic" style="color:#fb923c"><use href="/static/icons.svg#flame"/></svg>
+          <text class="flow-sub" x="320" y="24" text-anchor="middle" id="ft-poele"></text>
+        </g>
+        <g class="flow-node" id="fn-clim" data-link="clim">
+          <circle cx="320" cy="125" r="26" fill="#121a26" stroke="#60a5fa"/>
+          <svg x="308" y="113" width="24" height="24" class="flow-ic" style="color:#60a5fa"><use href="/static/icons.svg#snowflake"/></svg>
+          <text class="flow-sub" x="356" y="129" id="ft-clim"></text>
+        </g>
+        <g class="flow-node" id="fn-radi" data-link="radi">
+          <circle cx="320" cy="188" r="26" fill="#1f1320" stroke="#f472b6"/>
+          <svg x="308" y="176" width="24" height="24" class="flow-ic" style="color:#f472b6"><use href="/static/icons.svg#heater"/></svg>
+          <text class="flow-sub" x="320" y="232" text-anchor="middle" id="ft-radi"></text>
+        </g>
+        <circle cx="560" cy="125" r="70" fill="url(#flow-house-glow)" id="flow-house-glow-circle"/>
+        <rect x="498" y="88" width="124" height="74" rx="16" fill="#1a1d27" stroke="#343a50"/>
+        <text class="flow-sub" x="560" y="110" text-anchor="middle">Maison</text>
+        <text class="flow-big" x="560" y="140" text-anchor="middle" id="ft-in">—</text>
+        <text class="flow-sub" x="560" y="155" text-anchor="middle" id="ft-comfort"></text>
+      </svg>
+      <ul class="flow-legend" aria-hidden="true">
+        <li data-link="poele"><span class="dot dot-poele"></span>Poêle<span id="fl-poele"></span></li>
+        <li data-link="clim"><span class="dot dot-clim"></span>Clim<span id="fl-clim"></span></li>
+        <li data-link="radi"><span class="dot dot-radi"></span>Radiateurs<span id="fl-radi"></span></li>
+        <li><span class="dot dot-tempo" id="fl-tempo-dot"></span>Électricité<span id="fl-el"></span></li>
+      </ul>
+      <div class="flow-total">
+        <div class="flow-eur"><span id="ft-eur">—</span><small>/h en ce moment</small></div>
+        <div class="flow-today" id="ft-today"></div>
+      </div>
+    </section>
+    {% endif %}
+
     {# ── Conditions actuelles ── #}
     <section class="{% if data.indoor %}grid-3{% else %}grid-2{% endif %}">
 

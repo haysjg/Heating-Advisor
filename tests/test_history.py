@@ -381,3 +381,46 @@ class TestSeasonBalance:
     def test_empty(self):
         b = history.season_balance([], date(2026, 11, 9))
         assert b["months"] == 0 and b["avg_cost_per_heated_month"] is None
+
+
+# ── heating_today : carte flux d'énergie ─────────────────────────────────
+
+def _insert_readings(rows):
+    with history._connect() as conn:
+        conn.executemany(
+            "INSERT INTO readings (ts, outdoor_temp, poele_state, tempo_color, clim_state) VALUES (?, ?, ?, ?, ?)", rows)
+
+
+class TestHeatingToday:
+    NOW = datetime(2026, 11, 14, 15, 0, 0)
+
+    def test_since_is_start_of_current_run(self, base_config):
+        _insert_readings([
+            ("2026-11-14T13:00:00", 5.0, "on", "BLUE", "off"),
+            ("2026-11-14T13:10:00", 5.0, "off", "BLUE", "off"),
+            ("2026-11-14T13:20:00", 5.0, "on", "BLUE", "off"),
+            ("2026-11-14T13:30:00", 5.0, "on", "BLUE", "off"),
+        ])
+        r = history.heating_today(base_config, now=self.NOW)
+        assert r["since"] == {"poele": "2026-11-14T13:20:00", "clim": None}
+
+    def test_run_started_yesterday(self, base_config):
+        _insert_readings([("2026-11-13T23:50:00", 5.0, "on", "BLUE", None), ("2026-11-14T00:00:00", 5.0, "on", "BLUE", None)])
+        assert history.heating_today(base_config, now=self.NOW)["since"]["poele"] == "2026-11-13T23:50:00"
+
+    def test_today_cost_only_counts_today(self, base_config):
+        _insert_readings([
+            ("2026-11-13T20:00:00", 5.0, "on", "BLUE", "off"),
+            ("2026-11-14T10:00:00", 5.0, "on", "BLUE", "off"),
+            ("2026-11-14T10:10:00", 7.0, "off", "BLUE", "on"),
+        ])
+        r = history.heating_today(base_config, now=self.NOW)
+        poele = round(10 / 60 * 1.0 * 0.4233, 2)
+        clim = round(10 / 60 * 4.0 / 2.8 * 0.1369, 2)   # 7 °C → COP 2,8 ; Bleu HP
+        assert r["today_cost"]["poele"] == poele
+        assert r["today_cost"]["clim"] == clim
+        assert r["since"] == {"poele": None, "clim": "2026-11-14T10:10:00"}
+
+    def test_no_readings(self, base_config):
+        r = history.heating_today(base_config, now=self.NOW)
+        assert r["today_cost"]["total"] == 0 and r["since"] == {"poele": None, "clim": None}

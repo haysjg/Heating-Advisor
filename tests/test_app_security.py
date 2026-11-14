@@ -174,3 +174,30 @@ def test_linky_test_utilise_les_valeurs_du_formulaire(client, app_module, monkey
     assert resp.get_json()["status"] == "ok"
     assert seen["usage_point_id"] == "01234567890123"
     assert seen["token"] == "cle-saisie"
+
+
+# ── Flux d'énergie de l'accueil ───────────────────────────────────────────
+
+def test_heating_flow_jour_rouge(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.history_module, "heating_today",
+                        lambda cfg: {"since": {"poele": "2026-11-14T13:00:00", "clim": None},
+                                     "today_cost": {"poele": 1.2, "clim": 0.0, "total": 1.2}})
+    monkeypatch.setattr(app_module.ha_client, "is_clim_configured", lambda cfg: True)
+    data = {"tempo": {"today": {"color": "RED", "label": "Rouge"}, "current_period": "HP"},
+            "weather": {"temperature": 3.0}, "indoor": {"temperature": 20.1}}
+    radiateurs = [{"entity_id": "switch.r1", "enabled": True, "state": "off", "managed_off": True}]
+    f = app_module._heating_flow(data, {"state": "heat"}, {"state": "off"}, radiateurs)
+    assert f["poele"]["on"] and f["poele"]["since"] == "2026-11-14T13:00:00"
+    assert f["poele"]["cost_per_hour"] > 0 and f["cost_per_hour"] == f["poele"]["cost_per_hour"]
+    assert f["clim"]["excluded"] and not f["clim"]["on"]
+    assert f["radiateurs"] == {"count": 1, "on": 0, "cut": True}
+    assert f["today_cost"] == 1.2 and f["indoor"] == 20.1
+
+
+def test_heating_flow_ha_injoignable(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.history_module, "heating_today",
+                        lambda cfg: {"since": {"poele": None, "clim": None},
+                                     "today_cost": {"poele": 0, "clim": 0, "total": 0}})
+    f = app_module._heating_flow({"tempo": {}, "weather": {}}, None, None, [])
+    assert not f["poele"]["known"] and not f["poele"]["on"]
+    assert f["cost_per_hour"] == 0 and f["tempo"]["color"] == "UNKNOWN"

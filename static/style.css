@@ -2126,3 +2126,42 @@ html[data-stove="on"] #recommendation .embers { display: block; }
   }
   .embers i { animation: ember-rise var(--d) ease-out var(--t) infinite; }
 }
+
+/* ── Flux d'énergie (accueil) : sources → appareils → maison ── */
+.flow-card { --tone: var(--border); transition: border-color .6s; }
+.flow-card.flow-poele { --tone: var(--warm); }
+.flow-card.flow-clim  { --tone: var(--cool); }
+.flow-card.flow-radi  { --tone: #f472b6; }
+.flow-svg { width: 100%; height: auto; display: block; max-height: 300px; }
+.flow-lbl { font: 600 12px 'Inter', system-ui, sans-serif; fill: var(--text); }
+.flow-sub { font: 500 11px 'Inter', system-ui, sans-serif; fill: var(--text-sub);
+            paint-order: stroke; stroke: var(--bg2); stroke-width: 5px; stroke-linejoin: round; }
+.flow-big { font: 800 22px 'Manrope', 'Inter', system-ui, sans-serif; fill: var(--text); font-variant-numeric: tabular-nums; }
+.flow-ic { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.flow-pipe { fill: none; stroke: #262a3a; stroke-width: 6; stroke-linecap: round; }
+.flow-pulse { fill: none; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 2 16; opacity: 0; transition: opacity .6s; }
+.flow-pulse.live { opacity: 1; animation: flow-dash 1.1s linear infinite; }
+@keyframes flow-dash { to { stroke-dashoffset: -18; } }
+.flow-node { transition: opacity .6s; }
+.flow-node.idle { opacity: .38; }
+.flow-hidden { display: none; }
+#flow-house-glow-circle { transition: opacity 1s; }
+.flow-total { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0.5rem 1rem;
+              margin-top: 0.6rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.flow-eur { font: 800 1.6rem 'Manrope', 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.flow-eur small { font: 500 0.8rem 'Inter', system-ui, sans-serif; color: var(--text-sub); margin-left: 0.35rem; }
+.flow-today { font-size: 0.82rem; color: var(--text-sub); font-variant-numeric: tabular-nums; }
+.flow-legend { display: none; list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.flow-legend li { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.3rem 0; font-weight: 600; }
+.flow-legend li span:last-child { margin-left: auto; color: var(--text-sub); font-weight: 400; font-variant-numeric: tabular-nums; }
+.flow-legend .dot { margin-right: 0; }
+.dot-poele { --dot: var(--warm); } .dot-clim { --dot: var(--cool); } .dot-radi { --dot: #f472b6; }
+.flow-legend li.is-idle .dot { --dot: #475066; box-shadow: none; }
+@media (max-width: 600px) {
+  .flow-svg text { display: none; }
+  .flow-svg text.flow-big { display: block; font-size: 30px; transform: translateY(6px); }
+  .flow-legend { display: block; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-pulse.live { animation: none; stroke-dasharray: none; opacity: .8; }
+}

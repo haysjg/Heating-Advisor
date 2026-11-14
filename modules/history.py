@@ -664,3 +664,49 @@ def season_balance(reports: list[dict], today: date | None = None) -> dict:
         "avg_cost_per_heated_month": round(cost_total / len(heated), 2) if heated else None,
         "updated_at": max((r.get("updated_at") or "" for r in months), default="") or None,
     }
+
+
+def heating_today(config: dict, now: datetime | None = None) -> dict:
+    """Depuis quand le poêle et la clim chauffent sans interruption, et coût estimé du jour (carte flux d'énergie).
+
+    Lu sur les lectures toutes les 10 min (allumages manuels compris) : `since` est l'heure de la première
+    lecture « on » de la série en cours, None si l'appareil est arrêté à la dernière lecture.
+    Coûts du jour comme l'agrégation mensuelle : poêle au coût horaire fixe, clim à sa puissance électrique
+    estimée (courbe COP) au tarif Tempo de chaque lecture.
+    """
+    now = now or datetime.now()
+    today = now.date().isoformat()
+    since_ts = (now - timedelta(hours=36)).isoformat(timespec="seconds")
+    poele_cost_per_hour = compute_poele_cost(config.get("POELE", {})).get("cost_per_hour", 0) if config.get("POELE") else 0
+    clim_cfg = config.get("CLIM", {})
+    tempo_prices = config.get("TEMPO_PRICES", {})
+    hp_start, hp_end = config.get("HP_START", 6), config.get("HP_END", 22)
+    result = {"since": {"poele": None, "clim": None}, "today_cost": {"poele": 0.0, "clim": 0.0, "total": 0.0}}
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT ts, outdoor_temp, poele_state, tempo_color, clim_state FROM readings WHERE ts >= ? ORDER BY ts",
+                (since_ts,),
+            ).fetchall()
+    except Exception as e:
+        logger.error("History : lecture du jour échouée : %s", e)
+        return result
+
+    runs = {"poele": None, "clim": None}
+    for ts, outdoor_temp, poele_state, tempo_color, clim_state in rows:
+        states = {"poele": _is_on(poele_state), "clim": clim_state == "on"}
+        for system, on in states.items():
+            runs[system] = (runs[system] or ts) if on else None
+        if ts[:10] != today:
+            continue
+        period = "HP" if hp_start <= int(ts[11:13]) < hp_end else "HC"
+        if states["poele"]:
+            result["today_cost"]["poele"] += (10 / 60) * poele_cost_per_hour
+        if states["clim"]:
+            result["today_cost"]["clim"] += (10 / 60) * clim_electric_kw(outdoor_temp, clim_cfg) * _elec_price(
+                tempo_prices, tempo_color, period)
+    result["since"] = runs
+    costs = result["today_cost"]
+    costs["total"] = costs["poele"] + costs["clim"]
+    result["today_cost"] = {k: round(v, 2) for k, v in costs.items()}
+    return result
