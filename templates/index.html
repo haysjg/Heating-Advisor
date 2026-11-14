@@ -248,7 +248,7 @@
     {% set _ely = (_ey.sum / _ey.n) if _ey.n else _hy %}
     <section class="card card-labeled flow-card" id="flow-card" data-flow="{{ heating_flow|tojson|forceescape }}">
       <h3>{{ icon('zap') }}D'où vient la chaleur</h3>
-      <svg class="flow-svg" viewBox="0 0 640 {{ _h }}" role="img" aria-labelledby="flow-desc" style="max-height: {{ (_h * 1.2)|int }}px">
+      <svg class="flow-svg flow-wide" viewBox="0 0 640 {{ _h }}" role="img" aria-labelledby="flow-desc" style="max-height: {{ (_h * 1.2)|int }}px">
         <desc id="flow-desc">Flux d'énergie des sources (granulés, électricité) vers les appareils de chauffage puis la maison</desc>
         <defs>
           <radialGradient id="flow-house-glow" cx="50%" cy="50%" r="50%">
@@ -269,37 +269,86 @@
           <path class="flow-pulse" data-link="{{ d.key }}" stroke="{{ d.color }}" d="M350 {{ dy }} C 430 {{ dy }}, 440 {{ _hy }}, 500 {{ _hy }}"/>
           {% endfor %}
         </g>
-        <g class="flow-node" id="fn-gr">
+        <g class="flow-node" data-node="gr">
           <rect x="16" y="{{ _y0 - 24 }}" width="104" height="48" rx="12" fill="#1c1a1a" stroke="#4a3526"/>
-          <text class="flow-lbl" x="30" y="{{ _y0 - 4 }}">Granulés</text><text class="flow-sub" x="30" y="{{ _y0 + 13 }}" id="ft-gr"></text>
+          <text class="flow-lbl" x="30" y="{{ _y0 - 4 }}">Granulés</text><text class="flow-sub" x="30" y="{{ _y0 + 13 }}" data-text="gr"></text>
         </g>
         {% if _ey.n %}
-        <g class="flow-node" id="fn-el">
+        <g class="flow-node" data-node="el">
           <rect x="16" y="{{ _ely - 24 }}" width="104" height="48" rx="12" fill="#161c28" stroke="#2c3a55"/>
-          <text class="flow-lbl" x="30" y="{{ _ely - 4 }}">Électricité</text><text class="flow-sub" x="30" y="{{ _ely + 13 }}" id="ft-el"></text>
+          <text class="flow-lbl" x="30" y="{{ _ely - 4 }}">Électricité</text><text class="flow-sub" x="30" y="{{ _ely + 13 }}" data-text="el"></text>
         </g>
         {% endif %}
         {% for d in _devs %}
         {% set dy = _y0 + loop.index0 * _step %}
-        <g class="flow-node flow-dev" id="fn-{{ d.key }}" data-key="{{ d.key }}">
+        <g class="flow-node flow-dev" data-node="{{ d.key }}">
           <circle cx="320" cy="{{ dy }}" r="24" fill="{{ d.fill }}" stroke="{{ d.color }}"/>
           <svg x="309" y="{{ dy - 11 }}" width="22" height="22" class="flow-ic" style="color:{{ d.color }}"><use href="/static/icons.svg#{{ d.glyph }}"/></svg>
           <text class="flow-name" x="354" y="{{ dy - 3 }}">{{ d.name }}</text>
-          <text class="flow-sub" x="354" y="{{ dy + 12 }}" id="ft-{{ d.key }}"></text>
+          <text class="flow-sub" x="354" y="{{ dy + 12 }}" data-text="{{ d.key }}"></text>
         </g>
         {% endfor %}
-        <circle cx="560" cy="{{ _hy }}" r="70" fill="url(#flow-house-glow)" id="flow-house-glow-circle"/>
+        <circle class="flow-glow" cx="560" cy="{{ _hy }}" r="70" fill="url(#flow-house-glow)"/>
         <rect x="498" y="{{ _hy - 37 }}" width="124" height="74" rx="16" fill="#1a1d27" stroke="#343a50"/>
         <text class="flow-sub" x="560" y="{{ _hy - 15 }}" text-anchor="middle">Maison</text>
-        <text class="flow-big" x="560" y="{{ _hy + 15 }}" text-anchor="middle" id="ft-in">—</text>
-        <text class="flow-sub" x="560" y="{{ _hy + 30 }}" text-anchor="middle" id="ft-comfort"></text>
+        <text class="flow-big" x="560" y="{{ _hy + 15 }}" text-anchor="middle" data-text="in">—</text>
+        <text class="flow-sub" x="560" y="{{ _hy + 30 }}" text-anchor="middle" data-text="comfort"></text>
       </svg>
-      <ul class="flow-legend" aria-hidden="true">
+
+      {# Version étroite (mobile) : de haut en bas, sources → appareils côte à côte → maison #}
+      {% set _mw = 360 %}
+      {% set _mn = _devs|length %}
+      {% set _msp = _mw / _mn %}
+      {% set _mdy = 128 %}
+      {% set _mhy = 262 %}
+      {% set _mx = namespace(sum=0, n=0) %}
+      {% for d in _devs %}{% if d.elec %}{% set _mx.sum = _mx.sum + _msp * (loop.index0 + 0.5) %}{% set _mx.n = _mx.n + 1 %}{% endif %}{% endfor %}
+      {% set _mgx = [_msp * 0.5, 60]|max %}
+      {% set _mex = [(_mx.sum / _mx.n) if _mx.n else 270, _mgx + 124, 0]|max %}
+      {% set _mex = [_mex, _mw - 58]|min %}
+      <svg class="flow-svg flow-narrow" viewBox="0 0 {{ _mw }} 318" role="img" aria-label="Flux d'énergie des sources vers les appareils puis la maison">
+        <g class="flow-pipes">
+          {% for d in _devs %}
+          {% set cx = _msp * (loop.index0 + 0.5) %}
+          {% set sx = _mex if d.elec else _mgx %}
+          <path class="flow-pipe" d="M{{ sx }} 50 C {{ sx }} 80, {{ cx }} 76, {{ cx }} {{ _mdy - 20 }}"/>
+          <path class="flow-pipe" d="M{{ cx }} {{ _mdy + 20 }} C {{ cx }} 215, 180 205, 180 {{ _mhy - 26 }}"/>
+          {% endfor %}
+          {% for d in _devs %}
+          {% set cx = _msp * (loop.index0 + 0.5) %}
+          {% set sx = _mex if d.elec else _mgx %}
+          <path class="flow-pulse{% if d.elec %} flow-elec{% endif %}" data-link="{{ d.key }}"{% if not d.elec %} stroke="{{ d.color }}"{% endif %} d="M{{ sx }} 50 C {{ sx }} 80, {{ cx }} 76, {{ cx }} {{ _mdy - 20 }}"/>
+          <path class="flow-pulse" data-link="{{ d.key }}" stroke="{{ d.color }}" d="M{{ cx }} {{ _mdy + 20 }} C {{ cx }} 215, 180 205, 180 {{ _mhy - 26 }}"/>
+          {% endfor %}
+        </g>
+        <g class="flow-node" data-node="gr">
+          <rect x="{{ _mgx - 54 }}" y="10" width="108" height="40" rx="12" fill="#1c1a1a" stroke="#4a3526"/>
+          <text class="flow-lbl" x="{{ _mgx }}" y="27" text-anchor="middle">Granulés</text>
+          <text class="flow-sub" x="{{ _mgx }}" y="42" text-anchor="middle" data-text="gr"></text>
+        </g>
+        {% if _mx.n %}
+        <g class="flow-node" data-node="el">
+          <rect x="{{ _mex - 56 }}" y="10" width="112" height="40" rx="12" fill="#161c28" stroke="#2c3a55"/>
+          <text class="flow-lbl" x="{{ _mex }}" y="27" text-anchor="middle">Électricité</text>
+          <text class="flow-sub" x="{{ _mex }}" y="42" text-anchor="middle" data-text="el"></text>
+        </g>
+        {% endif %}
         {% for d in _devs %}
-        <li data-link="{{ d.key }}" style="--dev: {{ d.color }}"><span class="dot"></span>{{ d.name }}<span id="fl-{{ d.key }}"></span></li>
+        {% set cx = _msp * (loop.index0 + 0.5) %}
+        <g class="flow-node flow-dev" data-node="{{ d.key }}">
+          <circle cx="{{ cx }}" cy="{{ _mdy }}" r="20" fill="{{ d.fill }}" stroke="{{ d.color }}"/>
+          <svg x="{{ cx - 10 }}" y="{{ _mdy - 10 }}" width="20" height="20" class="flow-ic" style="color:{{ d.color }}"><use href="/static/icons.svg#{{ d.glyph }}"/></svg>
+          <text class="flow-name" x="{{ cx }}" y="{{ _mdy + 38 }}" text-anchor="middle">{{ d.name }}</text>
+          <text class="flow-sub" x="{{ cx }}" y="{{ _mdy + 53 }}" text-anchor="middle" data-line="{{ d.key }}-a"></text>
+          <text class="flow-sub" x="{{ cx }}" y="{{ _mdy + 67 }}" text-anchor="middle" data-line="{{ d.key }}-b"></text>
+        </g>
         {% endfor %}
-        <li><span class="dot" id="fl-tempo-dot"></span>Électricité<span id="fl-el"></span></li>
-      </ul>
+        <circle class="flow-glow" cx="180" cy="{{ _mhy + 8 }}" r="80" fill="url(#flow-house-glow)"/>
+        <rect x="100" y="{{ _mhy - 26 }}" width="160" height="70" rx="16" fill="#1a1d27" stroke="#343a50"/>
+        <text class="flow-sub" x="180" y="{{ _mhy - 8 }}" text-anchor="middle">Maison</text>
+        <text class="flow-big" x="180" y="{{ _mhy + 20 }}" text-anchor="middle" data-text="in">—</text>
+        <text class="flow-sub" x="180" y="{{ _mhy + 36 }}" text-anchor="middle" data-text="comfort"></text>
+      </svg>
       <div class="flow-total">
         <div class="flow-eur"><span id="ft-eur">—</span><small>/h en ce moment</small></div>
         <div class="flow-eur flow-today">
@@ -1005,6 +1054,7 @@
     {# ── Tableau des tarifs Tempo ── #}
     <section class="card">
       <h3>{{ icon('clipboard-list') }}Tarifs EDF Tempo ({{ config.HP_START }}h–{{ config.HP_END }}h = HP)</h3>
+      <div class="tarif-table-wrap">
       <table class="tarif-table">
         <thead>
           <tr>
@@ -1031,6 +1081,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </section>
 
     {# ── Footer info ── #}

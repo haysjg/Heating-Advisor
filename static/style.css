@@ -698,6 +698,10 @@ main {
 .tarif-table td:not(:first-child) { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 0.95rem; color: var(--text-sub); }
 .tarif-table tbody tr { transition: background 0.2s var(--ease-out); }
 .tarif-table tbody tr:hover { background: rgba(148,163,184,0.04); }
+.tarif-table-wrap { overflow-x: auto; }
+@media (max-width: 600px) {
+  .tarif-table th, .tarif-table td { padding-inline: 0.4rem; }
+}
 /* Jour Tempo en cours, et la période (HP/HC) qui s'applique maintenant */
 .tarif-table tr.is-today { background: rgba(148,163,184,0.07); }
 .tarif-table tr.is-today td { color: var(--text); }
@@ -2146,7 +2150,7 @@ html[data-stove="on"] #recommendation .embers { display: block; }
 @keyframes flow-dash { to { stroke-dashoffset: -18; } }
 .flow-node { transition: opacity .6s; }
 .flow-node.idle { opacity: .38; }
-#flow-house-glow-circle { transition: opacity 1s; }
+.flow-glow { transition: opacity 1s; }
 .flow-total { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0.5rem 1rem;
               margin-top: 0.6rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
 .flow-eur { font: 800 1.6rem 'Manrope', 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
@@ -2161,16 +2165,14 @@ html[data-stove="on"] #recommendation .embers { display: block; }
 .odo-fine { font-size: 0.62em; color: var(--text-sub); }
 .odo-fine .odo-d, .odo-fine .odo-col span { height: 1.15em; line-height: 1.15em; }
 .odo.is-live .odo-fine { color: color-mix(in oklab, var(--warm) 70%, var(--text-sub)); }
-.flow-legend { display: none; list-style: none; margin: 0.5rem 0 0; padding: 0; }
-.flow-legend li { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.3rem 0; font-weight: 600; }
-.flow-legend li span:last-child { margin-left: auto; color: var(--text-sub); font-weight: 400; font-variant-numeric: tabular-nums; }
-.flow-legend .dot { margin-right: 0; }
-.flow-legend li[data-link] .dot { --dot: var(--dev); }
-.flow-legend li.is-idle .dot { --dot: #475066; box-shadow: none; }
+.flow-narrow { display: none; }
 @media (max-width: 600px) {
-  .flow-svg text { display: none; }
-  .flow-svg text.flow-big { display: block; font-size: 30px; transform: translateY(6px); }
-  .flow-legend { display: block; }
+  .flow-wide { display: none; }
+  .flow-narrow { display: block; max-height: none; }
+  .flow-narrow .flow-sub { font-size: 13px; }
+  .flow-narrow .flow-name { font-size: 14px; }
+  .flow-narrow .flow-lbl { font-size: 14px; }
+  .flow-narrow .flow-big { font-size: 26px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .odo-col { transition: none; }

@@ -191,50 +191,52 @@ function flowDuration(iso) {
 function renderHeatingFlow(f) {
   const card = document.getElementById('flow-card');
   if (!card || !f) return;
-  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  // Deux schémas (large / mobile) : textes et nœuds ciblés par attribut
+  const setText = (key, text) => card.querySelectorAll(`[data-text="${key}"]`).forEach(el => { el.textContent = text; });
+  const setLine = (key, text) => card.querySelectorAll(`[data-line="${key}"]`).forEach(el => { el.textContent = text; });
+  const idle = (key, value) => card.querySelectorAll(`[data-node="${key}"]`).forEach(el => el.classList.toggle('idle', value));
   const [tname, tcolor] = FLOW_TEMPO[f.tempo.color] || FLOW_TEMPO.UNKNOWN;
   const p = f.poele, c = f.clim, r = f.radiateurs;
   const radiators = r.items || [];
-  const running = (on, since, cost) => on ? [flowDuration(since), `${flowEur(cost)}/h`].filter(Boolean).join(' · ') : null;
+  const perHour = v => `${flowEur(v)}/h`;
 
-  // État et libellé de chaque appareil (clés = data-link du schéma)
+  // État de chaque appareil en deux lignes : situation, puis détail (coût, trémie, motif)
   const devices = {
-    poele: { on: p.on, text: !p.known ? 'état inconnu' : running(p.on, p.since, p.cost_per_hour) || `éteint · trémie ~${p.hopper_left} %` },
-    clim: { on: c.on, text: !c.known ? 'état inconnu' : running(c.on, c.since, c.cost_per_hour) || (c.excluded ? 'exclue (jour rouge)' : 'arrêtée') },
+    poele: { on: p.on, lines: !p.known ? ['état inconnu', '']
+      : p.on ? [flowDuration(p.since) || 'en chauffe', perHour(p.cost_per_hour)] : ['éteint', `trémie ~${p.hopper_left} %`] },
+    clim: { on: c.on, lines: !c.known ? ['état inconnu', '']
+      : c.on ? [flowDuration(c.since) || 'en chauffe', perHour(c.cost_per_hour)] : (c.excluded ? ['exclue', 'jour rouge'] : ['arrêtée', '']) },
   };
   radiators.forEach((rad, i) => {
-    devices['radi-' + i] = { on: rad.on, text: !rad.known ? 'état inconnu'
-      : rad.on ? `allumé · ${flowEur(rad.cost_per_hour)}/h` : (rad.cut ? 'coupé (jour rouge)' : 'éteint') };
+    devices['radi-' + i] = { on: rad.on, lines: !rad.known ? ['état inconnu', '']
+      : rad.on ? ['allumé', perHour(rad.cost_per_hour)] : (rad.cut ? ['coupé', 'jour rouge'] : ['éteint', '']) };
   });
   const anyElec = c.on || radiators.some(rad => rad.on);
   const anyOn = Object.values(devices).some(d => d.on);
 
   card.querySelectorAll('.flow-pulse').forEach(el => el.classList.toggle('live', !!devices[el.dataset.link]?.on));
   card.querySelectorAll('.flow-elec').forEach(el => el.setAttribute('stroke', tcolor));
-  document.getElementById('fn-gr')?.classList.toggle('idle', !p.on);
-  document.getElementById('fn-el')?.classList.toggle('idle', !anyElec);
+  idle('gr', !p.on);
+  idle('el', !anyElec);
   Object.entries(devices).forEach(([key, d]) => {
-    document.getElementById('fn-' + key)?.classList.toggle('idle', !d.on);
-    set('ft-' + key, d.text);
-    set('fl-' + key, d.text);
+    idle(key, !d.on);
+    setText(key, d.lines.filter(Boolean).join(' · '));
+    setLine(key + '-a', d.lines[0]);
+    setLine(key + '-b', d.lines[1]);
   });
-  card.querySelectorAll('.flow-legend li[data-link]').forEach(li => li.classList.toggle('is-idle', !devices[li.dataset.link]?.on));
 
-  set('ft-gr', f.pellet_price != null ? `${flowEur(f.pellet_price)}/kg` : '');
-  set('ft-el', `Tempo ${tname} · ${f.tempo.period}`);
-  set('fl-el', `Tempo ${tname} · ${f.tempo.period}`);
-  const tdot = document.getElementById('fl-tempo-dot');
-  if (tdot) tdot.style.setProperty('--dot', tcolor);
+  setText('gr', f.pellet_price != null ? `${flowEur(f.pellet_price)}/kg` : '');
+  setText('el', `Tempo ${tname} · ${f.tempo.period}`);
 
   const fmtDeg = v => v.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' °C';
-  set('ft-in', f.indoor != null ? fmtDeg(f.indoor) : '—');
+  setText('in', f.indoor != null ? fmtDeg(f.indoor) : '—');
   const [lo, hi] = f.comfort || [];
   const fmtShort = v => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
-  set('ft-comfort', lo != null && hi != null ? `confort ${fmtShort(lo)}–${fmtShort(hi)} °C` : '');
-  const glow = document.getElementById('flow-house-glow-circle');
-  if (glow) glow.style.opacity = anyOn ? 1 : 0.12;
+  setText('comfort', lo != null && hi != null ? `confort ${fmtShort(lo)}–${fmtShort(hi)} °C` : '');
+  card.querySelectorAll('.flow-glow').forEach(el => { el.style.opacity = anyOn ? 1 : 0.12; });
 
-  set('ft-eur', flowEur(f.cost_per_hour));
+  const eur = document.getElementById('ft-eur');
+  if (eur) eur.textContent = flowEur(f.cost_per_hour);
   flowCounter.sync(f);
 
   card.classList.remove('flow-poele', 'flow-clim', 'flow-radi');

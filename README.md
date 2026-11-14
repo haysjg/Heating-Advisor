@@ -90,7 +90,8 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
   au coût horaire en cours, recalé à chaque rafraîchissement sans jamais reculer, remis à zéro à minuit.
 - Jour rouge : clim « exclue », radiateurs « coupés » quand l'appli les a éteints.
 - Mise à jour avec le rafraîchissement automatique du tableau de bord (`heating_flow` dans `/api/dashboard/refresh`).
-  Sous 600 px, les libellés passent dans une légende sous le schéma.
+  Sous 600 px, un schéma vertical dédié prend le relais : sources en haut, appareils côte à côte (nom et état
+  sur deux lignes), maison en bas.
 
 ---
 
