@@ -196,6 +196,8 @@ RADIATEURS_TEMPO_ROUGE = {
     # Jamais rallumés automatiquement le week-end (rallumage reporté au lundi),
     # sauf si « Auto le week-end » est activé sur le dashboard
     "weekend_restricted_entities": ["switch.prise_radiateur_combles_switch_0"],
+    # Puissance d'un radiateur sans « power_kw » propre (kW) : coût horaire et coût du jour
+    "default_power_kw": 2.0,
 }
 
 # ── Notifications email ───────────────────────────────────────

@@ -928,6 +928,7 @@
           {% set entity_id = r.entity_id if r is mapping else r %}
           {% set rad_name = r.name if r is mapping else '' %}
           {% set rad_enabled = r.enabled if r is mapping else True %}
+          {% set rad_power = (r.power_kw if r is mapping and r.power_kw else config.RADIATEURS_TEMPO_ROUGE.get('default_power_kw', 2.0)) %}
           <div class="radiateur-row" style="display:flex;align-items:center;gap:0.5rem">
             <input type="checkbox" class="radiateur-enabled"
                    {% if rad_enabled %}checked{% endif %}
@@ -939,6 +940,9 @@
             <input type="text" class="radiateur-entity" value="{{ entity_id }}"
                    placeholder="climate.radiateur_salon"
                    style="flex:1;font-family:monospace;font-size:0.85rem">
+            <input type="number" class="radiateur-power" value="{{ rad_power }}" min="0.1" max="10" step="0.1"
+                   style="width:4.5rem;flex-shrink:0;font-size:0.85rem" title="Puissance (kW)" aria-label="Puissance (kW)">
+            <span style="font-size:0.8rem;color:var(--text-sub)">kW</span>
             <button type="button" onclick="removeRadiateur(this)"
                     style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--text-muted);font-size:0.85rem"
                     title="Supprimer">✕</button>
@@ -949,7 +953,8 @@
                 style="background:none;border:1px dashed var(--border);border-radius:6px;padding:0.35rem 0.75rem;cursor:pointer;color:var(--blue);font-size:0.85rem;width:100%">
           + Ajouter un radiateur
         </button>
-        <span class="hint">Cochez pour inclure un radiateur dans le pilotage automatique. Décochez pour l'exclure.</span>
+        <span class="hint">Cochez pour inclure un radiateur dans le pilotage automatique. Décochez pour l'exclure.
+          La puissance (kW) sert au coût horaire et au coût du jour de l'accueil (compté à pleine puissance quand il est allumé).</span>
       </div>
     </div>
 
@@ -1616,6 +1621,7 @@
       entity_id: row.querySelector('.radiateur-entity').value.trim(),
       name:      row.querySelector('.radiateur-name').value.trim(),
       enabled:   row.querySelector('.radiateur-enabled').checked,
+      power_kw:  parseFloat(row.querySelector('.radiateur-power').value),
     })).filter(r => r.entity_id);
   }
 
@@ -1626,7 +1632,7 @@
       const entity_id = typeof r === 'string' ? r : (r.entity_id || '');
       const name      = typeof r === 'string' ? '' : (r.name || '');
       const enabled   = typeof r === 'string' ? true : (r.enabled !== false);
-      addRadiateurRow(entity_id, name, enabled);
+      addRadiateurRow(entity_id, name, enabled, typeof r === 'string' ? null : r.power_kw);
     });
   }
 
@@ -1634,7 +1640,7 @@
     addRadiateurRow('', '', true);
   }
 
-  function addRadiateurRow(entity_id, name, enabled) {
+  function addRadiateurRow(entity_id, name, enabled, power_kw) {
     const container = document.getElementById('radiateurs_list');
     const row = document.createElement('div');
     row.className = 'radiateur-row';
@@ -1649,6 +1655,9 @@
       <input type="text" class="radiateur-entity" value="${escapeHtml(entity_id)}"
              placeholder="climate.radiateur_salon"
              style="flex:1;font-family:monospace;font-size:0.85rem">
+      <input type="number" class="radiateur-power" value="${power_kw || {{ config.RADIATEURS_TEMPO_ROUGE.get('default_power_kw', 2.0) }}}" min="0.1" max="10" step="0.1"
+             style="width:4.5rem;flex-shrink:0;font-size:0.85rem" title="Puissance (kW)" aria-label="Puissance (kW)">
+      <span style="font-size:0.8rem;color:var(--text-sub)">kW</span>
       <button type="button" onclick="removeRadiateur(this)"
               style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--text-muted);font-size:0.85rem"
               title="Supprimer">✕</button>

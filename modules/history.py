@@ -666,13 +666,35 @@ def season_balance(reports: list[dict], today: date | None = None) -> dict:
     }
 
 
+def record_radiators(radiators: list, price: float, now: datetime | None = None) -> None:
+    """Ajoute 10 min de marche aux radiateurs allumés : [(entity_id, allumé, puissance kW)].
+
+    Estimation haute : un radiateur allumé est compté à pleine puissance (son thermostat intégré peut couper).
+    """
+    day = (now or datetime.now()).date().isoformat()
+    rows = [(day, entity_id, power_kw * 10 / 60, power_kw * 10 / 60 * price)
+            for entity_id, on, power_kw in radiators if on]
+    if not rows:
+        return
+    try:
+        with _connect() as conn:
+            conn.executemany(
+                """INSERT INTO radiator_daily (day, entity_id, on_minutes, kwh, cost) VALUES (?, ?, 10, ?, ?)
+                   ON CONFLICT(day, entity_id) DO UPDATE SET on_minutes = on_minutes + 10,
+                       kwh = kwh + excluded.kwh, cost = cost + excluded.cost""",
+                rows,
+            )
+    except Exception as e:
+        logger.error("History : enregistrement radiateurs échoué : %s", e)
+
+
 def heating_today(config: dict, now: datetime | None = None) -> dict:
     """Depuis quand le poêle et la clim chauffent sans interruption, et coût estimé du jour (carte flux d'énergie).
 
     Lu sur les lectures toutes les 10 min (allumages manuels compris) : `since` est l'heure de la première
     lecture « on » de la série en cours, None si l'appareil est arrêté à la dernière lecture.
     Coûts du jour comme l'agrégation mensuelle : poêle au coût horaire fixe, clim à sa puissance électrique
-    estimée (courbe COP) au tarif Tempo de chaque lecture.
+    estimée (courbe COP) au tarif Tempo de chaque lecture ; radiateurs depuis radiator_daily.
     """
     now = now or datetime.now()
     today = now.date().isoformat()
@@ -681,13 +703,16 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
     clim_cfg = config.get("CLIM", {})
     tempo_prices = config.get("TEMPO_PRICES", {})
     hp_start, hp_end = config.get("HP_START", 6), config.get("HP_END", 22)
-    result = {"since": {"poele": None, "clim": None}, "today_cost": {"poele": 0.0, "clim": 0.0, "total": 0.0}}
+    result = {"since": {"poele": None, "clim": None},
+              "today_cost": {"poele": 0.0, "clim": 0.0, "radiateurs": 0.0, "total": 0.0}}
     try:
         with _connect() as conn:
             rows = conn.execute(
                 "SELECT ts, outdoor_temp, poele_state, tempo_color, clim_state FROM readings WHERE ts >= ? ORDER BY ts",
                 (since_ts,),
             ).fetchall()
+            radiator_cost = conn.execute(
+                "SELECT COALESCE(SUM(cost), 0) FROM radiator_daily WHERE day = ?", (today,)).fetchone()[0]
     except Exception as e:
         logger.error("History : lecture du jour échouée : %s", e)
         return result
@@ -707,6 +732,7 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
                 tempo_prices, tempo_color, period)
     result["since"] = runs
     costs = result["today_cost"]
-    costs["total"] = costs["poele"] + costs["clim"]
+    costs["radiateurs"] = radiator_cost
+    costs["total"] = costs["poele"] + costs["clim"] + costs["radiateurs"]
     result["today_cost"] = {k: round(v, 2) for k, v in costs.items()}
     return result

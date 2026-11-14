@@ -43,7 +43,7 @@ class TestClimStateForHistory:
         assert clim_state_for_history(real, OFF, True) == "off"
 
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import modules.history as history
 
@@ -424,3 +424,23 @@ class TestHeatingToday:
     def test_no_readings(self, base_config):
         r = history.heating_today(base_config, now=self.NOW)
         assert r["today_cost"]["total"] == 0 and r["since"] == {"poele": None, "clim": None}
+
+
+class TestRecordRadiators:
+    NOW = datetime(2026, 11, 14, 15, 0, 0)
+
+    def test_only_running_radiators_counted(self, base_config):
+        history.record_radiators([("switch.r1", True, 2.0), ("switch.r2", False, 2.0)], 0.1654, now=self.NOW)
+        history.record_radiators([("switch.r1", True, 2.0), ("switch.r2", True, 2.0)], 0.7295, now=self.NOW)
+        with history._connect() as conn:
+            rows = dict(((e, (m, round(k, 3), round(c, 4))) for e, m, k, c in
+                         conn.execute("SELECT entity_id, on_minutes, kwh, cost FROM radiator_daily")))
+        assert rows["switch.r1"] == (20, round(2 * 2.0 / 6, 3), round(2.0 / 6 * 0.1654 + 2.0 / 6 * 0.7295, 4))
+        assert rows["switch.r2"] == (10, round(2.0 / 6, 3), round(2.0 / 6 * 0.7295, 4))
+
+    def test_counted_in_today_cost(self, base_config):
+        history.record_radiators([("switch.r1", True, 2.0)], 0.18, now=self.NOW)
+        history.record_radiators([("switch.r1", True, 2.0)], 0.18, now=self.NOW - timedelta(days=1))
+        r = history.heating_today(base_config, now=self.NOW)
+        assert r["today_cost"]["radiateurs"] == round(2.0 / 6 * 0.18, 2)
+        assert r["today_cost"]["total"] == r["today_cost"]["radiateurs"]

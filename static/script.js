@@ -203,7 +203,8 @@ function renderHeatingFlow(f) {
     clim: { on: c.on, text: !c.known ? 'état inconnu' : running(c.on, c.since, c.cost_per_hour) || (c.excluded ? 'exclue (jour rouge)' : 'arrêtée') },
   };
   radiators.forEach((rad, i) => {
-    devices['radi-' + i] = { on: rad.on, text: !rad.known ? 'état inconnu' : rad.on ? 'allumé' : (rad.cut ? 'coupé (jour rouge)' : 'éteint') };
+    devices['radi-' + i] = { on: rad.on, text: !rad.known ? 'état inconnu'
+      : rad.on ? `allumé · ${flowEur(rad.cost_per_hour)}/h` : (rad.cut ? 'coupé (jour rouge)' : 'éteint') };
   });
   const anyElec = c.on || radiators.some(rad => rad.on);
   const anyOn = Object.values(devices).some(d => d.on);
@@ -234,7 +235,7 @@ function renderHeatingFlow(f) {
   if (glow) glow.style.opacity = anyOn ? 1 : 0.12;
 
   set('ft-eur', flowEur(f.cost_per_hour));
-  set('ft-today', `Aujourd'hui : ${flowEur(f.today_cost)} (poêle + clim)` + (radiators.some(rad => rad.on) ? ' · radiateurs non comptés' : ''));
+  set('ft-today', `Aujourd'hui : ${flowEur(f.today_cost)}`);
 
   card.classList.remove('flow-poele', 'flow-clim', 'flow-radi');
   const main = p.on ? 'poele' : c.on ? 'clim' : radiators.some(rad => rad.on) ? 'radi' : null;

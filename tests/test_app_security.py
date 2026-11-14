@@ -189,12 +189,15 @@ def test_heating_flow_jour_rouge(app_module, monkeypatch):
                   {"entity_id": "switch.r2", "name": "Coin lecture", "enabled": True, "state": "on", "managed_off": False}]
     f = app_module._heating_flow(data, {"state": "heat"}, {"state": "off"}, radiateurs)
     assert f["poele"]["on"] and f["poele"]["since"] == "2026-11-14T13:00:00"
-    assert f["poele"]["cost_per_hour"] > 0 and f["cost_per_hour"] == f["poele"]["cost_per_hour"]
+    assert f["poele"]["cost_per_hour"] > 0
     assert f["clim"]["excluded"] and not f["clim"]["on"]
     assert f["radiateurs"]["count"] == 2 and f["radiateurs"]["on"] == 1 and f["radiateurs"]["cut"]
-    assert f["radiateurs"]["items"] == [
-        {"name": "Combles", "known": True, "on": False, "cut": True},
-        {"name": "Coin lecture", "known": True, "on": True, "cut": False}]
+    combles, lecture = f["radiateurs"]["items"]
+    assert (combles["name"], combles["on"], combles["cut"], combles["cost_per_hour"]) == ("Combles", False, True, 0)
+    # Jour rouge HP : 2 kW × 0,7295 €/kWh
+    assert lecture["power_kw"] == 2.0
+    assert lecture["cost_per_hour"] == round(2.0 * app_module.config.TEMPO_PRICES["RED"]["HP"], 2)
+    assert f["cost_per_hour"] == round(f["poele"]["cost_per_hour"] + lecture["cost_per_hour"], 2)
     assert f["today_cost"] == 1.2 and f["indoor"] == 20.1
 
 
@@ -205,3 +208,15 @@ def test_heating_flow_ha_injoignable(app_module, monkeypatch):
     f = app_module._heating_flow({"tempo": {}, "weather": {}}, None, None, [])
     assert not f["poele"]["known"] and not f["poele"]["on"]
     assert f["cost_per_hour"] == 0 and f["tempo"]["color"] == "UNKNOWN"
+
+
+def test_puissance_radiateur(app_module, monkeypatch):
+    monkeypatch.setitem(app_module.config.RADIATEURS_TEMPO_ROUGE, "entities",
+                        [{"entity_id": "switch.r1", "name": "Combles", "enabled": True, "power_kw": 1.5},
+                         {"entity_id": "switch.r2", "name": "Coin lecture", "enabled": True}])
+    assert app_module._radiator_power("switch.r1") == 1.5
+    assert app_module._radiator_power("switch.r2") == 2.0          # valeur par défaut
+    assert app_module._radiator_power_value("1,8") == 1.8
+    assert app_module._radiator_power_value(None) == 2.0
+    with pytest.raises(ValueError):
+        app_module._radiator_power_value(25)

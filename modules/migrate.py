@@ -278,6 +278,21 @@ def _migrate_011(conn):
     """)
 
 
+def _migrate_012(conn):
+    """radiator_daily : minutes de marche, kWh et coût estimés de chaque radiateur géré, par jour (jamais purgée).
+    Alimentée toutes les 10 min (puissance pleine × tarif Tempo du moment), base du coût du jour de l'accueil."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS radiator_daily (
+            day        TEXT    NOT NULL,
+            entity_id  TEXT    NOT NULL,
+            on_minutes INTEGER NOT NULL DEFAULT 0,
+            kwh        REAL    NOT NULL DEFAULT 0,
+            cost       REAL    NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, entity_id)
+        );
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -291,6 +306,7 @@ MIGRATIONS = [
     _migrate_009,
     _migrate_010,
     _migrate_011,
+    _migrate_012,
 ]
 
 

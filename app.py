@@ -535,6 +535,36 @@ def _reschedule_notify():
         logger.info("Notifications email désactivées — aucun job planifié")
 
 
+def _radiator_power(entity_id: str) -> float:
+    """Puissance d'un radiateur géré (kW) : la sienne si renseignée dans /config, sinon celle par défaut."""
+    for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
+        if isinstance(e, dict) and e.get("entity_id") == entity_id and e.get("power_kw"):
+            return float(e["power_kw"])
+    return float(config.RADIATEURS_TEMPO_ROUGE.get("default_power_kw", 2.0))
+
+
+def _current_elec_price(data: dict) -> float:
+    """Tarif Tempo (€/kWh) de la couleur et de la période en cours."""
+    tempo = data.get("tempo") or {}
+    color = (tempo.get("today") or {}).get("color") or "UNKNOWN"
+    period = tempo.get("current_period") or "HP"
+    return config.TEMPO_PRICES.get(color, config.TEMPO_PRICES["UNKNOWN"]).get(period, 0)
+
+
+def _record_radiators(data: dict) -> None:
+    """Historise la marche des radiateurs gérés (coût du jour de l'accueil)."""
+    if not config.RADIATEURS_TEMPO_ROUGE.get("enabled") or not config.HOME_ASSISTANT.get("enabled"):
+        return
+    states = []
+    for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
+        if not isinstance(e, dict) or not e.get("enabled", True) or not e.get("entity_id"):
+            continue
+        ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, e["entity_id"])
+        on = bool(ha_state) and ha_state.get("state") in ("on", "heat")
+        states.append((e["entity_id"], on, _radiator_power(e["entity_id"])))
+    history_module.record_radiators(states, _current_elec_price(data))
+
+
 def _record_history():
     """Enregistre un point d'historique (températures + état chauffage + couleur Tempo)."""
     try:
@@ -551,6 +581,7 @@ def _record_history():
         if history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color, clim_state):
             _notify_ignitions()
         pellet_refill.tick(heating_state == "on", _pellet_cycle_hours(), config.EMAIL, config.NTFY)
+        _record_radiators(data)
     except Exception as e:
         logger.error("History record échoué : %s", e)
 
@@ -997,7 +1028,7 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
     tempo = data.get("tempo") or {}
     color = (tempo.get("today") or {}).get("color") or "UNKNOWN"
     period = tempo.get("current_period") or "HP"
-    price = config.TEMPO_PRICES.get(color, config.TEMPO_PRICES["UNKNOWN"]).get(period, 0)
+    price = _current_elec_price(data)
     outdoor = (data.get("weather") or {}).get("temperature")
     today = history_module.heating_today(_build_config_dict())
 
@@ -1013,6 +1044,15 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
 
     poele_cost = compute_poele_cost(config.POELE).get("cost_per_hour", 0) if poele_on else 0
     clim_cost = history_module.clim_electric_kw(outdoor, config.CLIM) * price if clim_on else 0
+    radiator_items = []
+    for r in radiateurs:
+        on = r.get("state") in ("on", "heat")
+        power = _radiator_power(r.get("entity_id", ""))
+        radiator_items.append({"name": r.get("name") or r.get("entity_id", ""),
+                               "known": r.get("state") not in (None, "unavailable", "unknown"),
+                               "on": on, "cut": bool(r.get("managed_off")), "power_kw": power,
+                               "cost_per_hour": round(power * price, 2) if on else 0})
+    radiators_cost = sum(item["cost_per_hour"] for item in radiator_items)
     indoor = data.get("indoor") or {}
     return {
         "tempo": {"color": color, "period": period, "label": (tempo.get("today") or {}).get("label", "")},
@@ -1026,13 +1066,10 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
         "radiateurs": {"count": len(radiateurs),
                        "on": sum(1 for r in radiateurs if r.get("state") in ("on", "heat")),
                        "cut": any(r.get("managed_off") for r in radiateurs),
-                       "items": [{"name": r.get("name") or r.get("entity_id", ""),
-                                  "known": r.get("state") not in (None, "unavailable", "unknown"),
-                                  "on": r.get("state") in ("on", "heat"),
-                                  "cut": bool(r.get("managed_off"))} for r in radiateurs]},
+                       "items": radiator_items},
         "indoor": indoor.get("temperature"),
         "comfort": [config.THERMOSTAT.get("temp_on"), config.THERMOSTAT.get("temp_off")],
-        "cost_per_hour": round(poele_cost + clim_cost, 2),
+        "cost_per_hour": round(poele_cost + clim_cost + radiators_cost, 2),
         "today_cost": today["today_cost"]["total"],
     }
 
@@ -2088,6 +2125,17 @@ def _schedule_with_comfort(schedule: dict) -> dict:
     return result
 
 
+def _radiator_power_value(raw) -> float:
+    """Puissance saisie pour un radiateur (kW) : 0,1 à 10 kW, sinon la valeur par défaut."""
+    try:
+        value = float(str(raw).replace(",", "."))
+    except (TypeError, ValueError):
+        return float(config.RADIATEURS_TEMPO_ROUGE.get("default_power_kw", 2.0))
+    if not 0.1 <= value <= 10:
+        raise ValueError("Puissance d'un radiateur : entre 0,1 et 10 kW")
+    return round(value, 2)
+
+
 @app.route("/api/config", methods=["POST"])
 def api_config_save():
     data = request.get_json(force=True)
@@ -2252,7 +2300,8 @@ def api_config_save():
             "RADIATEURS_TEMPO_ROUGE": {
                 "enabled": bool(data.get("radiateurs_enabled", False)),
                 "entities": [
-                    {"entity_id": e["entity_id"].strip(), "name": e.get("name", "").strip(), "enabled": bool(e.get("enabled", True))}
+                    {"entity_id": e["entity_id"].strip(), "name": e.get("name", "").strip(), "enabled": bool(e.get("enabled", True)),
+                     "power_kw": _radiator_power_value(e.get("power_kw"))}
                     for e in (data.get("radiateurs_entities") or [])
                     if isinstance(e, dict) and e.get("entity_id", "").strip()
                 ],

@@ -79,9 +79,12 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
 
 - État réel lu dans Home Assistant (allumages manuels compris) ; durée de marche depuis la première lecture « on »
   de la série en cours (`history.heating_today`, lectures toutes les 10 min).
-- Coût horaire en cours : poêle au coût fixe, clim à sa puissance électrique estimée (courbe COP) au tarif Tempo
-  du moment. Coût du jour (poêle + clim) calculé comme l'agrégation mensuelle. Radiateurs non chiffrés
-  (puissance inconnue).
+- Coût horaire en cours : poêle au coût fixe, clim à sa puissance électrique estimée (courbe COP), radiateurs à
+  leur puissance (kW, réglable par radiateur dans `/config`, `RADIATEURS_TEMPO_ROUGE.default_power_kw` = 2 kW
+  sinon), au tarif Tempo du moment. Un radiateur allumé est compté à pleine puissance (estimation haute : son
+  thermostat intégré peut couper).
+- Coût du jour : poêle et clim calculés comme l'agrégation mensuelle ; radiateurs depuis `radiator_daily`
+  (minutes, kWh et coût par jour et par radiateur, alimentée toutes les 10 min avec l'historique).
 - Jour rouge : clim « exclue », radiateurs « coupés » quand l'appli les a éteints.
 - Mise à jour avec le rafraîchissement automatique du tableau de bord (`heating_flow` dans `/api/dashboard/refresh`).
   Sous 600 px, les libellés passent dans une légende sous le schéma.
