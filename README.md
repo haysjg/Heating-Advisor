@@ -568,7 +568,9 @@ le numéro PDL (14 chiffres ; espaces, tirets et points tolérés) et la clé d'
   40 appels de l'appli) : l'heure de reprise annoncée (`nextAccessTime`, UTC) est gardée dans `retry_at` et un
   passage unique (`linky_retry_job`) est planifié 5 min après, s'il tombe dans les 12 h ; sinon, 1 h après le
   429 si aucune heure n'est annoncée. La carte affiche l'heure de reprise.
-- État dans `data/linky_state.json` (dernier passage, dernière erreur, heure de reprise après un 429, appels du jour, historique terminé).
+- Erreur serveur (HTTP 5xx, ex. 500 « Technical error. Please try later. » d'Enedis) : même relance unique, 1 h
+  après l'erreur, au plus 3 fois par jour (`server_retries` dans l'état) ; au-delà, le passage du lendemain rattrape.
+- État dans `data/linky_state.json` (dernier passage, dernière erreur, heure de reprise après un 429 ou un 5xx, appels du jour, relances 5xx du jour, historique terminé).
 
 **Calcul** (`/api/electricity/tariff-comparison`, carte « Tempo ou une autre option ? » en haut de `/electricity`) :
 - Carte : verdict, coût total des trois options, **courbe des économies de Tempo mois par mois** (écart avec

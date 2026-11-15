@@ -183,6 +183,21 @@ class TestSync:
         assert r["status"] == "ok" and "retry_at" not in r
         assert linky.get_state()["retry_at"] is None
 
+    def test_server_error_retried_same_day_a_few_times(self, monkeypatch):
+        monkeypatch.setattr(linky, "SERVER_RETRIES_PER_DAY", 2)
+        retry = datetime(2026, 11, 11, 12, 0)
+
+        def fake(cfg, start, end):
+            raise linky.LinkyError("HTTP 500 : Technical error. Please try later.", 500, retry)
+
+        for _ in range(2):
+            r = self._run(monkeypatch, fake)
+            assert r["status"] == "error" and r["retry_at"] == "2026-11-11T12:00:00"
+            assert not r["backfill_done"]
+        # Au-delà du plafond : plus de relance le jour même
+        r = self._run(monkeypatch, fake)
+        assert r["status"] == "error" and "retry_at" not in r
+
     def test_daily_call_budget(self, monkeypatch):
         monkeypatch.setattr(linky, "DAILY_CALL_BUDGET", 2)
         calls = []
@@ -337,3 +352,21 @@ def test_http_429_carries_retry_time(monkeypatch):
     assert exc.value.status == 429 and exc.value.retryable
     assert exc.value.retry_at is not None and exc.value.retry_at.date() == date(2026, 11, 14)
     assert "quota" in str(exc.value)
+
+
+def test_http_500_retried_one_hour_later(monkeypatch):
+    import io
+    import urllib.error
+
+    def fake_urlopen(req, timeout):
+        body = io.BytesIO(b'{"detail": "Technical error. Please try later."}')
+        raise urllib.error.HTTPError(req.full_url, 500, "Internal Server Error", {}, body)
+
+    monkeypatch.setattr(linky, "decrypt_password", lambda v: v)
+    monkeypatch.setattr(linky.urllib.request, "urlopen", fake_urlopen)
+    before = datetime.now()
+    with pytest.raises(linky.LinkyError) as exc:
+        linky.fetch_load_curve(CFG, date(2026, 11, 7), date(2026, 11, 14))
+    assert exc.value.status == 500 and exc.value.retryable
+    assert before + linky.SERVER_ERROR_PAUSE <= exc.value.retry_at <= datetime.now() + linky.SERVER_ERROR_PAUSE
+    assert str(exc.value) == "HTTP 500 : Technical error. Please try later."

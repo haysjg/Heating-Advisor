@@ -35,6 +35,8 @@ DAILY_CALL_BUDGET = 40      # sous la limite MyElectricalData (50/jour sans cach
 CALL_PAUSE_SECONDS = 1.0    # bien sous la limite de 5 appels/s
 REQUEST_TIMEOUT = 30
 THROTTLE_PAUSE = timedelta(hours=1)   # relance après un HTTP 429 sans heure de reprise
+SERVER_ERROR_PAUSE = timedelta(hours=1)   # relance après une erreur serveur (HTTP 5xx)
+SERVER_RETRIES_PER_DAY = 3
 OPTIONS = ("TEMPO", "BASE", "HPHC")
 VERDICT_MIN_DAYS = 3        # jours rouges et blancs nécessaires pour juger le relais du poêle
 RED_VS_WHITE_WARN = 0.9     # HP d'un jour rouge ≥ 90 % de celles d'un jour blanc → relais insuffisant
@@ -48,7 +50,8 @@ _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct",
 
 class LinkyError(Exception):
     """Échec d'un appel à MyElectricalData. status : code HTTP (None = réseau).
-    retry_at : heure locale à partir de laquelle le quota est à nouveau disponible (HTTP 429)."""
+    retry_at : heure locale de la relance (quota à nouveau disponible après un HTTP 429, ou 1 h après une
+    erreur serveur 5xx)."""
 
     def __init__(self, message: str, status: int | None = None, retry_at: datetime | None = None):
         super().__init__(message)
@@ -113,7 +116,8 @@ def _get(linky_cfg: dict, path: str) -> dict:
         if e.code == 429:
             retry_at = next_access_time(body) or datetime.now() + THROTTLE_PAUSE
             raise LinkyError("HTTP 429 : quota de la passerelle Enedis dépassé", 429, retry_at) from e
-        raise LinkyError(f"HTTP {e.code} : {_error_message(payload)}", e.code) from e
+        retry_at = datetime.now() + SERVER_ERROR_PAUSE if e.code >= 500 else None
+        raise LinkyError(f"HTTP {e.code} : {_error_message(payload)}", e.code, retry_at) from e
     except (urllib.error.URLError, OSError, ValueError) as e:
         raise LinkyError(f"MyElectricalData injoignable : {e}") from e
 
@@ -230,7 +234,8 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
     Respecte DAILY_CALL_BUDGET (compteur du jour dans data/linky_state.json). La fin de l'historique
     disponible (collecte de la courbe de charge activée récemment) est détectée par une réponse vide
     ou une erreur définitive ; les pannes passagères sont retentées au passage suivant. Après un quota
-    dépassé (HTTP 429), result["retry_at"] donne l'heure de reprise annoncée, pour une relance le jour même.
+    dépassé (HTTP 429), result["retry_at"] donne l'heure de reprise annoncée, pour une relance le jour même ;
+    après une erreur serveur (HTTP 5xx), une heure plus tard, au plus SERVER_RETRIES_PER_DAY fois par jour.
     """
     if not is_configured(linky_cfg):
         return {"status": "disabled"}
@@ -238,7 +243,7 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
     today = today or now.date()
     state = get_state()
     if state.get("calls_day") != today.isoformat():
-        state["calls_day"], state["calls"] = today.isoformat(), 0
+        state["calls_day"], state["calls"], state["server_retries"] = today.isoformat(), 0, 0
     backfill_days = int(linky_cfg.get("backfill_days", 730))
     target = today - timedelta(days=backfill_days)
     # Historique terminé pour une profondeur plus courte (passage de 12 à 24 mois) : on reprend
@@ -289,7 +294,12 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
         logger.warning("Linky : synchronisation interrompue : %s", e)
         state["last_error"] = str(e)
         state["last_error_at"] = now.isoformat(timespec="seconds")
-        state["retry_at"] = e.retry_at.isoformat(timespec="seconds") if e.retry_at else None
+        retry_at = e.retry_at
+        if retry_at and e.status and e.status >= 500:
+            state["server_retries"] = state.get("server_retries", 0) + 1
+            if state["server_retries"] > SERVER_RETRIES_PER_DAY:
+                retry_at = None
+        state["retry_at"] = retry_at.isoformat(timespec="seconds") if retry_at else None
         status = "error"
 
     state["last_sync"] = now.isoformat(timespec="seconds")

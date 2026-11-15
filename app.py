@@ -818,8 +818,9 @@ LINKY_RETRY_MAX_HOURS = 12
 def _run_linky_sync():
     """Récupère la courbe de charge Linky manquante (appelé par le scheduler).
 
-    Quota dépassé (HTTP 429) : relance unique quelques minutes après l'heure de reprise annoncée,
-    si elle tombe dans les LINKY_RETRY_MAX_HOURS ; sinon le passage du lendemain rattrape.
+    Quota dépassé (HTTP 429) ou erreur serveur (5xx) : relance unique quelques minutes après l'heure de
+    reprise (annoncée, ou 1 h plus tard), si elle tombe dans les LINKY_RETRY_MAX_HOURS ; sinon le passage
+    du lendemain rattrape.
     """
     try:
         result = linky_module.sync(config.LINKY)
@@ -832,7 +833,7 @@ def _run_linky_sync():
     if run_at - datetime.now() > timedelta(hours=LINKY_RETRY_MAX_HOURS):
         return
     _scheduler.add_job(_run_linky_sync, "date", run_date=run_at, id="linky_retry_job", replace_existing=True)
-    logger.info("Linky : quota dépassé, nouvelle tentative à %s", run_at.strftime("%Hh%M"))
+    logger.info("Linky : %s, nouvelle tentative à %s", result.get("error"), run_at.strftime("%Hh%M"))
 
 
 def _reschedule_linky_sync(run_soon: bool = False):

@@ -752,7 +752,8 @@
     status.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
     if (d.last_error) {
       status.textContent += (bits.length ? ' · ' : '') + 'Erreur : ' + d.last_error;
-      if (d.retry_at) status.textContent += ' · quota à nouveau disponible le ' + fmtDateTime(d.retry_at) + ', nouvelle tentative dans la foulée';
+      if (d.retry_at && d.last_error.startsWith('HTTP 429')) status.textContent += ' · quota à nouveau disponible le ' + fmtDateTime(d.retry_at) + ', nouvelle tentative dans la foulée';
+      else if (d.retry_at) status.textContent += ' · nouvelle tentative vers ' + fmtDateTime(d.retry_at);
       status.classList.add('is-error');
     }
 
