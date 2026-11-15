@@ -3,7 +3,9 @@ Client Home Assistant — contrôle optionnel du poêle via l'API REST HA.
 N'est utilisé que si HOME_ASSISTANT.enabled = True dans la config.
 """
 
+import json
 import logging
+import re
 import threading
 import time
 
@@ -229,6 +231,33 @@ def get_entity_state(cfg: dict, entity_id: str) -> dict | None:
     except Exception as e:
         logger.error("HA get_entity_state(%s) échoué : %s", entity_id, e)
         return None
+
+
+ENERGY_UNITS = ("Wh", "kWh", "MWh")
+
+
+def find_energy_sensor(cfg: dict, entity_id: str) -> list:
+    """Compteurs d'énergie (sensor.* en Wh / kWh / MWh) du même appareil HA que `entity_id`, le plus probable
+    d'abord (device_class energy, puis total_increasing). Lève une exception si HA ne répond pas.
+
+    L'API REST ne relie pas les entités à leur appareil : on passe par l'API template (device_id / device_entities).
+    """
+    if not re.fullmatch(r"[a-z_]+\.[a-z0-9_]+", entity_id or ""):
+        raise ValueError(f"entité invalide : {entity_id!r}")
+    template = (f"{{% set d = device_id({json.dumps(entity_id)}) %}}"
+                "{{ (device_entities(d) if d else []) | tojson }}")
+    resp = _session.post(f"{cfg['url'].rstrip('/')}/api/template", json={"template": template},
+                         headers={"Authorization": f"Bearer {decrypt_password(cfg['token'])}"},
+                         timeout=READ_TIMEOUT)
+    resp.raise_for_status()
+    siblings = json.loads(resp.text or "[]")
+    states = _all_states(cfg)
+    found = []
+    for eid in siblings:
+        attrs = (states.get(eid) or {}).get("attributes") or {}
+        if eid.startswith("sensor.") and attrs.get("unit_of_measurement") in ENERGY_UNITS:
+            found.append((attrs.get("device_class") != "energy", attrs.get("state_class") != "total_increasing", eid))
+    return [eid for *_, eid in sorted(found)]
 
 
 def turn_off_entity(cfg: dict, entity_id: str) -> bool:

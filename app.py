@@ -2042,6 +2042,25 @@ def api_linky_test():
         return jsonify({"status": "error", "message": _internal_error_message(error_id), "error_id": error_id}), 500
 
 
+@app.route("/api/radiateurs/detect_energy", methods=["POST"])
+def api_radiateurs_detect_energy():
+    """Cherche dans HA le compteur d'énergie de l'appareil du radiateur saisi (bouton « Détecter » de /config)."""
+    entity_id = str((request.get_json(silent=True) or {}).get("entity_id", "")).strip()
+    ha_cfg = config.HOME_ASSISTANT
+    if not (ha_cfg.get("enabled") and ha_cfg.get("url") and ha_cfg.get("token")):
+        return jsonify({"status": "error", "message": "Home Assistant non configuré"})
+    try:
+        found = ha_client.find_energy_sensor(config.HOME_ASSISTANT, entity_id)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Saisir d'abord l'entité du radiateur (ex. climate.i2g_actuator_4)"})
+    except Exception as e:
+        logger.error("Détection compteur d'énergie de %s échouée : %s", entity_id, e)
+        return jsonify({"status": "error", "message": "Home Assistant injoignable"})
+    if not found:
+        return jsonify({"status": "error", "message": f"Aucun compteur d'énergie trouvé pour {entity_id}"})
+    return jsonify({"status": "ok", "entity_id": found[0], "others": found[1:]})
+
+
 @app.route("/api/electricity/imap/test", methods=["POST"])
 def api_electricity_imap_test():
     """Teste la connexion IMAP avec les identifiants actuellement enregistrés."""

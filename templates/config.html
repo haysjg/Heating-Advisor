@@ -947,9 +947,14 @@
             <button type="button" onclick="removeRadiateur(this)"
                     style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--text-muted);font-size:0.85rem"
                     title="Supprimer">✕</button>
-            <input type="text" class="radiateur-energy" value="{{ rad_energy }}"
+            <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
+            <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
+      <input type="text" class="radiateur-energy" value="{{ rad_energy }}"
                    placeholder="Compteur d'énergie (facultatif) : sensor.…_electric_energy_consumption"
-                   style="flex:1 1 100%;margin-left:1.6rem;font-family:monospace;font-size:0.8rem" aria-label="Compteur d'énergie Home Assistant">
+                   style="flex:1;min-width:0;margin-left:1.6rem;font-family:monospace;font-size:0.8rem" aria-label="Compteur d'énergie Home Assistant">
+            <button type="button" class="radiateur-detect" onclick="detectEnergy(this)"
+                    style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--blue);font-size:0.8rem;flex-shrink:0"
+                    title="Chercher dans Home Assistant le compteur d'énergie de ce radiateur">Détecter</button>
           </div>
           {% endfor %}
         </div>
@@ -960,7 +965,7 @@
         <span class="hint">Coché : radiateur piloté (extinction les jours rouges, boutons du panneau Contrôles).
           Décoché : consommation suivie seulement, l'appli n'y touche jamais.
           Compteur d'énergie (entité <code>sensor.*</code> en Wh ou kWh du radiateur dans Home Assistant) : consommation réelle
-          au tarif du moment. Sans compteur, le coût est estimé à la puissance (kW) pendant la chauffe.</span>
+          au tarif du moment ; « Détecter » le cherche parmi les entités de l'appareil du radiateur. Sans compteur, le coût est estimé à la puissance (kW) pendant la chauffe.</span>
       </div>
     </div>
 
@@ -1669,12 +1674,36 @@
       <button type="button" onclick="removeRadiateur(this)"
               style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--text-muted);font-size:0.85rem"
               title="Supprimer">✕</button>
+      <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
       <input type="text" class="radiateur-energy" value="${escapeHtml(energy_entity_id || '')}"
              placeholder="Compteur d'énergie (facultatif) : sensor.…_electric_energy_consumption"
-             style="flex:1 1 100%;margin-left:1.6rem;font-family:monospace;font-size:0.8rem" aria-label="Compteur d'énergie Home Assistant">
+             style="flex:1;min-width:0;margin-left:1.6rem;font-family:monospace;font-size:0.8rem" aria-label="Compteur d'énergie Home Assistant">
+      <button type="button" class="radiateur-detect" onclick="detectEnergy(this)"
+              style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--blue);font-size:0.8rem;flex-shrink:0"
+              title="Chercher dans Home Assistant le compteur d'énergie de ce radiateur">Détecter</button>
     `;
     container.appendChild(row);
     row.querySelector('.radiateur-name').focus();
+  }
+
+  function detectEnergy(btn) {
+    const row = btn.closest('.radiateur-row');
+    const entity_id = row.querySelector('.radiateur-entity').value.trim();
+    btn.disabled = true;
+    fetch('/api/radiateurs/detect_energy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entity_id })
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status !== 'ok') { showToast('✗ ' + d.message, false); return; }
+        row.querySelector('.radiateur-energy').value = d.entity_id;
+        const more = d.others && d.others.length ? ` (autres : ${d.others.join(', ')})` : '';
+        showToast(`✓ Compteur trouvé : ${d.entity_id}${more} — penser à enregistrer`, true);
+      })
+      .catch(() => showToast('Erreur réseau', false))
+      .finally(() => { btn.disabled = false; });
   }
 
   function removeRadiateur(btn) {

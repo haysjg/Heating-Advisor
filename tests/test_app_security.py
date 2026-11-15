@@ -259,3 +259,15 @@ def test_puissance_radiateur(app_module, monkeypatch):
     assert app_module._radiator_power_value(None) == 2.0
     with pytest.raises(ValueError):
         app_module._radiator_power_value(25)
+
+
+def test_detecter_compteur_energie(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.config, "HOME_ASSISTANT",
+                        {**app_module.config.HOME_ASSISTANT, "enabled": True, "url": "http://ha", "token": "t"})
+    monkeypatch.setattr(app_module.ha_client, "find_energy_sensor", lambda cfg, eid: ["sensor.io_5_energy"])
+    with app_module.app.test_request_context(json={"entity_id": "climate.i2g_actuator_4"}):
+        d = app_module.api_radiateurs_detect_energy().get_json()
+    assert d == {"status": "ok", "entity_id": "sensor.io_5_energy", "others": []}
+    monkeypatch.setattr(app_module.ha_client, "find_energy_sensor", lambda cfg, eid: [])
+    with app_module.app.test_request_context(json={"entity_id": "climate.i2g_actuator_4"}):
+        assert app_module.api_radiateurs_detect_energy().get_json()["status"] == "error"

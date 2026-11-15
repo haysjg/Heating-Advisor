@@ -92,3 +92,35 @@ class TestGetEntities:
 
     def test_not_configured(self):
         assert ha.get_entities({"enabled": False}, ["person.a"]) is None
+
+
+def test_find_energy_sensor_same_device(session):
+    states = STATES + [
+        {"entity_id": "sensor.io_5_energy", "state": "4251000",
+         "attributes": {"unit_of_measurement": "Wh", "device_class": "energy", "state_class": "total_increasing"}},
+        {"entity_id": "sensor.io_6_other", "state": "3", "attributes": {"unit_of_measurement": "kWh"}},
+        {"entity_id": "sensor.io_2_temp", "state": "19", "attributes": {"unit_of_measurement": "°C"}},
+    ]
+
+    def request(method, url, **kw):
+        return _resp(states)
+
+    def post(url, **kw):
+        r = MagicMock()
+        r.text = '["climate.i2g_actuator_4", "sensor.io_2_temp", "sensor.io_6_other", "sensor.io_5_energy"]'
+        r.raise_for_status.return_value = None
+        session.template = (url, kw["json"]["template"])
+        return r
+
+    session.request.side_effect = request
+    session.post.side_effect = post
+    assert ha.find_energy_sensor(CFG, "climate.i2g_actuator_4") == ["sensor.io_5_energy", "sensor.io_6_other"]
+    url, template = session.template
+    assert url == "http://ha.local:8123/api/template"
+    assert 'device_id("climate.i2g_actuator_4")' in template
+
+
+def test_find_energy_sensor_rejects_bad_entity(session):
+    with pytest.raises(ValueError):
+        ha.find_energy_sensor(CFG, 'climate.x") }}{{ states')
+    session.post.assert_not_called()

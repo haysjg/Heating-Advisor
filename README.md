@@ -194,7 +194,10 @@ Le système le moins cher est recommandé.
 Chaque radiateur de `RADIATEURS_TEMPO_ROUGE.entities` : `entity_id`, `name`, `enabled`, `power_kw`,
 `energy_entity_id` (facultatif). `enabled` = **piloté** (extinction jour rouge, boutons du panneau Contrôles) ;
 décoché = **suivi seul** : l'appli n'y touche jamais mais suit sa consommation (flux d'énergie, coût du jour),
-même quand la règle jour rouge est désactivée.
+même quand la règle jour rouge est désactivée. Le bouton **« Détecter »** de `/config`
+(`POST /api/radiateurs/detect_energy` → `homeassistant.find_energy_sensor`) remplit `energy_entity_id` : l'API
+REST de HA ne relie pas une entité à son appareil, on passe donc par l'API template (`device_id` /
+`device_entities`) et on garde les `sensor.*` en Wh / kWh / MWh du même appareil, `device_class: energy` en premier.
 
 Le job radiateurs (toutes les 50 min, heures pleines) éteint les radiateurs configurés un jour rouge, puis rallume le premier jour non rouge **uniquement ceux qu'il a lui-même éteints** (`data/radiateurs_managed_off.json`). Un arrêt manuel depuis l'appli retire le radiateur de cette liste : il n'est jamais rallumé automatiquement.
 
