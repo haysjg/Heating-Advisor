@@ -666,26 +666,61 @@ def season_balance(reports: list[dict], today: date | None = None) -> dict:
     }
 
 
-def record_radiators(radiators: list, price: float, now: datetime | None = None) -> None:
-    """Ajoute 10 min de marche aux radiateurs allumés : [(entity_id, allumé, puissance kW)].
+# Au-delà de cet écart entre deux relevés du compteur d'un radiateur (appli arrêtée), on repart du relevé
+# courant plutôt que d'attribuer d'un bloc à l'intervalle en cours une consommation d'heures passées
+RADIATOR_METER_MAX_GAP = timedelta(hours=6)
 
-    Estimation haute : un radiateur allumé est compté à pleine puissance (son thermostat intégré peut couper).
+
+def record_radiators(radiators: list, price: float, now: datetime | None = None) -> None:
+    """Ajoute l'intervalle de 10 min écoulé à radiator_daily, pour chaque radiateur :
+    {"entity_id", "on" (en chauffe), "power_kw", "metered" (compteur d'énergie HA configuré), "meter_kwh"}.
+
+    Radiateur mesuré : kWh = écart avec le relevé précédent du compteur (radiator_meter), au tarif du moment ;
+    compteur indisponible → rien n'est compté, l'écart sera rattrapé au relevé suivant.
+    Sans compteur, estimation haute : un radiateur en chauffe est compté à pleine puissance.
     """
-    day = (now or datetime.now()).date().isoformat()
-    rows = [(day, entity_id, power_kw * 10 / 60, power_kw * 10 / 60 * price)
-            for entity_id, on, power_kw in radiators if on]
-    if not rows:
-        return
+    now = now or datetime.now()
+    day, ts = now.date().isoformat(), now.isoformat(timespec="seconds")
     try:
         with _connect() as conn:
+            rows = []
+            for r in radiators:
+                minutes = 10 if r["on"] else 0
+                if not r.get("metered"):
+                    kwh = r["power_kw"] * 10 / 60 if r["on"] else 0.0
+                else:
+                    kwh = 0.0
+                    current = r.get("meter_kwh")
+                    if current is not None:
+                        prev = conn.execute("SELECT kwh, ts FROM radiator_meter WHERE entity_id = ?",
+                                            (r["entity_id"],)).fetchone()
+                        if prev and current >= prev[0] and now - datetime.fromisoformat(prev[1]) <= RADIATOR_METER_MAX_GAP:
+                            kwh = current - prev[0]
+                        conn.execute("INSERT OR REPLACE INTO radiator_meter (entity_id, kwh, ts) VALUES (?, ?, ?)",
+                                     (r["entity_id"], current, ts))
+                if minutes or kwh:
+                    rows.append((day, r["entity_id"], minutes, kwh, kwh * price))
             conn.executemany(
-                """INSERT INTO radiator_daily (day, entity_id, on_minutes, kwh, cost) VALUES (?, ?, 10, ?, ?)
-                   ON CONFLICT(day, entity_id) DO UPDATE SET on_minutes = on_minutes + 10,
+                """INSERT INTO radiator_daily (day, entity_id, on_minutes, kwh, cost) VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(day, entity_id) DO UPDATE SET on_minutes = on_minutes + excluded.on_minutes,
                        kwh = kwh + excluded.kwh, cost = cost + excluded.cost""",
                 rows,
             )
     except Exception as e:
         logger.error("History : enregistrement radiateurs échoué : %s", e)
+
+
+def radiators_today(now: datetime | None = None) -> dict:
+    """Consommation du jour de chaque radiateur : {entity_id: {"on_minutes", "kwh", "cost"}}."""
+    day = (now or datetime.now()).date().isoformat()
+    try:
+        with _connect() as conn:
+            rows = conn.execute("SELECT entity_id, on_minutes, kwh, cost FROM radiator_daily WHERE day = ?",
+                                (day,)).fetchall()
+    except Exception as e:
+        logger.error("History : lecture radiateurs du jour échouée : %s", e)
+        return {}
+    return {e: {"on_minutes": m, "kwh": round(k, 2), "cost": round(c, 2)} for e, m, k, c in rows}
 
 
 def heating_today(config: dict, now: datetime | None = None) -> dict:

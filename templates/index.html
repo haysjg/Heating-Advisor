@@ -171,7 +171,7 @@
     {% if config.HOME_ASSISTANT.get('clim_entity_id') and config.HOME_ASSISTANT.get('clim_entity_id')|length > 0 %}
     {{ device_row('clim', 'snowflake', 'Clim', 'clim') }}
     {% endif %}
-    {% for r in radiateurs_info if r.enabled %}
+    {% for r in radiateurs_info if r.controlled %}
     {{ device_row(r.entity_id, 'heater', r.name, 'radiateur') }}
     {% if r.weekend_restricted %}
     <label class="weekend-toggle" title="Week-end : sans cette autorisation, l'appli ne rallume jamais ce radiateur automatiquement (rallumage reporté au lundi). Les boutons restent utilisables.">
@@ -235,9 +235,13 @@
       {% set _devs = _devs + [{'key': 'clim', 'name': 'Clim', 'glyph': 'snowflake', 'color': '#60a5fa', 'fill': '#121a26', 'elec': true}] %}
     {% endif %}
     {% set _ns = namespace(devs=_devs) %}
+    {% if heating_flow.radiateurs.grouped %}
+      {% set _ns.devs = _ns.devs + [{'key': 'radi-all', 'name': 'Radiateurs', 'glyph': 'heater', 'color': '#f472b6', 'fill': '#1f1320', 'elec': true}] %}
+    {% else %}
     {% for r in heating_flow.radiateurs['items'] %}
       {% set _ns.devs = _ns.devs + [{'key': 'radi-' ~ loop.index0, 'name': r.name, 'glyph': 'heater', 'color': '#f472b6', 'fill': '#1f1320', 'elec': true}] %}
     {% endfor %}
+    {% endif %}
     {% set _devs = _ns.devs %}
     {% set _step = 64 %}
     {% set _y0 = 44 %}
@@ -737,31 +741,35 @@
       {% endif %}
       {% if radiateurs_info %}
       <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.07)">
-        <p class="value-sub" style="color:#94a3b8;margin-bottom:0.4rem;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em">Radiateurs — Jours Rouges</p>
+        <p class="value-sub" style="color:#94a3b8;margin-bottom:0.4rem;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em">Radiateurs — aujourd'hui</p>
         <div style="display:flex;flex-direction:column;gap:0.25rem">
           {% for r in radiateurs_info %}
-          <p class="value-sub" style="display:flex;align-items:center;gap:0.5rem">
-            {% if not r.enabled %}
-              <span class="dot dot-excluded" aria-hidden="true"></span>
-              <span style="color:#64748b">{{ r.name }}</span>
-              <span style="font-size:0.75rem;color:#475569">exclu du pilotage</span>
-            {% elif r.managed_off %}
+          <p class="value-sub" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+            {% if r.managed_off %}
               <span class="dot dot-red" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#fb923c">éteint automatiquement</span>
-            {% elif r.state == "on" %}
+            {% elif r.on %}
               <span class="dot dot-on" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
-              <span style="font-size:0.75rem;color:#22c55e">allumé</span>
+              <span style="font-size:0.75rem;color:#22c55e">en chauffe</span>
             {% elif r.state == "off" %}
               <span class="dot dot-off" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#64748b">éteint</span>
-            {% else %}
+            {% elif r.state in (None, "unavailable", "unknown") %}
               <span class="dot dot-unknown" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
-              <span style="font-size:0.75rem;color:#94a3b8">{{ r.state or "indisponible" }}</span>
+              <span style="font-size:0.75rem;color:#94a3b8">indisponible</span>
+            {% else %}
+              <span class="dot dot-off" aria-hidden="true"></span>
+              <span>{{ r.name }}</span>
+              <span style="font-size:0.75rem;color:#64748b">au repos</span>
             {% endif %}
+            <span style="margin-left:auto;font-size:0.75rem;color:#94a3b8;font-variant-numeric:tabular-nums"
+                  title="{{ 'Mesuré par le compteur d\'énergie du radiateur' if r.metered else 'Estimé : pleine puissance pendant la chauffe' }}">
+              {{ '%.1f'|format(r.today_kwh)|replace('.', ',') }} kWh · {{ '%.2f'|format(r.today_cost)|replace('.', ',') }} €{% if not r.metered %} (estim.){% endif %}
+            </span>
           </p>
           {% endfor %}
         </div>

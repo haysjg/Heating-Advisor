@@ -46,3 +46,29 @@ class TestWeekendSetting:
         assert radiateurs.weekend_auto_allowed() is True
         radiateurs.set_weekend_auto_allowed(False)
         assert radiateurs.weekend_auto_allowed() is False
+
+
+class TestIsHeating:
+    def test_hvac_action_wins(self):
+        assert radiateurs.is_heating({"state": "auto", "attributes": {"hvac_action": "heating"}})
+        assert not radiateurs.is_heating({"state": "auto", "attributes": {"hvac_action": "off"}})
+        assert not radiateurs.is_heating({"state": "heat", "attributes": {"hvac_action": "idle"}})
+
+    def test_state_without_hvac_action(self):
+        assert radiateurs.is_heating({"state": "on", "attributes": {}})
+        assert radiateurs.is_heating({"state": "auto"})
+        assert not radiateurs.is_heating({"state": "off"})
+        assert not radiateurs.is_heating(None)
+
+
+class TestMeterKwh:
+    def test_units(self):
+        assert radiateurs.meter_kwh({"state": "4251000", "attributes": {"unit_of_measurement": "Wh"}}) == 4251.0
+        assert radiateurs.meter_kwh({"state": "12.5", "attributes": {"unit_of_measurement": "kWh"}}) == 12.5
+        assert radiateurs.meter_kwh({"state": "4251000", "attributes": {}}) == 4251.0     # Wh par défaut
+
+    def test_unreadable(self):
+        assert radiateurs.meter_kwh({"state": "unavailable", "attributes": {"unit_of_measurement": "Wh"}}) is None
+        assert radiateurs.meter_kwh({"state": "12", "attributes": {"unit_of_measurement": "W"}}) is None
+        assert radiateurs.meter_kwh({"state": "-3", "attributes": {"unit_of_measurement": "kWh"}}) is None
+        assert radiateurs.meter_kwh(None) is None

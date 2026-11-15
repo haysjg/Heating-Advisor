@@ -40,3 +40,30 @@ def split_turn_back_on(managed: list, entity_ids: list, weekend_restricted: list
         return candidates, []
     postponed = [e for e in candidates if e in weekend_restricted]
     return [e for e in candidates if e not in postponed], postponed
+
+
+# Unités acceptées pour le compteur d'énergie HA d'un radiateur, en kWh
+_ENERGY_UNITS = {"Wh": 0.001, "kWh": 1.0, "MWh": 1000.0}
+
+
+def is_heating(ha_state: dict | None) -> bool:
+    """Le radiateur chauffe-t-il ? `hvac_action` quand l'entité le fournit (thermostat intégré :
+    « heating » seulement quand la résistance chauffe), sinon l'état (prise : on ; climate : heat / auto)."""
+    if not ha_state:
+        return False
+    action = (ha_state.get("attributes") or {}).get("hvac_action")
+    if action is not None:
+        return action == "heating"
+    return ha_state.get("state") in ("on", "heat", "auto")
+
+
+def meter_kwh(ha_state: dict | None) -> float | None:
+    """Index du compteur d'énergie HA en kWh (Wh, kWh ou MWh), None si indisponible ou illisible."""
+    if not ha_state:
+        return None
+    factor = _ENERGY_UNITS.get((ha_state.get("attributes") or {}).get("unit_of_measurement") or "Wh")
+    try:
+        value = float(ha_state.get("state"))
+    except (TypeError, ValueError):
+        return None
+    return value * factor if factor is not None and value >= 0 else None

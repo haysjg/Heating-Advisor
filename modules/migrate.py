@@ -293,6 +293,18 @@ def _migrate_012(conn):
     """)
 
 
+def _migrate_013(conn):
+    """radiator_meter : dernier relevé du compteur d'énergie HA de chaque radiateur mesuré (kWh cumulés),
+    pour calculer la consommation réelle de chaque intervalle de 10 min dans radiator_daily."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS radiator_meter (
+            entity_id TEXT PRIMARY KEY,
+            kwh       REAL NOT NULL,
+            ts        TEXT NOT NULL
+        );
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -307,6 +319,7 @@ MIGRATIONS = [
     _migrate_010,
     _migrate_011,
     _migrate_012,
+    _migrate_013,
 ]
 
 

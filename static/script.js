@@ -207,10 +207,21 @@ function renderHeatingFlow(f) {
     clim: { on: c.on, lines: !c.known ? ['état inconnu', '']
       : c.on ? [flowDuration(c.since) || 'en chauffe', perHour(c.cost_per_hour)] : (c.excluded ? ['exclue', 'jour rouge'] : ['arrêtée', '']) },
   };
-  radiators.forEach((rad, i) => {
-    devices['radi-' + i] = { on: rad.on, lines: !rad.known ? ['état inconnu', '']
-      : rad.on ? ['allumé', perHour(rad.cost_per_hour)] : (rad.cut ? ['coupé', 'jour rouge'] : ['éteint', '']) };
-  });
+  const kwh = v => `${v.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} kWh auj.`;
+  if (r.grouped) {
+    // Trop de radiateurs pour un nœud chacun : un nœud commun, détail par radiateur dans la carte Thermostat automatique
+    const todayKwh = radiators.reduce((sum, rad) => sum + (rad.today_kwh || 0), 0);
+    devices['radi-all'] = { on: r.on > 0, lines: r.on > 0
+      ? [`${r.on}/${r.count} en chauffe`, perHour(r.cost_per_hour)]
+      : (r.cut ? ['coupés', 'jour rouge'] : ['au repos', todayKwh ? kwh(todayKwh) : '']) };
+  } else {
+    radiators.forEach((rad, i) => {
+      devices['radi-' + i] = { on: rad.on, lines: !rad.known ? ['état inconnu', '']
+        : rad.on ? ['en chauffe', perHour(rad.cost_per_hour)]
+        : rad.cut ? ['coupé', 'jour rouge']
+        : [rad.off ? 'éteint' : 'au repos', rad.today_kwh ? kwh(rad.today_kwh) : ''] };
+    });
+  }
   const anyElec = c.on || radiators.some(rad => rad.on);
   const anyOn = Object.values(devices).some(d => d.on);
 

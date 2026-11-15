@@ -185,17 +185,21 @@ def test_heating_flow_jour_rouge(app_module, monkeypatch):
     monkeypatch.setattr(app_module.ha_client, "is_clim_configured", lambda cfg: True)
     data = {"tempo": {"today": {"color": "RED", "label": "Rouge"}, "current_period": "HP"},
             "weather": {"temperature": 3.0}, "indoor": {"temperature": 20.1}}
-    radiateurs = [{"entity_id": "switch.r1", "name": "Combles", "enabled": True, "state": "off", "managed_off": True},
-                  {"entity_id": "switch.r2", "name": "Coin lecture", "enabled": True, "state": "on", "managed_off": False}]
+    radiateurs = [{"entity_id": "switch.r1", "name": "Combles", "enabled": True, "state": "off", "on": False,
+                   "managed_off": True},
+                  {"entity_id": "climate.r2", "name": "Coin lecture", "enabled": False, "state": "auto", "on": True,
+                   "managed_off": False, "metered": True, "today_kwh": 1.0, "today_cost": 0.17}]
     f = app_module._heating_flow(data, {"state": "heat"}, {"state": "off"}, radiateurs)
     assert f["poele"]["on"] and f["poele"]["since"] == "2026-11-14T13:00:00"
     assert f["poele"]["cost_per_hour"] > 0
     assert f["clim"]["excluded"] and not f["clim"]["on"]
     assert f["radiateurs"]["count"] == 2 and f["radiateurs"]["on"] == 1 and f["radiateurs"]["cut"]
+    assert not f["radiateurs"]["grouped"]
     combles, lecture = f["radiateurs"]["items"]
     assert (combles["name"], combles["on"], combles["cut"], combles["cost_per_hour"]) == ("Combles", False, True, 0)
     # Jour rouge HP : 2 kW × 0,7295 €/kWh
-    assert lecture["power_kw"] == 2.0
+    # Suivi seul (non piloté) mais bien présent ; en chauffe d'après hvac_action
+    assert lecture["power_kw"] == 2.0 and lecture["metered"] and lecture["today_kwh"] == 1.0
     assert lecture["cost_per_hour"] == round(2.0 * app_module.config.TEMPO_PRICES["RED"]["HP"], 2)
     assert f["cost_per_hour"] == round(f["poele"]["cost_per_hour"] + lecture["cost_per_hour"], 2)
     assert f["today_cost"] == 1.2 and f["indoor"] == 20.1
@@ -208,6 +212,41 @@ def test_heating_flow_ha_injoignable(app_module, monkeypatch):
     f = app_module._heating_flow({"tempo": {}, "weather": {}}, None, None, [])
     assert not f["poele"]["known"] and not f["poele"]["on"]
     assert f["cost_per_hour"] == 0 and f["tempo"]["color"] == "UNKNOWN"
+
+
+def test_heating_flow_radiateurs_regroupes(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.history_module, "heating_today",
+                        lambda cfg: {"since": {"poele": None, "clim": None},
+                                     "today_cost": {"poele": 0, "clim": 0, "total": 0}})
+    radiateurs = [{"entity_id": f"climate.r{i}", "name": f"R{i}", "state": "auto", "on": i == 0} for i in range(5)]
+    f = app_module._heating_flow({"tempo": {}, "weather": {}}, None, None, radiateurs)
+    assert f["radiateurs"]["grouped"] and f["radiateurs"]["count"] == 5 and f["radiateurs"]["on"] == 1
+    assert f["radiateurs"]["cost_per_hour"] == f["radiateurs"]["items"][0]["cost_per_hour"] > 0
+
+
+def test_compteur_energie_radiateur(app_module):
+    assert app_module._radiator_energy_entity(" sensor.io_9013577_5_electric_energy_consumption ") == \
+        "sensor.io_9013577_5_electric_energy_consumption"
+    assert app_module._radiator_energy_entity(None) == ""
+    with pytest.raises(ValueError):
+        app_module._radiator_energy_entity("climate.i2g_actuator_4")
+
+
+def test_record_radiators_suivis_et_compteur(app_module, monkeypatch):
+    monkeypatch.setitem(app_module.config.HOME_ASSISTANT, "enabled", True)
+    monkeypatch.setitem(app_module.config.RADIATEURS_TEMPO_ROUGE, "enabled", False)
+    monkeypatch.setitem(app_module.config.RADIATEURS_TEMPO_ROUGE, "entities",
+                        [{"entity_id": "climate.i2g_actuator_4", "name": "Coin lecture", "enabled": False,
+                          "energy_entity_id": "sensor.lecture_energy"}])
+    states = {"climate.i2g_actuator_4": {"state": "auto", "attributes": {"hvac_action": "heating"}},
+              "sensor.lecture_energy": {"state": "4251000", "attributes": {"unit_of_measurement": "Wh"}}}
+    monkeypatch.setattr(app_module.ha_client, "get_entity_state", lambda cfg, eid: states.get(eid))
+    seen = {}
+    monkeypatch.setattr(app_module.history_module, "record_radiators", lambda r, price: seen.update(rows=r))
+    app_module._record_radiators({"tempo": {}})
+    # Règle jour rouge désactivée et radiateur non piloté : sa consommation est quand même suivie
+    assert seen["rows"] == [{"entity_id": "climate.i2g_actuator_4", "on": True, "power_kw": 2.0,
+                             "metered": True, "meter_kwh": 4251.0}]
 
 
 def test_puissance_radiateur(app_module, monkeypatch):

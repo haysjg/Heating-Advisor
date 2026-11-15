@@ -426,24 +426,61 @@ class TestHeatingToday:
         assert r["today_cost"]["total"] == 0 and r["since"] == {"poele": None, "clim": None}
 
 
+def _rad(entity_id, on, power_kw=2.0, metered=False, meter_kwh=None):
+    return {"entity_id": entity_id, "on": on, "power_kw": power_kw, "metered": metered, "meter_kwh": meter_kwh}
+
+
+def _radiator_rows():
+    with history._connect() as conn:
+        return {e: (m, round(k, 3), round(c, 4)) for e, m, k, c in
+                conn.execute("SELECT entity_id, on_minutes, kwh, cost FROM radiator_daily")}
+
+
 class TestRecordRadiators:
     NOW = datetime(2026, 11, 14, 15, 0, 0)
 
     def test_only_running_radiators_counted(self, base_config):
-        history.record_radiators([("switch.r1", True, 2.0), ("switch.r2", False, 2.0)], 0.1654, now=self.NOW)
-        history.record_radiators([("switch.r1", True, 2.0), ("switch.r2", True, 2.0)], 0.7295, now=self.NOW)
-        with history._connect() as conn:
-            rows = dict(((e, (m, round(k, 3), round(c, 4))) for e, m, k, c in
-                         conn.execute("SELECT entity_id, on_minutes, kwh, cost FROM radiator_daily")))
+        history.record_radiators([_rad("switch.r1", True), _rad("switch.r2", False)], 0.1654, now=self.NOW)
+        history.record_radiators([_rad("switch.r1", True), _rad("switch.r2", True)], 0.7295, now=self.NOW)
+        rows = _radiator_rows()
         assert rows["switch.r1"] == (20, round(2 * 2.0 / 6, 3), round(2.0 / 6 * 0.1654 + 2.0 / 6 * 0.7295, 4))
         assert rows["switch.r2"] == (10, round(2.0 / 6, 3), round(2.0 / 6 * 0.7295, 4))
 
     def test_counted_in_today_cost(self, base_config):
-        history.record_radiators([("switch.r1", True, 2.0)], 0.18, now=self.NOW)
-        history.record_radiators([("switch.r1", True, 2.0)], 0.18, now=self.NOW - timedelta(days=1))
+        history.record_radiators([_rad("switch.r1", True)], 0.18, now=self.NOW)
+        history.record_radiators([_rad("switch.r1", True)], 0.18, now=self.NOW - timedelta(days=1))
         r = history.heating_today(base_config, now=self.NOW)
         assert r["today_cost"]["radiateurs"] == round(2.0 / 6 * 0.18, 2)
         assert r["today_cost"]["total"] == r["today_cost"]["radiateurs"]
+
+    def test_metered_uses_counter_delta(self, base_config):
+        step = timedelta(minutes=10)
+        # Premier relevé : référence seulement ; ensuite l'écart du compteur, au tarif de l'intervalle
+        history.record_radiators([_rad("climate.lecture", False, metered=True, meter_kwh=4251.0)], 0.1654, now=self.NOW)
+        history.record_radiators([_rad("climate.lecture", True, metered=True, meter_kwh=4251.0)], 0.1654,
+                                 now=self.NOW + step)
+        history.record_radiators([_rad("climate.lecture", True, metered=True, meter_kwh=4252.0)], 0.1654,
+                                 now=self.NOW + 2 * step)
+        assert _radiator_rows()["climate.lecture"] == (20, 1.0, 0.1654)
+        assert history.radiators_today(now=self.NOW)["climate.lecture"] == {"on_minutes": 20, "kwh": 1.0, "cost": 0.17}
+
+    def test_metered_unavailable_then_catch_up(self, base_config):
+        step = timedelta(minutes=10)
+        history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=10.0)], 0.2, now=self.NOW)
+        # Compteur indisponible : ni estimation ni relevé, l'écart est rattrapé ensuite
+        history.record_radiators([_rad("climate.r", True, metered=True, meter_kwh=None)], 0.2, now=self.NOW + step)
+        history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=10.5)], 0.2, now=self.NOW + 2 * step)
+        assert _radiator_rows()["climate.r"] == (10, 0.5, 0.1)
+
+    def test_metered_reset_or_long_gap_rebaselines(self, base_config):
+        history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=10.0)], 0.2, now=self.NOW)
+        history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=2.0)], 0.2,
+                                 now=self.NOW + timedelta(minutes=10))     # compteur remis à zéro
+        history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=9.0)], 0.2,
+                                 now=self.NOW + timedelta(hours=7))        # appli arrêtée 7 h
+        history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=9.2)], 0.2,
+                                 now=self.NOW + timedelta(hours=7, minutes=10))
+        assert _radiator_rows()["climate.r"] == (0, 0.2, 0.04)
 
 
 def test_heating_today_as_of(base_config):

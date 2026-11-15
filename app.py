@@ -551,18 +551,66 @@ def _current_elec_price(data: dict) -> float:
     return config.TEMPO_PRICES.get(color, config.TEMPO_PRICES["UNKNOWN"]).get(period, 0)
 
 
+def _radiator_entities() -> list:
+    """Radiateurs configurés, pilotés ou suivis seuls : dicts {entity_id, name, enabled, energy_entity_id}."""
+    result = []
+    for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
+        e = {"entity_id": e} if isinstance(e, str) else e
+        if not isinstance(e, dict) or not e.get("entity_id"):
+            continue
+        result.append({"entity_id": e["entity_id"],
+                       "name": e.get("name") or e["entity_id"].split(".")[-1].replace("_", " "),
+                       "enabled": e.get("enabled", True),
+                       "energy_entity_id": e.get("energy_entity_id") or ""})
+    return result
+
+
+def _radiateurs_info() -> list:
+    """État de chaque radiateur pour l'accueil : état HA, chauffe en cours, consommation du jour.
+
+    `enabled` : piloté par l'appli (extinction jour rouge, boutons du panneau Contrôles) ;
+    `controlled` : piloté et règle jour rouge active. Les autres sont seulement suivis.
+    """
+    entities = _radiator_entities()
+    if not entities:
+        return []
+    managed_off = _load_managed_off()
+    today = history_module.radiators_today()
+    ha_on = config.HOME_ASSISTANT.get("enabled")
+    info = []
+    for e in entities:
+        ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, e["entity_id"]) if ha_on else None
+        conso = today.get(e["entity_id"], {})
+        info.append({
+            **e,
+            "controlled": bool(config.RADIATEURS_TEMPO_ROUGE.get("enabled") and e["enabled"]),
+            "managed_off": e["entity_id"] in managed_off,
+            "state": ha_state.get("state", "unknown") if ha_state else None,
+            "on": radiateurs_module.is_heating(ha_state),
+            "metered": bool(e["energy_entity_id"]),
+            "today_kwh": conso.get("kwh", 0.0),
+            "today_cost": conso.get("cost", 0.0),
+            "weekend_restricted": e["entity_id"] in config.RADIATEURS_TEMPO_ROUGE.get("weekend_restricted_entities", []),
+        })
+    return info
+
+
 def _record_radiators(data: dict) -> None:
-    """Historise la marche des radiateurs gérés (coût du jour de l'accueil)."""
-    if not config.RADIATEURS_TEMPO_ROUGE.get("enabled") or not config.HOME_ASSISTANT.get("enabled"):
+    """Historise la consommation des radiateurs (pilotés ou suivis seuls) : compteur HA s'il est configuré,
+    sinon estimation à pleine puissance pendant la chauffe."""
+    if not config.HOME_ASSISTANT.get("enabled"):
         return
     states = []
-    for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
-        if not isinstance(e, dict) or not e.get("enabled", True) or not e.get("entity_id"):
-            continue
+    for e in _radiator_entities():
         ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, e["entity_id"])
-        on = bool(ha_state) and ha_state.get("state") in ("on", "heat")
-        states.append((e["entity_id"], on, _radiator_power(e["entity_id"])))
-    history_module.record_radiators(states, _current_elec_price(data))
+        meter = None
+        if e["energy_entity_id"]:
+            meter = radiateurs_module.meter_kwh(ha_client.get_entity_state(config.HOME_ASSISTANT, e["energy_entity_id"]))
+        states.append({"entity_id": e["entity_id"], "on": radiateurs_module.is_heating(ha_state),
+                       "power_kw": _radiator_power(e["entity_id"]), "metered": bool(e["energy_entity_id"]),
+                       "meter_kwh": meter})
+    if states:
+        history_module.record_radiators(states, _current_elec_price(data))
 
 
 def _record_history():
@@ -1036,6 +1084,9 @@ def get_analysis(force_refresh: bool = False) -> dict:
     return compute_analysis(raw, _build_config_dict())
 
 
+RADIATORS_FLOW_MAX = 3
+
+
 def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radiateurs_info: list) -> dict:
     """État de la carte « flux d'énergie » : appareils en chauffe, depuis quand, coût horaire et coût du jour.
 
@@ -1056,17 +1107,17 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
     clim_known = clim_state not in (None, "unavailable", "unknown")
     clim_on = clim_state == "heat"
     pellet = _pellet_status()
-    radiateurs = [r for r in radiateurs_info if r.get("enabled")]
-
     poele_cost = compute_poele_cost(config.POELE).get("cost_per_hour", 0) if poele_on else 0
     clim_cost = history_module.clim_electric_kw(outdoor, config.CLIM) * price if clim_on else 0
     radiator_items = []
-    for r in radiateurs:
-        on = r.get("state") in ("on", "heat")
+    for r in radiateurs_info:
+        on = bool(r.get("on"))
         power = _radiator_power(r.get("entity_id", ""))
         radiator_items.append({"name": r.get("name") or r.get("entity_id", ""),
                                "known": r.get("state") not in (None, "unavailable", "unknown"),
-                               "on": on, "cut": bool(r.get("managed_off")), "power_kw": power,
+                               "on": on, "off": r.get("state") == "off", "cut": bool(r.get("managed_off")),
+                               "power_kw": power, "metered": bool(r.get("metered")),
+                               "today_kwh": r.get("today_kwh", 0.0), "today_cost": r.get("today_cost", 0.0),
                                "cost_per_hour": round(power * price, 2) if on else 0})
     radiators_cost = sum(item["cost_per_hour"] for item in radiator_items)
     indoor = data.get("indoor") or {}
@@ -1079,9 +1130,12 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
                  "since": today["since"]["clim"] if clim_on else None, "cost_per_hour": round(clim_cost, 2),
                  "setpoint": ((clim_ha or {}).get("attributes") or {}).get("temperature"),
                  "excluded": color == "RED"},
-        "radiateurs": {"count": len(radiateurs),
-                       "on": sum(1 for r in radiateurs if r.get("state") in ("on", "heat")),
-                       "cut": any(r.get("managed_off") for r in radiateurs),
+        "radiateurs": {"count": len(radiator_items),
+                       "on": sum(1 for item in radiator_items if item["on"]),
+                       # Au-delà de RADIATORS_FLOW_MAX radiateurs, un seul nœud « Radiateurs » (schéma lisible)
+                       "grouped": len(radiator_items) > RADIATORS_FLOW_MAX,
+                       "cost_per_hour": round(radiators_cost, 2),
+                       "cut": any(item["cut"] for item in radiator_items),
                        "items": radiator_items},
         "indoor": indoor.get("temperature"),
         "comfort": [config.THERMOSTAT.get("temp_on"), config.THERMOSTAT.get("temp_off")],
@@ -1120,31 +1174,7 @@ def index():
         if ha_client.is_clim_configured(config.HOME_ASSISTANT):
             clim_ha = ha_client.get_clim_state(config.HOME_ASSISTANT)
 
-        # Statut radiateurs pour l'affichage index avec état réel depuis HA
-        managed_off = _load_managed_off()
-        radiateurs_info = []
-        if config.RADIATEURS_TEMPO_ROUGE.get("enabled"):
-            for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
-                entity_id = e["entity_id"] if isinstance(e, dict) else e
-                name = (e.get("name") or entity_id.split(".")[-1].replace("_", " ")) if isinstance(e, dict) else entity_id.split(".")[-1].replace("_", " ")
-                enabled = e.get("enabled", True) if isinstance(e, dict) else True
-                is_managed_off = entity_id in managed_off
-
-                # Récupérer l'état réel depuis Home Assistant
-                state = None
-                if config.HOME_ASSISTANT.get("enabled"):
-                    ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
-                    if ha_state:
-                        state = ha_state.get("state", "unknown")
-
-                radiateurs_info.append({
-                    "entity_id": entity_id,
-                    "name": name,
-                    "enabled": enabled,
-                    "managed_off": is_managed_off,
-                    "state": state,
-                    "weekend_restricted": entity_id in config.RADIATEURS_TEMPO_ROUGE.get("weekend_restricted_entities", []),
-                })
+        radiateurs_info = _radiateurs_info()
         return render_template("index.html", data=data, config=config, thermostat_state=thermostat_state,
                                next_schedule_start=next_start, radiateurs_info=radiateurs_info,
                                weekend_auto_allowed=radiateurs_module.weekend_auto_allowed(),
@@ -1211,31 +1241,7 @@ def api_dashboard_refresh():
             thermostat_state["everyone_away"] = False
             thermostat_state["presence_status"] = None
 
-        # Récupérer les radiateurs
-        managed_off = _load_managed_off()
-        radiateurs_info = []
-        if config.RADIATEURS_TEMPO_ROUGE.get("enabled"):
-            for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
-                entity_id = e["entity_id"] if isinstance(e, dict) else e
-                name = (e.get("name") or entity_id.split(".")[-1].replace("_", " ")) if isinstance(e, dict) else entity_id.split(".")[-1].replace("_", " ")
-                enabled = e.get("enabled", True) if isinstance(e, dict) else True
-                is_managed_off = entity_id in managed_off
-
-                # État réel depuis Home Assistant
-                state = None
-                if config.HOME_ASSISTANT.get("enabled"):
-                    ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
-                    if ha_state:
-                        state = ha_state.get("state", "unknown")
-
-                radiateurs_info.append({
-                    "entity_id": entity_id,
-                    "name": name,
-                    "enabled": enabled,
-                    "managed_off": is_managed_off,
-                    "state": state,
-                    "weekend_restricted": entity_id in config.RADIATEURS_TEMPO_ROUGE.get("weekend_restricted_entities", []),
-                })
+        radiateurs_info = _radiateurs_info()
 
         # État clim
         clim_state_value = None
@@ -2143,6 +2149,14 @@ def _schedule_with_comfort(schedule: dict) -> dict:
     return result
 
 
+def _radiator_energy_entity(raw) -> str:
+    """Compteur d'énergie HA d'un radiateur (facultatif) : une entité sensor.*, ou vide."""
+    value = str(raw or "").strip()
+    if value and not re.fullmatch(r"sensor\.[a-z0-9_]+", value):
+        raise ValueError("Compteur d'énergie d'un radiateur : entité sensor.* attendue")
+    return value
+
+
 def _radiator_power_value(raw) -> float:
     """Puissance saisie pour un radiateur (kW) : 0,1 à 10 kW, sinon la valeur par défaut."""
     try:
@@ -2319,7 +2333,8 @@ def api_config_save():
                 "enabled": bool(data.get("radiateurs_enabled", False)),
                 "entities": [
                     {"entity_id": e["entity_id"].strip(), "name": e.get("name", "").strip(), "enabled": bool(e.get("enabled", True)),
-                     "power_kw": _radiator_power_value(e.get("power_kw"))}
+                     "power_kw": _radiator_power_value(e.get("power_kw")),
+                     "energy_entity_id": _radiator_energy_entity(e.get("energy_entity_id"))}
                     for e in (data.get("radiateurs_entities") or [])
                     if isinstance(e, dict) and e.get("entity_id", "").strip()
                 ],

@@ -73,18 +73,24 @@ Météo (Infoclimat / Météo-France / Open-Meteo)
 
 En tête de l'accueil, la carte **« D'où vient la chaleur »** montre en un coup d'œil ce qui chauffe la maison :
 sources (granulés, électricité à la couleur Tempo et à la période du moment) → appareils (poêle, clim, radiateurs)
-→ maison (température de la sonde, plage de confort du thermostat). Un nœud par radiateur géré (nom et état
-de chacun), la hauteur du schéma s'adapte au nombre d'appareils. Des impulsions animées circulent dans les
+→ maison (température de la sonde, plage de confort du thermostat). Un nœud par radiateur (piloté ou suivi
+seul, nom et état de chacun), la hauteur du schéma s'adapte au nombre d'appareils ; au-delà de 3 radiateurs
+(`RADIATORS_FLOW_MAX`), un seul nœud « Radiateurs » (nombre en chauffe, coût horaire cumulé), le détail par
+radiateur restant dans la carte Thermostat automatique (« Radiateurs — aujourd'hui » : état, kWh et € du jour). Des impulsions animées circulent dans les
 tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux absents de la configuration sont masqués.
 
 - État réel lu dans Home Assistant (allumages manuels compris) ; durée de marche depuis la première lecture « on »
   de la série en cours (`history.heating_today`, lectures toutes les 10 min).
-- Coût horaire en cours : poêle au coût fixe, clim à sa puissance électrique estimée (courbe COP), radiateurs à
-  leur puissance (kW, réglable par radiateur dans `/config`, `RADIATEURS_TEMPO_ROUGE.default_power_kw` = 2 kW
-  sinon), au tarif Tempo du moment. Un radiateur allumé est compté à pleine puissance (estimation haute : son
-  thermostat intégré peut couper).
+- Coût horaire en cours : poêle au coût fixe, clim à sa puissance électrique estimée (courbe COP), radiateurs en
+  chauffe à leur puissance (kW, réglable par radiateur dans `/config`, `RADIATEURS_TEMPO_ROUGE.default_power_kw`
+  = 2 kW sinon), au tarif Tempo du moment. « En chauffe » (`radiateurs.is_heating`) : `hvac_action == "heating"`
+  quand l'entité le fournit (thermostat intégré, ex. Atlantic via Overkiz), sinon état `on` / `heat` / `auto`.
 - Coût du jour : poêle et clim calculés comme l'agrégation mensuelle ; radiateurs depuis `radiator_daily`
-  (minutes, kWh et coût par jour et par radiateur, alimentée toutes les 10 min avec l'historique).
+  (minutes de chauffe, kWh et coût par jour et par radiateur, alimentée toutes les 10 min avec l'historique).
+  Radiateur avec **compteur d'énergie** HA (`energy_entity_id`, `sensor.*` en Wh/kWh/MWh) : kWh réels = écart avec
+  le relevé précédent (`radiator_meter`), au tarif du moment ; compteur indisponible → rattrapé au relevé suivant ;
+  compteur qui recule ou relevé de plus de 6 h → nouvelle référence sans rien compter. Sans compteur : estimation
+  à pleine puissance pendant la chauffe.
 - **Compteur « dépensés depuis minuit »** façon odomètre (4 décimales, chiffres qui roulent) : coût du jour du
   serveur (`today_cost`, compté jusqu'à `today_cost_as_of` = dernière lecture + 10 min) interpolé côté navigateur
   au coût horaire en cours, recalé à chaque rafraîchissement sans jamais reculer, remis à zéro à minuit.
@@ -185,6 +191,11 @@ Le système le moins cher est recommandé.
 
 ### `radiateurs.py` — Radiateurs Tempo Rouge
 
+Chaque radiateur de `RADIATEURS_TEMPO_ROUGE.entities` : `entity_id`, `name`, `enabled`, `power_kw`,
+`energy_entity_id` (facultatif). `enabled` = **piloté** (extinction jour rouge, boutons du panneau Contrôles) ;
+décoché = **suivi seul** : l'appli n'y touche jamais mais suit sa consommation (flux d'énergie, coût du jour),
+même quand la règle jour rouge est désactivée.
+
 Le job radiateurs (toutes les 50 min, heures pleines) éteint les radiateurs configurés un jour rouge, puis rallume le premier jour non rouge **uniquement ceux qu'il a lui-même éteints** (`data/radiateurs_managed_off.json`). Un arrêt manuel depuis l'appli retire le radiateur de cette liste : il n'est jamais rallumé automatiquement.
 
 Les radiateurs de `RADIATEURS_TEMPO_ROUGE.weekend_restricted_entities` (par défaut le radiateur des combles) ne sont **jamais rallumés automatiquement le week-end** : le rallumage est reporté au lundi. L'interrupteur « Auto le week-end » de leur commande sur le dashboard lève cette restriction (réglage permanent, `data/radiateurs_weekend.json`). Les interrupteurs du panneau Contrôles restent toujours utilisables.
@@ -193,6 +204,8 @@ Les radiateurs de `RADIATEURS_TEMPO_ROUGE.weekend_restricted_entities` (par déf
 |---|---|
 | `split_turn_back_on(managed, entity_ids, weekend_restricted, now, weekend_allowed)` | Sépare les radiateurs à rallumer maintenant de ceux reportés (week-end). |
 | `weekend_auto_allowed()` / `set_weekend_auto_allowed(allowed)` | Lecture / écriture de l'autorisation week-end (refusée par défaut). |
+| `is_heating(ha_state)` | Radiateur en chauffe : `hvac_action` s'il existe, sinon l'état. |
+| `meter_kwh(ha_state)` | Index du compteur d'énergie HA en kWh (Wh / kWh / MWh), `None` si illisible. |
 
 ### `history.py` — Historisation
 
