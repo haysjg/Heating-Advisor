@@ -18,7 +18,7 @@ import re
 import time as time_module
 import urllib.error
 import urllib.request
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 from modules import jsonstore
 from modules.crypto import decrypt_password
@@ -34,20 +34,26 @@ CHUNK_DAYS = 7              # limite Enedis par appel
 DAILY_CALL_BUDGET = 40      # sous la limite MyElectricalData (50/jour sans cache)
 CALL_PAUSE_SECONDS = 1.0    # bien sous la limite de 5 appels/s
 REQUEST_TIMEOUT = 30
+THROTTLE_PAUSE = timedelta(hours=1)   # relance après un HTTP 429 sans heure de reprise
 OPTIONS = ("TEMPO", "BASE", "HPHC")
 VERDICT_MIN_DAYS = 3        # jours rouges et blancs nécessaires pour juger le relais du poêle
 RED_VS_WHITE_WARN = 0.9     # HP d'un jour rouge ≥ 90 % de celles d'un jour blanc → relais insuffisant
 
 _PDL_RE = re.compile(r"\d{14}")
 _INTERVAL_RE = re.compile(r"PT(\d+)M")
+# Quota de la passerelle Enedis : "nextAccessTime":"2026-Nov-14 10:00:00+0000 UTC"
+_NEXT_ACCESS_RE = re.compile(r"nextAccessTime\W+(\d{4})-([A-Za-z]{3})-(\d{1,2}) (\d{1,2}):(\d{2}):(\d{2})")
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 
 
 class LinkyError(Exception):
-    """Échec d'un appel à MyElectricalData. status : code HTTP (None = réseau)."""
+    """Échec d'un appel à MyElectricalData. status : code HTTP (None = réseau).
+    retry_at : heure locale à partir de laquelle le quota est à nouveau disponible (HTTP 429)."""
 
-    def __init__(self, message: str, status: int | None = None):
+    def __init__(self, message: str, status: int | None = None, retry_at: datetime | None = None):
         super().__init__(message)
         self.status = status
+        self.retry_at = retry_at
 
     @property
     def retryable(self) -> bool:
@@ -78,6 +84,17 @@ def _error_message(payload) -> str:
     return "réponse inattendue de MyElectricalData"
 
 
+def next_access_time(text: str) -> datetime | None:
+    """Heure de reprise (locale, naïve) annoncée par la passerelle Enedis dans une réponse 429."""
+    m = _NEXT_ACCESS_RE.search(text or "")
+    if not m or m.group(2).lower() not in _MONTHS:
+        return None
+    year, _, day, hour, minute, second = m.groups()
+    utc = datetime(int(year), _MONTHS.index(m.group(2).lower()) + 1, int(day), int(hour), int(minute),
+                   int(second), tzinfo=timezone.utc)
+    return utc.astimezone().replace(tzinfo=None)
+
+
 def _get(linky_cfg: dict, path: str) -> dict:
     token = decrypt_password(linky_cfg.get("token", ""))
     req = urllib.request.Request(API_BASE + path, headers={**HEADERS, "Authorization": token})
@@ -86,9 +103,16 @@ def _get(linky_cfg: dict, path: str) -> dict:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         try:
-            payload = json.loads(e.read())
-        except (ValueError, OSError):
+            body = e.read().decode("utf-8", "replace")
+        except OSError:
+            body = ""
+        try:
+            payload = json.loads(body)
+        except ValueError:
             payload = None
+        if e.code == 429:
+            retry_at = next_access_time(body) or datetime.now() + THROTTLE_PAUSE
+            raise LinkyError("HTTP 429 : quota de la passerelle Enedis dépassé", 429, retry_at) from e
         raise LinkyError(f"HTTP {e.code} : {_error_message(payload)}", e.code) from e
     except (urllib.error.URLError, OSError, ValueError) as e:
         raise LinkyError(f"MyElectricalData injoignable : {e}") from e
@@ -205,7 +229,8 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
 
     Respecte DAILY_CALL_BUDGET (compteur du jour dans data/linky_state.json). La fin de l'historique
     disponible (collecte de la courbe de charge activée récemment) est détectée par une réponse vide
-    ou une erreur définitive ; les pannes passagères sont retentées au passage suivant.
+    ou une erreur définitive ; les pannes passagères sont retentées au passage suivant. Après un quota
+    dépassé (HTTP 429), result["retry_at"] donne l'heure de reprise annoncée, pour une relance le jour même.
     """
     if not is_configured(linky_cfg):
         return {"status": "disabled"}
@@ -258,11 +283,13 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
         if state.get("backfill_done"):
             state["backfill_done_for"] = backfill_days
         state["last_error"] = None
+        state["retry_at"] = None
         status = "ok"
     except LinkyError as e:
         logger.warning("Linky : synchronisation interrompue : %s", e)
         state["last_error"] = str(e)
         state["last_error_at"] = now.isoformat(timespec="seconds")
+        state["retry_at"] = e.retry_at.isoformat(timespec="seconds") if e.retry_at else None
         status = "error"
 
     state["last_sync"] = now.isoformat(timespec="seconds")
@@ -274,6 +301,8 @@ def sync(linky_cfg: dict, today: date | None = None, sleep=time_module.sleep, no
               "backfill_done": bool(state.get("backfill_done"))}
     if status == "error":
         result["error"] = state["last_error"]
+        if state["retry_at"]:
+            result["retry_at"] = state["retry_at"]
     logger.info("Linky : synchronisation — %s", result)
     return result
 

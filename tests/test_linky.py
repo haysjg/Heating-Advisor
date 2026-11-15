@@ -166,6 +166,23 @@ class TestSync:
         assert not r["backfill_done"]
         assert linky.get_state()["last_error"] == "HTTP 401 : clé invalide"
 
+    def test_quota_exceeded_reports_retry_time(self, monkeypatch):
+        retry = datetime(2026, 11, 11, 11, 0)
+
+        def fake(cfg, start, end):
+            raise linky.LinkyError("HTTP 429 : quota de la passerelle Enedis dépassé", 429, retry)
+
+        r = self._run(monkeypatch, fake)
+        assert r["status"] == "error" and r["retry_at"] == "2026-11-11T11:00:00"
+        assert not r["backfill_done"]
+
+        def ok(cfg, start, end):
+            return linky.parse_load_curve(_payload(start, end), start, end)
+
+        r = self._run(monkeypatch, ok)
+        assert r["status"] == "ok" and "retry_at" not in r
+        assert linky.get_state()["retry_at"] is None
+
     def test_daily_call_budget(self, monkeypatch):
         monkeypatch.setattr(linky, "DAILY_CALL_BUDGET", 2)
         calls = []
@@ -284,3 +301,39 @@ class TestDailyTotalsAndResume:
         r = linky.sync({**CFG, "backfill_days": 28}, today=now.date(), sleep=lambda s: None, now=now)
         assert calls == [date(2026, 10, 21), date(2026, 10, 14)]
         assert r["backfill_done"] and linky.get_state()["backfill_done_for"] == 28
+
+
+class TestNextAccessTime:
+    BODY = ('{"detail": "{\\"code\\":\\"900804\\",\\"message\\":\\"Message throttled out\\",'
+            '\\"nextAccessTime\\":\\"2026-Nov-14 10:00:00+0000 UTC\\"}"}')
+
+    def test_parsed_as_local_time(self, monkeypatch):
+        monkeypatch.setenv("TZ", "Europe/Paris")
+        import time
+        time.tzset()
+        try:
+            assert linky.next_access_time(self.BODY) == datetime(2026, 11, 14, 11, 0)
+        finally:
+            monkeypatch.undo()
+            time.tzset()
+
+    @pytest.mark.parametrize("text", ["", "Message throttled out", '"nextAccessTime":"2026-Xyz-14 10:00:00"'])
+    def test_missing_or_invalid(self, text):
+        assert linky.next_access_time(text) is None
+
+
+def test_http_429_carries_retry_time(monkeypatch):
+    import io
+    import urllib.error
+
+    def fake_urlopen(req, timeout):
+        body = io.BytesIO(TestNextAccessTime.BODY.encode())
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, body)
+
+    monkeypatch.setattr(linky, "decrypt_password", lambda v: v)
+    monkeypatch.setattr(linky.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(linky.LinkyError) as exc:
+        linky.fetch_load_curve(CFG, date(2026, 11, 7), date(2026, 11, 14))
+    assert exc.value.status == 429 and exc.value.retryable
+    assert exc.value.retry_at is not None and exc.value.retry_at.date() == date(2026, 11, 14)
+    assert "quota" in str(exc.value)

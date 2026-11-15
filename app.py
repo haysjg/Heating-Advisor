@@ -812,12 +812,27 @@ def _run_electricity_fetch():
     logger.info("Électricité : fetch terminé — %s", result)
 
 
+LINKY_RETRY_MAX_HOURS = 12
+
+
 def _run_linky_sync():
-    """Récupère la courbe de charge Linky manquante (appelé par le scheduler)."""
+    """Récupère la courbe de charge Linky manquante (appelé par le scheduler).
+
+    Quota dépassé (HTTP 429) : relance unique quelques minutes après l'heure de reprise annoncée,
+    si elle tombe dans les LINKY_RETRY_MAX_HOURS ; sinon le passage du lendemain rattrape.
+    """
     try:
-        linky_module.sync(config.LINKY)
+        result = linky_module.sync(config.LINKY)
     except Exception as e:
         logger.error("Linky : synchronisation échouée : %s", e)
+        return
+    if not result.get("retry_at"):
+        return
+    run_at = max(datetime.fromisoformat(result["retry_at"]), datetime.now()) + timedelta(minutes=5)
+    if run_at - datetime.now() > timedelta(hours=LINKY_RETRY_MAX_HOURS):
+        return
+    _scheduler.add_job(_run_linky_sync, "date", run_date=run_at, id="linky_retry_job", replace_existing=True)
+    logger.info("Linky : quota dépassé, nouvelle tentative à %s", run_at.strftime("%Hh%M"))
 
 
 def _reschedule_linky_sync(run_soon: bool = False):
@@ -825,7 +840,7 @@ def _reschedule_linky_sync(run_soon: bool = False):
 
     run_soon : passage supplémentaire dans la minute (après une modification de /config).
     """
-    for job_id in ("linky_job", "linky_now_job"):
+    for job_id in ("linky_job", "linky_now_job", "linky_retry_job"):
         try:
             _scheduler.remove_job(job_id)
         except Exception:
@@ -1982,6 +1997,7 @@ def api_electricity_tariff_comparison():
             "configured": linky_module.is_configured(config.LINKY),
             "last_sync": state.get("last_sync"),
             "last_error": state.get("last_error"),
+            "retry_at": state.get("retry_at") if state.get("last_error") else None,
             "backfill_done": bool(state.get("backfill_done")),
             "kva": config.TARIFF_OPTIONS.get("kva"),
             "months": months,

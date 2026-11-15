@@ -563,8 +563,12 @@ le numéro PDL (14 chiffres ; espaces, tirets et points tolérés) et la clé d'
 - Premier lancement : les 7 derniers jours, puis l'historique en remontant jusqu'à `LINKY.backfill_days` (730 j,
   maximum Enedis), soit 3 à 4 jours de récupération. Si la profondeur augmente (passage de 12 à 24 mois),
   la remontée reprend là où elle s'était arrêtée (`backfill_done_for` dans l'état). Une réponse vide ou une erreur définitive marque la fin de l'historique
-  disponible (collecte activée récemment) ; une panne passagère (réseau, quota, clé) est retentée le lendemain.
-- État dans `data/linky_state.json` (dernier passage, dernière erreur, appels du jour, historique terminé).
+  disponible (collecte activée récemment) ; une panne passagère (réseau, clé) est retentée le lendemain.
+- Quota dépassé (HTTP 429, code `900804` « Message throttled out » de la passerelle Enedis, indépendant des
+  40 appels de l'appli) : l'heure de reprise annoncée (`nextAccessTime`, UTC) est gardée dans `retry_at` et un
+  passage unique (`linky_retry_job`) est planifié 5 min après, s'il tombe dans les 12 h ; sinon, 1 h après le
+  429 si aucune heure n'est annoncée. La carte affiche l'heure de reprise.
+- État dans `data/linky_state.json` (dernier passage, dernière erreur, heure de reprise après un 429, appels du jour, historique terminé).
 
 **Calcul** (`/api/electricity/tariff-comparison`, carte « Tempo ou une autre option ? » en haut de `/electricity`) :
 - Carte : verdict, coût total des trois options, **courbe des économies de Tempo mois par mois** (écart avec
