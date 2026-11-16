@@ -595,11 +595,10 @@ def _radiateurs_info() -> list:
     return info
 
 
-def _record_radiators(data: dict) -> None:
-    """Historise la consommation des radiateurs (pilotés ou suivis seuls) : compteur HA s'il est configuré,
-    sinon estimation à pleine puissance pendant la chauffe."""
+def _radiator_states() -> list:
+    """Relevé des radiateurs (pilotés ou suivis seuls) pour l'historique : en chauffe, puissance, compteur HA."""
     if not config.HOME_ASSISTANT.get("enabled"):
-        return
+        return []
     states = []
     for e in _radiator_entities():
         ha_state = ha_client.get_entity_state(config.HOME_ASSISTANT, e["entity_id"])
@@ -609,6 +608,13 @@ def _record_radiators(data: dict) -> None:
         states.append({"entity_id": e["entity_id"], "on": radiateurs_module.is_heating(ha_state),
                        "power_kw": _radiator_power(e["entity_id"]), "metered": bool(e["energy_entity_id"]),
                        "meter_kwh": meter})
+    return states
+
+
+def _record_radiators(data: dict, states: list | None = None) -> None:
+    """Historise la consommation des radiateurs : compteur HA s'il est configuré,
+    sinon estimation à pleine puissance pendant la chauffe."""
+    states = _radiator_states() if states is None else states
     if states:
         history_module.record_radiators(states, _current_elec_price(data))
 
@@ -626,10 +632,12 @@ def _record_history():
         clim_ha = ha_client.get_clim_state(config.HOME_ASSISTANT)
         clim_state = history_module.clim_state_for_history(
             clim_ha.get("state") if clim_ha else None, th_state, ha_client.is_clim_configured(config.HOME_ASSISTANT))
-        if history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color, clim_state):
+        radiators = _radiator_states()
+        radiators_on = sum(1 for r in radiators if r["on"]) if radiators else None
+        if history_module.record(outdoor_temp, indoor_temp, heating_state, tempo_color, clim_state, radiators_on):
             _notify_ignitions()
         pellet_refill.tick(heating_state == "on", _pellet_cycle_hours(), config.EMAIL, config.NTFY)
-        _record_radiators(data)
+        _record_radiators(data, radiators)
     except Exception as e:
         logger.error("History record échoué : %s", e)
 
@@ -1125,9 +1133,11 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
         "tempo": {"color": color, "period": period, "label": (tempo.get("today") or {}).get("label", "")},
         "pellet_price": config.POELE.get("pellet_price_per_kg"),
         "poele": {"known": poele_known, "on": poele_on, "since": today["since"]["poele"] if poele_on else None,
+                  "today_cost": today["today_cost"].get("poele", 0),
                   "cost_per_hour": round(poele_cost, 2), "hopper_left": round(100 - pellet.get("percent", 0))},
         "clim": {"configured": clim_configured, "known": clim_known, "on": clim_on,
                  "since": today["since"]["clim"] if clim_on else None, "cost_per_hour": round(clim_cost, 2),
+                 "today_cost": today["today_cost"].get("clim", 0),
                  "setpoint": ((clim_ha or {}).get("attributes") or {}).get("temperature"),
                  "excluded": color == "RED"},
         "radiateurs": {"count": len(radiator_items),
@@ -1141,6 +1151,8 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
         "comfort": [config.THERMOSTAT.get("temp_on"), config.THERMOSTAT.get("temp_off")],
         "cost_per_hour": round(poele_cost + clim_cost + radiators_cost, 2),
         "today_cost": today["today_cost"]["total"],
+        "timeline": today.get("timeline", []),
+        "hp": [config.HP_START, config.HP_END],
         "today_cost_as_of": today.get("as_of"),
     }
 

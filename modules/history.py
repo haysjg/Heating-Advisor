@@ -102,7 +102,7 @@ def _elec_price(tempo_prices: dict, color: str | None, period: str) -> float:
 
 
 def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None,
-           clim_state: str | None = None) -> bool:
+           clim_state: str | None = None, radiators_on: int | None = None) -> bool:
     """Insère une lecture. Appelé par le scheduler toutes les ~10 min.
     Retourne True si la lecture correspond à un allumage (lecture précédente « off »)."""
     now = datetime.now()
@@ -111,9 +111,10 @@ def record(outdoor_temp, indoor_temp, poele_state: str, tempo_color: str = None,
             prev = conn.execute("SELECT poele_state FROM readings ORDER BY ts DESC LIMIT 1").fetchone()
             ignited = _is_on(poele_state) and prev is not None and prev[0] == "off"
             conn.execute(
-                "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (now.isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state),
+                "INSERT INTO readings (ts, outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state, radiators_on) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (now.isoformat(timespec="seconds"), outdoor_temp, indoor_temp, poele_state, tempo_color, clim_state,
+                 radiators_on),
             )
             # Cumul journalier non purgé (stock de granulés) : une lecture = 10 min
             conn.execute(
@@ -729,6 +730,7 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
     Lu sur les lectures toutes les 10 min (allumages manuels compris) : `since` est l'heure de la première
     lecture « on » de la série en cours, None si l'appareil est arrêté à la dernière lecture.
     `as_of` : instant jusqu'auquel le coût du jour est compté (dernière lecture + 10 min), pour le compteur animé.
+    `timeline` : ruban de la journée, [minute du jour, masque 1 poêle | 2 clim | 4 radiateur(s) en chauffe] par lecture.
     Coûts du jour comme l'agrégation mensuelle : poêle au coût horaire fixe, clim à sa puissance électrique
     estimée (courbe COP) au tarif Tempo de chaque lecture ; radiateurs depuis radiator_daily.
     """
@@ -740,11 +742,13 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
     tempo_prices = config.get("TEMPO_PRICES", {})
     hp_start, hp_end = config.get("HP_START", 6), config.get("HP_END", 22)
     result = {"since": {"poele": None, "clim": None},
-              "today_cost": {"poele": 0.0, "clim": 0.0, "radiateurs": 0.0, "total": 0.0}, "as_of": None}
+              "today_cost": {"poele": 0.0, "clim": 0.0, "radiateurs": 0.0, "total": 0.0}, "as_of": None,
+              "timeline": []}
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT ts, outdoor_temp, poele_state, tempo_color, clim_state FROM readings WHERE ts >= ? ORDER BY ts",
+                "SELECT ts, outdoor_temp, poele_state, tempo_color, clim_state, radiators_on FROM readings "
+                "WHERE ts >= ? ORDER BY ts",
                 (since_ts,),
             ).fetchall()
             radiator_cost = conn.execute(
@@ -754,12 +758,15 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
         return result
 
     runs = {"poele": None, "clim": None}
-    for ts, outdoor_temp, poele_state, tempo_color, clim_state in rows:
+    for ts, outdoor_temp, poele_state, tempo_color, clim_state, radiators_on in rows:
         states = {"poele": _is_on(poele_state), "clim": clim_state == "on"}
         for system, on in states.items():
             runs[system] = (runs[system] or ts) if on else None
         if ts[:10] != today:
             continue
+        # Ruban de la journée : [minute du jour, masque 1 poêle | 2 clim | 4 radiateur(s)], une entrée par lecture
+        mask = (1 if states["poele"] else 0) | (2 if states["clim"] else 0) | (4 if radiators_on else 0)
+        result["timeline"].append([int(ts[11:13]) * 60 + int(ts[14:16]), mask])
         period = "HP" if hp_start <= int(ts[11:13]) < hp_end else "HC"
         if states["poele"]:
             result["today_cost"]["poele"] += (10 / 60) * poele_cost_per_hour

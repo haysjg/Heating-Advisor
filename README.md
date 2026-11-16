@@ -98,6 +98,18 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
   serveur (`today_cost`, compté jusqu'à `today_cost_as_of` = dernière lecture + 10 min) interpolé côté navigateur
   au coût horaire en cours, recalé à chaque rafraîchissement sans jamais reculer, remis à zéro à minuit.
 - Jour rouge : clim « exclue », radiateurs « coupés » quand l'appli les a éteints.
+- **Flux proportionnel** : vitesse et épaisseur des impulsions de chaque appareil selon son coût horaire
+  (racine carrée, plafond `FLOW_COST_MAX` = 1,5 €/h dans `script.js`).
+- **Maison** teintée selon la plage de confort (bleu en dessous, ambre dedans, rouge au-dessus), halo d'autant plus
+  grand que le coût horaire est élevé. **Électricité** bordée de la couleur Tempo (atténuée en HC), qui respire en
+  rouge les jours rouges en HP.
+- **Ruban de la journée** sous le schéma : une piste par appareil (poêle, clim, radiateurs), segments de 10 min en
+  chauffe, durée cumulée, fond bleuté en heures creuses, repère « maintenant ». Source : `heating_today()["timeline"]`
+  ([minute du jour, masque 1 poêle | 2 clim | 4 radiateurs] par lecture) ; le nombre de radiateurs en chauffe est
+  historisé dans `readings.radiators_on` (NULL avant son introduction).
+- **Infobulles** au survol, au toucher ou au focus clavier d'un appareil : état, depuis quand, coût horaire, coût du jour
+  (kWh mesurés ou estimés pour un radiateur). Pastilles radiateurs : barre de kWh du jour rapportés au plus gros consommateur.
+- Compteur : bref éclat doré à chaque euro franchi. Toutes les animations respectent « réduire les animations ».
 - Mise à jour avec le rafraîchissement automatique du tableau de bord (`heating_flow` dans `/api/dashboard/refresh`).
   Sous 600 px, un schéma vertical dédié prend le relais : sources en haut, appareils côte à côte (nom et état
   sur deux lignes), maison en bas.

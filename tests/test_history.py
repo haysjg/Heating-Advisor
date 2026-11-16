@@ -421,6 +421,19 @@ class TestHeatingToday:
         assert r["today_cost"]["clim"] == clim
         assert r["since"] == {"poele": None, "clim": "2026-11-14T10:10:00"}
 
+    def test_timeline(self, base_config):
+        with history._connect() as conn:
+            conn.executemany(
+                "INSERT INTO readings (ts, outdoor_temp, poele_state, tempo_color, clim_state, radiators_on) "
+                "VALUES (?, 5.0, ?, 'BLUE', ?, ?)", [
+                    ("2026-11-13T23:50:00", "on", "off", 0),       # veille : hors ruban
+                    ("2026-11-14T06:00:00", "on", "off", 2),
+                    ("2026-11-14T06:10:00", "off", "on", None),    # lecture antérieure au suivi radiateurs
+                    ("2026-11-14T06:20:00", "off", "off", 0),
+                ])
+        r = history.heating_today(base_config, now=self.NOW)
+        assert r["timeline"] == [[360, 1 | 4], [370, 2], [380, 0]]
+
     def test_no_readings(self, base_config):
         r = history.heating_today(base_config, now=self.NOW)
         assert r["today_cost"]["total"] == 0 and r["since"] == {"poele": None, "clim": None}

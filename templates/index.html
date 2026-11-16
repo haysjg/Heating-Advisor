@@ -257,7 +257,7 @@
         <desc id="flow-desc">Flux d'énergie des sources (granulés, électricité) vers les appareils de chauffage puis la maison</desc>
         <defs>
           <radialGradient id="flow-house-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0" stop-color="#fb923c" stop-opacity=".35"/><stop offset="1" stop-color="#fb923c" stop-opacity="0"/>
+            <stop class="flow-glow-stop" offset="0" stop-color="#fb923c" stop-opacity=".35"/><stop class="flow-glow-stop" offset="1" stop-color="#fb923c" stop-opacity="0"/>
           </radialGradient>
         </defs>
         <g class="flow-pipes">
@@ -280,13 +280,13 @@
         </g>
         {% if _ey.n %}
         <g class="flow-node" data-node="el">
-          <rect x="16" y="{{ _ely - 24 }}" width="104" height="48" rx="12" fill="#161c28" stroke="#2c3a55"/>
+          <rect x="16" y="{{ _ely - 24 }}" width="104" height="48" rx="12" fill="#161c28" stroke="#2c3a55" class="flow-el-box"/>
           <text class="flow-lbl" x="30" y="{{ _ely - 4 }}">Électricité</text><text class="flow-sub" x="30" y="{{ _ely + 13 }}" data-text="el"></text>
         </g>
         {% endif %}
         {% for d in _devs %}
         {% set dy = _y0 + loop.index0 * _step %}
-        <g class="flow-node flow-dev{% if d.key == 'radi-all' %} flow-toggle{% endif %}" data-node="{{ d.key }}"{% if d.key == 'radi-all' %} {{ _toggle_attrs }}{% endif %}>
+        <g class="flow-node flow-dev{% if d.key == 'radi-all' %} flow-toggle{% endif %}" data-node="{{ d.key }}"{% if d.key == 'radi-all' %} {{ _toggle_attrs }}{% else %} tabindex="0" data-tip="{{ d.key }}"{% endif %}>
           <circle cx="320" cy="{{ dy }}" r="24" fill="{{ d.fill }}" stroke="{{ d.color }}"/>
           <svg x="309" y="{{ dy - 11 }}" width="22" height="22" class="flow-ic" style="color:{{ d.color }}"><use href="/static/icons.svg#{{ d.glyph }}"/></svg>
           <text class="flow-name" x="354" y="{{ dy - 3 }}">{{ d.name }}{% if d.key == 'radi-all' %}<tspan class="flow-chevron" dx="6">▾</tspan>{% endif %}</text>
@@ -294,7 +294,7 @@
         </g>
         {% endfor %}
         <circle class="flow-glow" cx="560" cy="{{ _hy }}" r="70" fill="url(#flow-house-glow)"/>
-        <rect x="498" y="{{ _hy - 37 }}" width="124" height="74" rx="16" fill="#1a1d27" stroke="#343a50"/>
+        <rect x="498" y="{{ _hy - 37 }}" width="124" height="74" rx="16" fill="#1a1d27" stroke="#343a50" class="flow-house"/>
         <text class="flow-sub" x="560" y="{{ _hy - 15 }}" text-anchor="middle">Maison</text>
         <text class="flow-big" x="560" y="{{ _hy + 15 }}" text-anchor="middle" data-text="in">—</text>
         <text class="flow-sub" x="560" y="{{ _hy + 30 }}" text-anchor="middle" data-text="comfort"></text>
@@ -333,14 +333,14 @@
         </g>
         {% if _mx.n %}
         <g class="flow-node" data-node="el">
-          <rect x="{{ _mex - 56 }}" y="10" width="112" height="40" rx="12" fill="#161c28" stroke="#2c3a55"/>
+          <rect x="{{ _mex - 56 }}" y="10" width="112" height="40" rx="12" fill="#161c28" stroke="#2c3a55" class="flow-el-box"/>
           <text class="flow-lbl" x="{{ _mex }}" y="27" text-anchor="middle">Électricité</text>
           <text class="flow-sub" x="{{ _mex }}" y="42" text-anchor="middle" data-text="el"></text>
         </g>
         {% endif %}
         {% for d in _devs %}
         {% set cx = _msp * (loop.index0 + 0.5) %}
-        <g class="flow-node flow-dev{% if d.key == 'radi-all' %} flow-toggle{% endif %}" data-node="{{ d.key }}"{% if d.key == 'radi-all' %} {{ _toggle_attrs }}{% endif %}>
+        <g class="flow-node flow-dev{% if d.key == 'radi-all' %} flow-toggle{% endif %}" data-node="{{ d.key }}"{% if d.key == 'radi-all' %} {{ _toggle_attrs }}{% else %} tabindex="0" data-tip="{{ d.key }}"{% endif %}>
           <circle cx="{{ cx }}" cy="{{ _mdy }}" r="20" fill="{{ d.fill }}" stroke="{{ d.color }}"/>
           <svg x="{{ cx - 10 }}" y="{{ _mdy - 10 }}" width="20" height="20" class="flow-ic" style="color:{{ d.color }}"><use href="/static/icons.svg#{{ d.glyph }}"/></svg>
           <text class="flow-name" x="{{ cx }}" y="{{ _mdy + 38 }}" text-anchor="middle">{{ d.name }}{% if d.key == 'radi-all' %}<tspan class="flow-chevron" dx="4">▾</tspan>{% endif %}</text>
@@ -349,11 +349,14 @@
         </g>
         {% endfor %}
         <circle class="flow-glow" cx="180" cy="{{ _mhy + 8 }}" r="80" fill="url(#flow-house-glow)"/>
-        <rect x="100" y="{{ _mhy - 26 }}" width="160" height="70" rx="16" fill="#1a1d27" stroke="#343a50"/>
+        <rect x="100" y="{{ _mhy - 26 }}" width="160" height="70" rx="16" fill="#1a1d27" stroke="#343a50" class="flow-house"/>
         <text class="flow-sub" x="180" y="{{ _mhy - 8 }}" text-anchor="middle">Maison</text>
         <text class="flow-big" x="180" y="{{ _mhy + 20 }}" text-anchor="middle" data-text="in">—</text>
         <text class="flow-sub" x="180" y="{{ _mhy + 36 }}" text-anchor="middle" data-text="comfort"></text>
       </svg>
+      {# Ruban de la journée : qui a chauffé quand, fond heures creuses ; dessiné par renderFlowRibbon #}
+      <div class="flow-ribbon" id="flow-ribbon" role="img" aria-label="Chauffage de la journée par appareil"></div>
+      <div class="flow-tip" id="flow-tip" role="tooltip" hidden></div>
       {% if heating_flow.radiateurs.grouped %}
       {# Détail des radiateurs regroupés : ouvert en touchant le nœud « Radiateurs », rempli par renderHeatingFlow #}
       <div class="flow-radi-panel" id="flow-radi-panel" inert>

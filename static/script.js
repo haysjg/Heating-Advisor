@@ -175,6 +175,8 @@ function _refillMeasureHtml(p) {
 }
 
 // ── Flux d'énergie (accueil) : sources → appareils → maison ──
+// Coût horaire (€/h) au-delà duquel le flux est à son maximum (radiateur 2 kW un jour rouge en HP ≈ 1,46 €/h)
+const FLOW_COST_MAX = 1.5;
 const FLOW_TEMPO = { BLUE: ['bleu', '#2b8cff'], WHITE: ['blanc', '#f8fafc'], RED: ['rouge', '#ff3b3b'], UNKNOWN: ['inconnu', '#94a3b8'] };
 
 function flowEur(v) {
@@ -227,6 +229,14 @@ function renderHeatingFlow(f) {
   const anyOn = Object.values(devices).some(d => d.on);
 
   card.querySelectorAll('.flow-pulse').forEach(el => el.classList.toggle('live', !!devices[el.dataset.link]?.on));
+  // Flux proportionnel à la dépense : plus l'appareil coûte à l'heure, plus ses impulsions sont rapides et épaisses
+  const costOf = { poele: p.cost_per_hour, clim: c.cost_per_hour, 'radi-all': r.cost_per_hour };
+  radiators.forEach((rad, i) => { costOf['radi-' + i] = rad.cost_per_hour; });
+  card.querySelectorAll('.flow-pulse').forEach(el => {
+    const k = Math.sqrt(Math.min(costOf[el.dataset.link] || 0, FLOW_COST_MAX) / FLOW_COST_MAX);
+    el.style.setProperty('--flow-speed', `${(1.7 - k * 1.3).toFixed(2)}s`);
+    el.style.setProperty('--flow-w', (2.5 + k * 3.5).toFixed(1));
+  });
   card.querySelectorAll('.flow-elec').forEach(el => el.setAttribute('stroke', tcolor));
   idle('gr', !p.on);
   idle('el', !anyElec);
@@ -245,7 +255,24 @@ function renderHeatingFlow(f) {
   const [lo, hi] = f.comfort || [];
   const fmtShort = v => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
   setText('comfort', lo != null && hi != null ? `confort ${fmtShort(lo)}–${fmtShort(hi)} °C` : '');
-  card.querySelectorAll('.flow-glow').forEach(el => { el.style.opacity = anyOn ? 1 : 0.12; });
+  // Maison teintée selon la plage de confort (froid / confort / trop chaud), halo d'autant plus grand que la
+  // puissance qui chauffe est forte
+  card.dataset.house = f.indoor == null || lo == null || hi == null ? ''
+    : f.indoor < lo ? 'cold' : f.indoor > hi ? 'hot' : 'comfort';
+  const glow = 0.8 + 0.55 * Math.sqrt(Math.min(f.cost_per_hour || 0, FLOW_COST_MAX) / FLOW_COST_MAX);
+  card.querySelectorAll('.flow-glow').forEach(el => {
+    el.style.opacity = anyOn ? 1 : 0.12;
+    el.style.transform = `scale(${anyOn ? glow.toFixed(2) : 0.8})`;
+  });
+  // Électricité à la couleur Tempo (atténuée en heures creuses), qui respire en rouge les jours rouges en HP
+  card.style.setProperty('--tempo-c', tcolor);
+  card.dataset.tempo = f.tempo.color;
+  card.dataset.period = f.tempo.period;
+
+  renderFlowRibbon(card, f);
+  card._flow = f;
+  initFlowTips(card);
+  refreshFlowTip(card);
 
   const eur = document.getElementById('ft-eur');
   if (eur) eur.textContent = flowEur(f.cost_per_hour);
@@ -256,16 +283,143 @@ function renderHeatingFlow(f) {
   if (main) card.classList.add('flow-' + main);
 }
 
+// Ruban de la journée : une piste par appareil (poêle, clim, radiateurs), segments de 10 min en chauffe,
+// fond bleuté en heures creuses, partie à venir estompée, repère « maintenant ». Animé au premier affichage.
+function renderFlowRibbon(card, f) {
+  const box = card.querySelector('#flow-ribbon');
+  if (!box) return;
+  const timeline = f.timeline || [];
+  const lanes = [{ bit: 1, name: 'Poêle', color: '#fb923c' }];
+  if (f.clim.configured) lanes.push({ bit: 2, name: 'Clim', color: '#60a5fa' });
+  if (f.radiateurs.count) lanes.push({ bit: 4, name: 'Radiateurs', color: '#f472b6' });
+  if (!timeline.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const [hpStart, hpEnd] = f.hp || [6, 22];
+  const fmtMin = m => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+  const summary = [];
+  const rows = lanes.map(lane => {
+    // Lectures consécutives fusionnées en segments [début, fin)
+    const segs = [];
+    timeline.forEach(([m, mask]) => {
+      if (!(mask & lane.bit)) return;
+      const last = segs[segs.length - 1];
+      if (last && m - last[1] <= 2) last[1] = Math.min(m + 10, 1440); else segs.push([m, Math.min(m + 10, 1440)]);
+    });
+    const total = segs.reduce((sum, [a, b]) => sum + b - a, 0);
+    if (total) summary.push(`${lane.name.toLowerCase()} ${fmtMin(total)}`);
+    const rects = segs.map(([a, b]) => `<rect class="rb-on" x="${a}" width="${b - a}" height="10" fill="${lane.color}"/>`).join('');
+    return { lane, total, svg: `<svg class="flow-ribbon-lane" viewBox="0 0 1440 10" preserveAspectRatio="none" aria-hidden="true">
+      <rect class="rb-bg" width="1440" height="10"/>
+      <rect class="rb-hc" width="${hpStart * 60}" height="10"/><rect class="rb-hc" x="${hpEnd * 60}" width="${1440 - hpEnd * 60}" height="10"/>
+      ${rects}<rect class="rb-future" x="${nowMin}" width="${1440 - nowMin}" height="10"/></svg>` };
+  });
+  const isNew = !box.dataset.drawn;
+  box.dataset.drawn = '1';
+  box.classList.toggle('is-new', isNew);
+  box.setAttribute('aria-label', `Aujourd'hui : ${summary.join(', ') || 'aucun chauffage'}`);
+  box.innerHTML = `<div class="flow-ribbon-grid">
+      <div class="flow-ribbon-lbls">${rows.map(({ lane, total }) =>
+        `<span><i style="background:${lane.color}"></i>${lane.name}${total ? `<small>${fmtMin(total)}</small>` : ''}</span>`).join('')}</div>
+      <div class="flow-ribbon-tracks">
+        ${rows.map(row => row.svg).join('')}
+        <span class="flow-ribbon-now" style="left:${(nowMin / 1440 * 100).toFixed(2)}%"></span>
+        <div class="flow-ribbon-axis">${[0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%">${h} h</span>`).join('')}</div>
+      </div>
+    </div>`;
+  if (isNew) setTimeout(() => box.classList.remove('is-new'), 1500);
+}
+
+// Infobulles des appareils (survol, toucher, focus clavier) : état, depuis quand, coût du jour.
+// Contenu recalculé à chaque rafraîchissement tant qu'elle est ouverte.
+function flowTipContent(f, key) {
+  const fmtTime = iso => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const perHour = v => `${flowEur(v)}/h`;
+  const dev = (name, d, extra = []) => [name,
+    !d.known ? 'État inconnu'
+      : d.on ? `En chauffe${d.since ? ` depuis ${fmtTime(d.since)} (${flowDuration(d.since)})` : ''} · ${perHour(d.cost_per_hour)}`
+      : 'À l\'arrêt',
+    ...extra, `Aujourd'hui : ${flowEur(d.today_cost || 0)}`];
+  if (key === 'poele') return dev('Poêle', f.poele, f.poele.on ? [] : [`Trémie ~${f.poele.hopper_left} %`]);
+  if (key === 'clim') return dev('Clim', f.clim, f.clim.setpoint != null ? [`Consigne ${f.clim.setpoint} °C`] : []);
+  const rad = key.startsWith('radi-') ? (f.radiateurs.items || [])[Number(key.slice(5))] : null;
+  if (!rad) return null;
+  const kwh = (rad.today_kwh || 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+  return [rad.name,
+    !rad.known ? 'État inconnu' : rad.on ? `En chauffe · ${perHour(rad.cost_per_hour)}`
+      : rad.cut ? 'Coupé (jour rouge)' : rad.off ? 'Éteint' : 'Au repos (thermostat satisfait)',
+    `Aujourd'hui : ${kwh} kWh · ${flowEur(rad.today_cost || 0)}${rad.metered ? '' : ' (estimé)'}`];
+}
+
+function showFlowTip(card, node) {
+  const tip = card.querySelector('#flow-tip');
+  const lines = card._flow && flowTipContent(card._flow, node.dataset.tip);
+  if (!tip || !lines) return;
+  tip.innerHTML = `<strong>${escapeHtml(lines[0])}</strong>` + lines.slice(1).map(l => `<span>${escapeHtml(l)}</span>`).join('');
+  tip.dataset.key = node.dataset.tip;
+  tip.hidden = false;
+  const c = card.getBoundingClientRect();
+  const n = (node.querySelector('circle') || node).getBoundingClientRect();
+  const half = tip.offsetWidth / 2;
+  const x = Math.min(Math.max(n.left + n.width / 2 - c.left, half + 8), c.width - half - 8);
+  tip.style.left = `${x}px`;
+  tip.style.top = `${n.top - c.top}px`;
+  tip._node = node;
+  requestAnimationFrame(() => tip.classList.add('is-shown'));
+}
+
+function hideFlowTip(card) {
+  const tip = card.querySelector('#flow-tip');
+  if (!tip || tip.hidden) return;
+  tip.classList.remove('is-shown');
+  tip.hidden = true;
+  tip._node = null;
+}
+
+function refreshFlowTip(card) {
+  const tip = card.querySelector('#flow-tip');
+  if (tip && !tip.hidden && tip._node) showFlowTip(card, tip._node);
+}
+
+function initFlowTips(card) {
+  if (card.dataset.tips) return;
+  card.dataset.tips = '1';
+  card.querySelectorAll('[data-tip]').forEach(node => {
+    node.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') showFlowTip(card, node); });
+    node.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideFlowTip(card); });
+    // Focus clavier seulement : le focus donné par un clic ou un toucher est géré par click
+    node.addEventListener('pointerdown', () => { node._pointer = true; });
+    node.addEventListener('focus', () => { if (!node._pointer) showFlowTip(card, node); });
+    node.addEventListener('blur', () => { node._pointer = false; hideFlowTip(card); });
+    // Toucher : ouvre / referme (à la souris, le survol suffit)
+    node.addEventListener('click', e => {
+      e.stopPropagation();
+      node._pointer = false;
+      if (e.pointerType === 'mouse') return;
+      const tip = card.querySelector('#flow-tip');
+      if (tip && !tip.hidden && tip._node === node) hideFlowTip(card); else showFlowTip(card, node);
+    });
+  });
+  document.addEventListener('click', () => hideFlowTip(card));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hideFlowTip(card); });
+  window.addEventListener('scroll', () => hideFlowTip(card), { passive: true });
+}
+
 // Détail des radiateurs regroupés : une pastille par radiateur (icône, nom, état), en chauffe en couleur
 function renderRadiatorPanel(card, radiators, radLines) {
   const list = card.querySelector('#flow-radi-list');
   if (!list) return;
+  // Barre : kWh du jour rapportés au plus gros consommateur
+  const maxKwh = Math.max(0, ...radiators.map(rad => rad.today_kwh || 0));
   list.innerHTML = radiators.map((rad, i) => {
     const [a, b] = radLines(rad);
+    const share = maxKwh ? Math.round((rad.today_kwh || 0) / maxKwh * 100) : 0;
     return `<li class="flow-radi-item${rad.on ? ' is-on' : ''}" style="--i:${i}">
       <span class="flow-radi-ic">${icon('heater')}</span>
       <span class="flow-radi-txt"><strong title="${escapeHtml(rad.name)}">${escapeHtml(rad.name)}</strong>
-        <small>${escapeHtml([a, b].filter(Boolean).join(' · '))}</small></span>
+        <small>${escapeHtml([a, b].filter(Boolean).join(' · '))}</small>
+        ${maxKwh ? `<span class="flow-radi-bar" title="${share} % du plus gros consommateur aujourd'hui"><i style="width:${share}%"></i></span>` : ''}</span>
     </li>`;
   }).join('');
   initRadiatorToggle(card);
@@ -321,7 +475,7 @@ function initRadiatorToggle(card) {
 // Compteur « dépensés depuis minuit » : coût du serveur + coût horaire en cours depuis son horodatage.
 // Ne recule jamais dans la journée (le serveur compte par pas de 10 min), repart de zéro au changement de jour.
 const flowCounter = {
-  base: 0, asOf: null, perHour: 0, shown: 0, day: null, timer: null,
+  base: 0, asOf: null, perHour: 0, shown: 0, day: null, timer: null, euros: null,
 
   sync(f) {
     this.base = f.today_cost || 0;
@@ -339,12 +493,21 @@ const flowCounter = {
   tick() {
     const now = Date.now();
     const day = new Date(now).toDateString();
-    if (day !== this.day) { this.day = day; this.shown = 0; }
+    if (day !== this.day) { this.day = day; this.shown = 0; this.euros = null; }
     // asOf est en général dans le futur (la dernière lecture compte d'avance ses 10 min) : on retire la part
     // pas encore écoulée, puis on avance au coût horaire en cours une fois asOf dépassé
     const extra = (now - this.asOf) / 3600000 * this.perHour;
     this.shown = Math.max(this.shown, this.base + extra, 0);
-    renderOdometer(document.getElementById('ft-today-odo'), this.shown);
+    const el = document.getElementById('ft-today-odo');
+    renderOdometer(el, this.shown);
+    // Éclat à chaque euro franchi (pas au chargement de la page)
+    const euros = Math.floor(this.shown);
+    if (el && this.euros != null && euros > this.euros) {
+      el.classList.remove('odo-flash');
+      void el.offsetWidth;
+      el.classList.add('odo-flash');
+    }
+    this.euros = euros;
   },
 };
 

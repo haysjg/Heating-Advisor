@@ -305,6 +305,12 @@ def _migrate_013(conn):
     """)
 
 
+def _migrate_014(conn):
+    """readings.radiators_on : nombre de radiateurs en chauffe à chaque lecture (ruban de la journée de l'accueil).
+    NULL pour les lectures antérieures."""
+    conn.execute("ALTER TABLE readings ADD COLUMN radiators_on INTEGER")
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -320,6 +326,7 @@ MIGRATIONS = [
     _migrate_011,
     _migrate_012,
     _migrate_013,
+    _migrate_014,
 ]
 
 

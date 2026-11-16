@@ -249,6 +249,21 @@ def test_record_radiators_suivis_et_compteur(app_module, monkeypatch):
                              "metered": True, "meter_kwh": 4251.0}]
 
 
+def test_historique_compte_les_radiateurs_en_chauffe(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "get_analysis", lambda: {"weather": {"temperature": 5.0}, "tempo": {}})
+    monkeypatch.setattr(app_module.ha_client, "get_state", lambda cfg: {"state": "off"})
+    monkeypatch.setattr(app_module.ha_client, "get_clim_state", lambda cfg: None)
+    monkeypatch.setattr(app_module, "_radiator_states", lambda: [
+        {"entity_id": "climate.a", "on": True, "power_kw": 1.0, "metered": False, "meter_kwh": None},
+        {"entity_id": "climate.b", "on": False, "power_kw": 1.0, "metered": False, "meter_kwh": None}])
+    seen = {}
+    monkeypatch.setattr(app_module.history_module, "record", lambda *a: seen.update(args=a) or False)
+    monkeypatch.setattr(app_module.history_module, "record_radiators", lambda rows, price: seen.update(rows=rows))
+    monkeypatch.setattr(app_module.pellet_refill, "tick", lambda *a: None)
+    app_module._record_history()
+    assert seen["args"][-1] == 1 and len(seen["rows"]) == 2
+
+
 def test_puissance_radiateur(app_module, monkeypatch):
     monkeypatch.setitem(app_module.config.RADIATEURS_TEMPO_ROUGE, "entities",
                         [{"entity_id": "switch.r1", "name": "Combles", "enabled": True, "power_kw": 1.5},
