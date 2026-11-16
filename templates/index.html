@@ -356,12 +356,16 @@
       </svg>
       {% if heating_flow.radiateurs.grouped %}
       {# Détail des radiateurs regroupés : ouvert en touchant le nœud « Radiateurs », rempli par renderHeatingFlow #}
-      <div class="flow-radi-panel" id="flow-radi-panel" hidden>
-        <div class="flow-radi-head">
-          <span>{{ icon('heater') }}Radiateurs <small data-text="radi-summary"></small></span>
-          <button type="button" class="flow-radi-close" aria-label="Fermer le détail des radiateurs">✕</button>
+      <div class="flow-radi-panel" id="flow-radi-panel" inert>
+        <div class="flow-radi-inner">
+          <div class="flow-radi-box">
+            <div class="flow-radi-head">
+              <span>{{ icon('heater') }}Radiateurs <small data-text="radi-summary"></small></span>
+              <button type="button" class="flow-radi-close" aria-label="Fermer le détail des radiateurs">✕</button>
+            </div>
+            <ul class="flow-radi-list" id="flow-radi-list"></ul>
+          </div>
         </div>
-        <ul class="flow-radi-list" id="flow-radi-list"></ul>
       </div>
       {% endif %}
       <div class="flow-total">

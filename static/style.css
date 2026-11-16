@@ -2172,10 +2172,24 @@ html[data-stove="on"] #recommendation .embers { display: block; }
 .flow-chevron { fill: var(--text-sub); font-size: 11px; transition: fill .2s; }
 .flow-toggle:hover .flow-chevron { fill: #f472b6; }
 .flow-card.radi-open .flow-chevron { fill: #f472b6; }
-.flow-radi-panel { margin-top: 0.5rem; padding: 0.75rem; border: 1px solid color-mix(in oklab, #f472b6 35%, var(--border));
-                   border-radius: 12px; background: color-mix(in oklab, #f472b6 4%, transparent);
-                   animation: flow-radi-in .25s ease-out; }
-@keyframes flow-radi-in { from { opacity: 0; transform: translateY(-4px); } }
+/* Panneau déroulé : hauteur animée 0 → contenu (grid 0fr → 1fr), à l'ouverture comme à la fermeture */
+.flow-radi-panel { display: grid; grid-template-rows: 0fr; opacity: 0; margin-top: 0;
+                   transition: grid-template-rows .38s cubic-bezier(.2,.8,.2,1), opacity .25s, margin-top .38s; }
+.flow-radi-panel.is-open { grid-template-rows: 1fr; opacity: 1; margin-top: 0.5rem; }
+.flow-radi-inner { min-height: 0; overflow: hidden; }
+.flow-radi-box { padding: 0.75rem; border: 1px solid color-mix(in oklab, #f472b6 35%, var(--border));
+                 border-radius: 12px; background: color-mix(in oklab, #f472b6 4%, transparent);
+                 transform: translateY(-6px); transition: transform .38s cubic-bezier(.2,.8,.2,1); }
+.flow-radi-panel.is-open .flow-radi-box { transform: none; }
+/* Pastilles en cascade, à l'ouverture seulement */
+.flow-radi-panel.is-entering .flow-radi { animation: flow-radi-in .35s cubic-bezier(.2,.8,.2,1) backwards;
+                                          animation-delay: calc(60ms + var(--i, 0) * 45ms); }
+@keyframes flow-radi-in { from { opacity: 0; transform: translateY(8px) scale(.96); } }
+/* Nœud touché : petit rebond du cercle */
+.flow-toggle circle { transform-box: fill-box; transform-origin: center; transition: stroke-width .2s; }
+.flow-toggle.is-pressed circle { animation: flow-press .4s cubic-bezier(.3,1.6,.5,1); }
+@keyframes flow-press { 40% { transform: scale(.86); } }
+.flow-card.radi-open .flow-toggle circle { stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(244,114,182,.55)); }
 .flow-radi-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;
                   font: 600 0.85rem 'Inter', system-ui, sans-serif; }
 .flow-radi-head .ic { color: #f472b6; margin-right: 0.4rem; }
@@ -2211,5 +2225,6 @@ html[data-stove="on"] #recommendation .embers { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .odo-col { transition: none; }
   .flow-pulse.live { animation: none; stroke-dasharray: none; opacity: .8; }
-  .flow-radi-panel, .flow-radi.is-on .flow-radi-ic { animation: none; }
+  .flow-radi-panel, .flow-radi-box { transition: none; }
+  .flow-radi-panel.is-entering .flow-radi, .flow-toggle.is-pressed circle, .flow-radi.is-on .flow-radi-ic { animation: none; }
 }

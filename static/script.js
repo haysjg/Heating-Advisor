@@ -260,9 +260,9 @@ function renderHeatingFlow(f) {
 function renderRadiatorPanel(card, radiators, radLines) {
   const list = card.querySelector('#flow-radi-list');
   if (!list) return;
-  list.innerHTML = radiators.map(rad => {
+  list.innerHTML = radiators.map((rad, i) => {
     const [a, b] = radLines(rad);
-    return `<li class="flow-radi${rad.on ? ' is-on' : ''}">
+    return `<li class="flow-radi${rad.on ? ' is-on' : ''}" style="--i:${i}">
       <span class="flow-radi-ic">${icon('heater')}</span>
       <span class="flow-radi-txt"><strong>${escapeHtml(rad.name)}</strong>
         <small>${escapeHtml([a, b].filter(Boolean).join(' · '))}</small></span>
@@ -271,26 +271,49 @@ function renderRadiatorPanel(card, radiators, radLines) {
   initRadiatorToggle(card);
 }
 
-// Ouverture / fermeture du détail : nœud « Radiateurs » (clic, Entrée, Espace) et bouton ✕ ; posé une seule fois
+// Ouverture / fermeture du détail : nœud « Radiateurs » (clic, Entrée, Espace) et bouton ✕ ; posé une seule fois.
+// Le panneau se déroule (transition de hauteur en CSS) ; à l'ouverture seulement, les pastilles arrivent en cascade
+// (classe is-entering retirée ensuite, pour ne pas rejouer l'animation à chaque rafraîchissement).
 function initRadiatorToggle(card) {
   if (card.dataset.radiToggle) return;
   card.dataset.radiToggle = '1';
   const panel = card.querySelector('#flow-radi-panel');
   const toggles = card.querySelectorAll('.flow-toggle');
+  let enterTimer = null;
   const setOpen = open => {
-    panel.hidden = !open;
+    panel.classList.toggle('is-open', open);
+    panel.inert = !open;
     card.classList.toggle('radi-open', open);
     card.querySelectorAll('.flow-chevron').forEach(c => { c.textContent = open ? '▴' : '▾'; });
+    clearTimeout(enterTimer);
+    panel.classList.toggle('is-entering', open);
+    if (open) {
+      enterTimer = setTimeout(() => panel.classList.remove('is-entering'), 900);
+      // Sur mobile, le panneau peut s'ouvrir sous la ligne de flottaison : on l'amène en vue
+      setTimeout(() => {
+        const box = panel.getBoundingClientRect();
+        if (box.bottom > window.innerHeight) {
+          const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          panel.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' });
+        }
+      }, 320);
+    }
     toggles.forEach(t => {
       t.setAttribute('aria-expanded', String(open));
       t.setAttribute('aria-label', `${open ? 'Masquer' : 'Afficher'} le détail des radiateurs`);
+      // Retour visuel du toucher : le nœud « rebondit »
+      t.classList.remove('is-pressed');
+      void t.getBoundingClientRect();
+      t.classList.add('is-pressed');
     });
   };
+  const isOpen = () => panel.classList.contains('is-open');
   toggles.forEach(t => {
-    t.addEventListener('click', () => setOpen(panel.hidden));
+    t.addEventListener('click', () => setOpen(!isOpen()));
     t.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(panel.hidden); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!isOpen()); }
     });
+    t.addEventListener('animationend', () => t.classList.remove('is-pressed'));
   });
   card.querySelector('.flow-radi-close')?.addEventListener('click', () => setOpen(false));
 }

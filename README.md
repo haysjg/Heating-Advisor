@@ -76,7 +76,8 @@ sources (granulés, électricité à la couleur Tempo et à la période du momen
 → maison (température de la sonde, plage de confort du thermostat). Un nœud par radiateur (piloté ou suivi
 seul, nom et état de chacun), la hauteur du schéma s'adapte au nombre d'appareils ; au-delà de 3 radiateurs
 (`RADIATORS_FLOW_MAX`), un seul nœud « Radiateurs » (nombre en chauffe, coût horaire cumulé). Ce nœud est un
-bouton (clic, Entrée, Espace) : il déplie sous le schéma une pastille par radiateur (icône, nom, état, coût horaire
+bouton (clic, Entrée, Espace ; le cercle rebondit et reste lumineux tant que le détail est ouvert) : il déroule
+sous le schéma (hauteur animée, pastilles en cascade à l'ouverture seulement, ramené en vue sur mobile) une pastille par radiateur (icône, nom, état, coût horaire
 ou kWh du jour), en couleur et pulsée pour ceux en chauffe, estompée pour les autres ; ✕ ou nouveau clic la replie.
 Le détail reste aussi dans la carte Thermostat automatique (« Radiateurs — aujourd'hui » : état, kWh et € du jour). Des impulsions animées circulent dans les
 tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux absents de la configuration sont masqués.
