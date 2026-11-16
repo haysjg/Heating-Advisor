@@ -262,9 +262,9 @@ function renderRadiatorPanel(card, radiators, radLines) {
   if (!list) return;
   list.innerHTML = radiators.map((rad, i) => {
     const [a, b] = radLines(rad);
-    return `<li class="flow-radi${rad.on ? ' is-on' : ''}" style="--i:${i}">
+    return `<li class="flow-radi-item${rad.on ? ' is-on' : ''}" style="--i:${i}">
       <span class="flow-radi-ic">${icon('heater')}</span>
-      <span class="flow-radi-txt"><strong>${escapeHtml(rad.name)}</strong>
+      <span class="flow-radi-txt"><strong title="${escapeHtml(rad.name)}">${escapeHtml(rad.name)}</strong>
         <small>${escapeHtml([a, b].filter(Boolean).join(' · '))}</small></span>
     </li>`;
   }).join('');
