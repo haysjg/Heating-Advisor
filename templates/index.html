@@ -250,9 +250,10 @@
     {% set _ey = namespace(sum=0, n=0) %}
     {% for d in _devs %}{% if d.elec %}{% set _ey.sum = _ey.sum + _y0 + loop.index0 * _step %}{% set _ey.n = _ey.n + 1 %}{% endif %}{% endfor %}
     {% set _ely = (_ey.sum / _ey.n) if _ey.n else _hy %}
+    {% set _toggle_attrs = 'role="button" tabindex="0" aria-controls="flow-radi-panel" aria-expanded="false" aria-label="Afficher le détail des radiateurs"'|safe %}
     <section class="card card-labeled flow-card" id="flow-card" data-flow="{{ heating_flow|tojson|forceescape }}">
       <h3>{{ icon('zap') }}D'où vient la chaleur</h3>
-      <svg class="flow-svg flow-wide" viewBox="0 0 640 {{ _h }}" role="img" aria-labelledby="flow-desc" style="max-height: {{ (_h * 1.2)|int }}px">
+      <svg class="flow-svg flow-wide" viewBox="0 0 640 {{ _h }}" role="group" aria-labelledby="flow-desc" style="max-height: {{ (_h * 1.2)|int }}px">
         <desc id="flow-desc">Flux d'énergie des sources (granulés, électricité) vers les appareils de chauffage puis la maison</desc>
         <defs>
           <radialGradient id="flow-house-glow" cx="50%" cy="50%" r="50%">
@@ -285,10 +286,10 @@
         {% endif %}
         {% for d in _devs %}
         {% set dy = _y0 + loop.index0 * _step %}
-        <g class="flow-node flow-dev" data-node="{{ d.key }}">
+        <g class="flow-node flow-dev{% if d.key == 'radi-all' %} flow-toggle{% endif %}" data-node="{{ d.key }}"{% if d.key == 'radi-all' %} {{ _toggle_attrs }}{% endif %}>
           <circle cx="320" cy="{{ dy }}" r="24" fill="{{ d.fill }}" stroke="{{ d.color }}"/>
           <svg x="309" y="{{ dy - 11 }}" width="22" height="22" class="flow-ic" style="color:{{ d.color }}"><use href="/static/icons.svg#{{ d.glyph }}"/></svg>
-          <text class="flow-name" x="354" y="{{ dy - 3 }}">{{ d.name }}</text>
+          <text class="flow-name" x="354" y="{{ dy - 3 }}">{{ d.name }}{% if d.key == 'radi-all' %}<tspan class="flow-chevron" dx="6">▾</tspan>{% endif %}</text>
           <text class="flow-sub" x="354" y="{{ dy + 12 }}" data-text="{{ d.key }}"></text>
         </g>
         {% endfor %}
@@ -310,7 +311,7 @@
       {% set _mgx = [_msp * 0.5, 60]|max %}
       {% set _mex = [(_mx.sum / _mx.n) if _mx.n else 270, _mgx + 124, 0]|max %}
       {% set _mex = [_mex, _mw - 58]|min %}
-      <svg class="flow-svg flow-narrow" viewBox="0 0 {{ _mw }} 318" role="img" aria-label="Flux d'énergie des sources vers les appareils puis la maison">
+      <svg class="flow-svg flow-narrow" viewBox="0 0 {{ _mw }} 318" role="group" aria-label="Flux d'énergie des sources vers les appareils puis la maison">
         <g class="flow-pipes">
           {% for d in _devs %}
           {% set cx = _msp * (loop.index0 + 0.5) %}
@@ -339,10 +340,10 @@
         {% endif %}
         {% for d in _devs %}
         {% set cx = _msp * (loop.index0 + 0.5) %}
-        <g class="flow-node flow-dev" data-node="{{ d.key }}">
+        <g class="flow-node flow-dev{% if d.key == 'radi-all' %} flow-toggle{% endif %}" data-node="{{ d.key }}"{% if d.key == 'radi-all' %} {{ _toggle_attrs }}{% endif %}>
           <circle cx="{{ cx }}" cy="{{ _mdy }}" r="20" fill="{{ d.fill }}" stroke="{{ d.color }}"/>
           <svg x="{{ cx - 10 }}" y="{{ _mdy - 10 }}" width="20" height="20" class="flow-ic" style="color:{{ d.color }}"><use href="/static/icons.svg#{{ d.glyph }}"/></svg>
-          <text class="flow-name" x="{{ cx }}" y="{{ _mdy + 38 }}" text-anchor="middle">{{ d.name }}</text>
+          <text class="flow-name" x="{{ cx }}" y="{{ _mdy + 38 }}" text-anchor="middle">{{ d.name }}{% if d.key == 'radi-all' %}<tspan class="flow-chevron" dx="4">▾</tspan>{% endif %}</text>
           <text class="flow-sub" x="{{ cx }}" y="{{ _mdy + 53 }}" text-anchor="middle" data-line="{{ d.key }}-a"></text>
           <text class="flow-sub" x="{{ cx }}" y="{{ _mdy + 67 }}" text-anchor="middle" data-line="{{ d.key }}-b"></text>
         </g>
@@ -353,6 +354,16 @@
         <text class="flow-big" x="180" y="{{ _mhy + 20 }}" text-anchor="middle" data-text="in">—</text>
         <text class="flow-sub" x="180" y="{{ _mhy + 36 }}" text-anchor="middle" data-text="comfort"></text>
       </svg>
+      {% if heating_flow.radiateurs.grouped %}
+      {# Détail des radiateurs regroupés : ouvert en touchant le nœud « Radiateurs », rempli par renderHeatingFlow #}
+      <div class="flow-radi-panel" id="flow-radi-panel" hidden>
+        <div class="flow-radi-head">
+          <span>{{ icon('heater') }}Radiateurs <small data-text="radi-summary"></small></span>
+          <button type="button" class="flow-radi-close" aria-label="Fermer le détail des radiateurs">✕</button>
+        </div>
+        <ul class="flow-radi-list" id="flow-radi-list"></ul>
+      </div>
+      {% endif %}
       <div class="flow-total">
         <div class="flow-eur"><span id="ft-eur">—</span><small>/h en ce moment</small></div>
         <div class="flow-eur flow-today">

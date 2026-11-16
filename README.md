@@ -75,8 +75,10 @@ En tête de l'accueil, la carte **« D'où vient la chaleur »** montre en un co
 sources (granulés, électricité à la couleur Tempo et à la période du moment) → appareils (poêle, clim, radiateurs)
 → maison (température de la sonde, plage de confort du thermostat). Un nœud par radiateur (piloté ou suivi
 seul, nom et état de chacun), la hauteur du schéma s'adapte au nombre d'appareils ; au-delà de 3 radiateurs
-(`RADIATORS_FLOW_MAX`), un seul nœud « Radiateurs » (nombre en chauffe, coût horaire cumulé), le détail par
-radiateur restant dans la carte Thermostat automatique (« Radiateurs — aujourd'hui » : état, kWh et € du jour). Des impulsions animées circulent dans les
+(`RADIATORS_FLOW_MAX`), un seul nœud « Radiateurs » (nombre en chauffe, coût horaire cumulé). Ce nœud est un
+bouton (clic, Entrée, Espace) : il déplie sous le schéma une pastille par radiateur (icône, nom, état, coût horaire
+ou kWh du jour), en couleur et pulsée pour ceux en chauffe, estompée pour les autres ; ✕ ou nouveau clic la replie.
+Le détail reste aussi dans la carte Thermostat automatique (« Radiateurs — aujourd'hui » : état, kWh et € du jour). Des impulsions animées circulent dans les
 tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux absents de la configuration sont masqués.
 
 - État réel lu dans Home Assistant (allumages manuels compris) ; durée de marche depuis la première lecture « on »

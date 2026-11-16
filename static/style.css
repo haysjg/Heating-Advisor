@@ -2165,6 +2165,40 @@ html[data-stove="on"] #recommendation .embers { display: block; }
 .odo-fine { font-size: 0.62em; color: var(--text-sub); }
 .odo-fine .odo-d, .odo-fine .odo-col span { height: 1.15em; line-height: 1.15em; }
 .odo.is-live .odo-fine { color: color-mix(in oklab, var(--warm) 70%, var(--text-sub)); }
+/* Nœud « Radiateurs » regroupé : bouton qui déplie le détail par radiateur */
+.flow-toggle { cursor: pointer; outline: none; }
+.flow-toggle:hover circle, .flow-toggle:focus-visible circle { stroke-width: 2.5; }
+.flow-toggle:focus-visible circle { stroke: var(--text); }
+.flow-chevron { fill: var(--text-sub); font-size: 11px; transition: fill .2s; }
+.flow-toggle:hover .flow-chevron { fill: #f472b6; }
+.flow-card.radi-open .flow-chevron { fill: #f472b6; }
+.flow-radi-panel { margin-top: 0.5rem; padding: 0.75rem; border: 1px solid color-mix(in oklab, #f472b6 35%, var(--border));
+                   border-radius: 12px; background: color-mix(in oklab, #f472b6 4%, transparent);
+                   animation: flow-radi-in .25s ease-out; }
+@keyframes flow-radi-in { from { opacity: 0; transform: translateY(-4px); } }
+.flow-radi-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;
+                  font: 600 0.85rem 'Inter', system-ui, sans-serif; }
+.flow-radi-head .ic { color: #f472b6; margin-right: 0.4rem; }
+.flow-radi-head small { color: var(--text-sub); font-weight: 500; margin-left: 0.35rem; }
+.flow-radi-close { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-sub);
+                   min-width: 2rem; min-height: 2rem; cursor: pointer; }
+.flow-radi-close:hover { color: var(--text); }
+.flow-radi-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem;
+                  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
+.flow-radi { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; border-radius: 10px;
+             border: 1px solid var(--border); opacity: .6; transition: opacity .4s, border-color .4s; }
+.flow-radi.is-on { opacity: 1; border-color: color-mix(in oklab, #f472b6 55%, var(--border)); }
+.flow-radi-ic { flex-shrink: 0; width: 2.1rem; height: 2.1rem; border-radius: 50%; display: grid; place-items: center;
+                background: #1f1320; border: 1px solid #f472b6; color: #f472b6; }
+.flow-radi:not(.is-on) .flow-radi-ic { border-color: var(--border); color: var(--text-sub); background: transparent; }
+.flow-radi.is-on .flow-radi-ic { animation: flow-radi-glow 1.8s ease-in-out infinite; }
+@keyframes flow-radi-glow { 50% { box-shadow: 0 0 0 4px color-mix(in oklab, #f472b6 25%, transparent); } }
+.flow-radi-txt { display: flex; flex-direction: column; min-width: 0; }
+.flow-radi-txt strong { font: 600 0.85rem 'Inter', system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-radi-txt small { font-size: 0.75rem; color: var(--text-sub); font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .flow-radi-list { grid-template-columns: 1fr 1fr; }
+}
 .flow-narrow { display: none; }
 @media (max-width: 600px) {
   .flow-wide { display: none; }
@@ -2177,4 +2211,5 @@ html[data-stove="on"] #recommendation .embers { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .odo-col { transition: none; }
   .flow-pulse.live { animation: none; stroke-dasharray: none; opacity: .8; }
+  .flow-radi-panel, .flow-radi.is-on .flow-radi-ic { animation: none; }
 }

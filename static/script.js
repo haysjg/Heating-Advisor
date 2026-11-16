@@ -208,19 +208,20 @@ function renderHeatingFlow(f) {
       : c.on ? [flowDuration(c.since) || 'en chauffe', perHour(c.cost_per_hour)] : (c.excluded ? ['exclue', 'jour rouge'] : ['arrêtée', '']) },
   };
   const kwh = v => `${v.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} kWh auj.`;
+  const radLines = rad => !rad.known ? ['état inconnu', '']
+    : rad.on ? ['en chauffe', perHour(rad.cost_per_hour)]
+    : rad.cut ? ['coupé', 'jour rouge']
+    : [rad.off ? 'éteint' : 'au repos', rad.today_kwh ? kwh(rad.today_kwh) : ''];
   if (r.grouped) {
-    // Trop de radiateurs pour un nœud chacun : un nœud commun, détail par radiateur dans la carte Thermostat automatique
+    // Trop de radiateurs pour un nœud chacun : un nœud commun, qui déplie le détail sous le schéma
     const todayKwh = radiators.reduce((sum, rad) => sum + (rad.today_kwh || 0), 0);
     devices['radi-all'] = { on: r.on > 0, lines: r.on > 0
       ? [`${r.on}/${r.count} en chauffe`, perHour(r.cost_per_hour)]
       : (r.cut ? ['coupés', 'jour rouge'] : ['au repos', todayKwh ? kwh(todayKwh) : '']) };
+    renderRadiatorPanel(card, radiators, radLines);
+    setText('radi-summary', `${r.on}/${r.count} en chauffe`);
   } else {
-    radiators.forEach((rad, i) => {
-      devices['radi-' + i] = { on: rad.on, lines: !rad.known ? ['état inconnu', '']
-        : rad.on ? ['en chauffe', perHour(rad.cost_per_hour)]
-        : rad.cut ? ['coupé', 'jour rouge']
-        : [rad.off ? 'éteint' : 'au repos', rad.today_kwh ? kwh(rad.today_kwh) : ''] };
-    });
+    radiators.forEach((rad, i) => { devices['radi-' + i] = { on: rad.on, lines: radLines(rad) }; });
   }
   const anyElec = c.on || radiators.some(rad => rad.on);
   const anyOn = Object.values(devices).some(d => d.on);
@@ -253,6 +254,45 @@ function renderHeatingFlow(f) {
   card.classList.remove('flow-poele', 'flow-clim', 'flow-radi');
   const main = p.on ? 'poele' : c.on ? 'clim' : radiators.some(rad => rad.on) ? 'radi' : null;
   if (main) card.classList.add('flow-' + main);
+}
+
+// Détail des radiateurs regroupés : une pastille par radiateur (icône, nom, état), en chauffe en couleur
+function renderRadiatorPanel(card, radiators, radLines) {
+  const list = card.querySelector('#flow-radi-list');
+  if (!list) return;
+  list.innerHTML = radiators.map(rad => {
+    const [a, b] = radLines(rad);
+    return `<li class="flow-radi${rad.on ? ' is-on' : ''}">
+      <span class="flow-radi-ic">${icon('heater')}</span>
+      <span class="flow-radi-txt"><strong>${escapeHtml(rad.name)}</strong>
+        <small>${escapeHtml([a, b].filter(Boolean).join(' · '))}</small></span>
+    </li>`;
+  }).join('');
+  initRadiatorToggle(card);
+}
+
+// Ouverture / fermeture du détail : nœud « Radiateurs » (clic, Entrée, Espace) et bouton ✕ ; posé une seule fois
+function initRadiatorToggle(card) {
+  if (card.dataset.radiToggle) return;
+  card.dataset.radiToggle = '1';
+  const panel = card.querySelector('#flow-radi-panel');
+  const toggles = card.querySelectorAll('.flow-toggle');
+  const setOpen = open => {
+    panel.hidden = !open;
+    card.classList.toggle('radi-open', open);
+    card.querySelectorAll('.flow-chevron').forEach(c => { c.textContent = open ? '▴' : '▾'; });
+    toggles.forEach(t => {
+      t.setAttribute('aria-expanded', String(open));
+      t.setAttribute('aria-label', `${open ? 'Masquer' : 'Afficher'} le détail des radiateurs`);
+    });
+  };
+  toggles.forEach(t => {
+    t.addEventListener('click', () => setOpen(panel.hidden));
+    t.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(panel.hidden); }
+    });
+  });
+  card.querySelector('.flow-radi-close')?.addEventListener('click', () => setOpen(false));
 }
 
 // Compteur « dépensés depuis minuit » : coût du serveur + coût horaire en cours depuis son horodatage.
