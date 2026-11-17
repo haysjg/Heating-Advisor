@@ -779,6 +779,10 @@
               <span class="dot dot-unknown" aria-hidden="true"></span>
               <span>{{ r.name }}</span>
               <span style="font-size:0.75rem;color:#94a3b8">indisponible</span>
+            {% elif not r.known %}
+              <span class="dot dot-unknown" aria-hidden="true"></span>
+              <span>{{ r.name }}</span>
+              <span style="font-size:0.75rem;color:#94a3b8">état inconnu</span>
             {% else %}
               <span class="dot dot-off" aria-hidden="true"></span>
               <span>{{ r.name }}</span>

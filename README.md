@@ -87,7 +87,9 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
 - Coût horaire en cours : poêle au coût fixe, clim à sa puissance électrique estimée (courbe COP), radiateurs en
   chauffe à leur puissance (kW, réglable par radiateur dans `/config`, `RADIATEURS_TEMPO_ROUGE.default_power_kw`
   = 2 kW sinon), au tarif Tempo du moment. « En chauffe » (`radiateurs.is_heating`) : `hvac_action == "heating"`
-  quand l'entité le fournit (thermostat intégré, ex. Atlantic via Overkiz), sinon état `on` / `heat` / `auto`.
+  quand l'entité le fournit (thermostat intégré, ex. Atlantic via Overkiz), sinon état `on` (prise). Un climate
+  allumé sans `hvac_action` (sèche-serviettes Atlantic Serenis via Overkiz, toujours en `auto`) est affiché
+  « état inconnu » (`radiateurs.heating_known`) et compté hors chauffe ; sa consommation vient de son compteur.
 - Coût du jour : poêle et clim calculés comme l'agrégation mensuelle ; radiateurs depuis `radiator_daily`
   (minutes de chauffe, kWh et coût par jour et par radiateur, alimentée toutes les 10 min avec l'historique).
   Radiateur avec **compteur d'énergie** HA (`energy_entity_id`, `sensor.*` en Wh/kWh/MWh) : kWh réels = écart avec
@@ -222,7 +224,8 @@ Les radiateurs de `RADIATEURS_TEMPO_ROUGE.weekend_restricted_entities` (par déf
 |---|---|
 | `split_turn_back_on(managed, entity_ids, weekend_restricted, now, weekend_allowed)` | Sépare les radiateurs à rallumer maintenant de ceux reportés (week-end). |
 | `weekend_auto_allowed()` / `set_weekend_auto_allowed(allowed)` | Lecture / écriture de l'autorisation week-end (refusée par défaut). |
-| `is_heating(ha_state)` | Radiateur en chauffe : `hvac_action` s'il existe, sinon l'état. |
+| `is_heating(ha_state)` | Radiateur en chauffe : `hvac_action` s'il existe, sinon prise `on`. |
+| `heating_known(ha_state)` | Sait-on si le radiateur chauffe ? Faux si indisponible ou climate allumé sans `hvac_action`. |
 | `meter_kwh(ha_state)` | Index du compteur d'énergie HA en kWh (Wh / kWh / MWh), `None` si illisible. |
 
 ### `history.py` — Historisation

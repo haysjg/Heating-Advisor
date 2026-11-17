@@ -48,13 +48,25 @@ _ENERGY_UNITS = {"Wh": 0.001, "kWh": 1.0, "MWh": 1000.0}
 
 def is_heating(ha_state: dict | None) -> bool:
     """Le radiateur chauffe-t-il ? `hvac_action` quand l'entité le fournit (thermostat intégré :
-    « heating » seulement quand la résistance chauffe), sinon l'état (prise : on ; climate : heat / auto)."""
+    « heating » seulement quand la résistance chauffe), sinon l'état de la prise (on).
+    Un climate allumé sans `hvac_action` (sèche-serviettes Overkiz) n'est pas compté en chauffe :
+    son mode (auto / heat) ne dit pas si la résistance chauffe — voir `heating_known`."""
     if not ha_state:
         return False
     action = (ha_state.get("attributes") or {}).get("hvac_action")
     if action is not None:
         return action == "heating"
-    return ha_state.get("state") in ("on", "heat", "auto")
+    return ha_state.get("state") == "on"
+
+
+def heating_known(ha_state: dict | None) -> bool:
+    """Sait-on si le radiateur chauffe ? Non si HA ne le voit pas, ou pour un climate allumé
+    qui ne publie pas `hvac_action`."""
+    if not ha_state or ha_state.get("state") in (None, "unavailable", "unknown"):
+        return False
+    if (ha_state.get("attributes") or {}).get("hvac_action") is not None:
+        return True
+    return ha_state.get("state") in ("on", "off")
 
 
 def meter_kwh(ha_state: dict | None) -> float | None:

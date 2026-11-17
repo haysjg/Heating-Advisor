@@ -587,6 +587,7 @@ def _radiateurs_info() -> list:
             "managed_off": e["entity_id"] in managed_off,
             "state": ha_state.get("state", "unknown") if ha_state else None,
             "on": radiateurs_module.is_heating(ha_state),
+            "known": radiateurs_module.heating_known(ha_state),
             "metered": bool(e["energy_entity_id"]),
             "today_kwh": conso.get("kwh", 0.0),
             "today_cost": conso.get("cost", 0.0),
@@ -1122,7 +1123,7 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
         on = bool(r.get("on"))
         power = _radiator_power(r.get("entity_id", ""))
         radiator_items.append({"name": r.get("name") or r.get("entity_id", ""),
-                               "known": r.get("state") not in (None, "unavailable", "unknown"),
+                               "known": bool(r.get("known")),
                                "on": on, "off": r.get("state") == "off", "cut": bool(r.get("managed_off")),
                                "power_kw": power, "metered": bool(r.get("metered")),
                                "today_kwh": r.get("today_kwh", 0.0), "today_cost": r.get("today_cost", 0.0),

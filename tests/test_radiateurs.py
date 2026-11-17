@@ -56,9 +56,26 @@ class TestIsHeating:
 
     def test_state_without_hvac_action(self):
         assert radiateurs.is_heating({"state": "on", "attributes": {}})
-        assert radiateurs.is_heating({"state": "auto"})
         assert not radiateurs.is_heating({"state": "off"})
         assert not radiateurs.is_heating(None)
+
+    def test_climate_without_hvac_action_not_heating(self):
+        # Sèche-serviettes Overkiz : « auto » en permanence, sans hvac_action
+        assert not radiateurs.is_heating({"state": "auto", "attributes": {"preset_mode": "prog"}})
+        assert not radiateurs.is_heating({"state": "heat"})
+
+
+class TestHeatingKnown:
+    def test_known(self):
+        assert radiateurs.heating_known({"state": "auto", "attributes": {"hvac_action": "idle"}})
+        assert radiateurs.heating_known({"state": "on"})
+        assert radiateurs.heating_known({"state": "off"})
+
+    def test_unknown(self):
+        assert not radiateurs.heating_known({"state": "auto", "attributes": {"hvac_action": None}})
+        assert not radiateurs.heating_known({"state": "heat"})
+        assert not radiateurs.heating_known({"state": "unavailable"})
+        assert not radiateurs.heating_known(None)
 
 
 class TestMeterKwh:

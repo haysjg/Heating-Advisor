@@ -186,9 +186,9 @@ def test_heating_flow_jour_rouge(app_module, monkeypatch):
     data = {"tempo": {"today": {"color": "RED", "label": "Rouge"}, "current_period": "HP"},
             "weather": {"temperature": 3.0}, "indoor": {"temperature": 20.1}}
     radiateurs = [{"entity_id": "switch.r1", "name": "Combles", "enabled": True, "state": "off", "on": False,
-                   "managed_off": True},
+                   "known": True, "managed_off": True},
                   {"entity_id": "climate.r2", "name": "Coin lecture", "enabled": False, "state": "auto", "on": True,
-                   "managed_off": False, "metered": True, "today_kwh": 1.0, "today_cost": 0.17}]
+                   "known": True, "managed_off": False, "metered": True, "today_kwh": 1.0, "today_cost": 0.17}]
     f = app_module._heating_flow(data, {"state": "heat"}, {"state": "off"}, radiateurs)
     assert f["poele"]["on"] and f["poele"]["since"] == "2026-11-14T13:00:00"
     assert f["poele"]["cost_per_hour"] > 0
