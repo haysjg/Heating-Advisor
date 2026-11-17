@@ -98,7 +98,9 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
   à pleine puissance pendant la chauffe.
 - **Compteur « dépensés depuis minuit »** façon odomètre (4 décimales, chiffres qui roulent) : coût du jour du
   serveur (`today_cost`, compté jusqu'à `today_cost_as_of` = dernière lecture + 10 min) interpolé côté navigateur
-  au coût horaire en cours, recalé à chaque rafraîchissement sans jamais reculer, remis à zéro à minuit.
+  au coût horaire en cours, sans jamais reculer, remis à zéro à minuit. L'écart avec le serveur se résorbe en
+  ~5 min : en avance (radiateurs estimés à pleine puissance, appareil allumé entre deux relevés), le compteur
+  ralentit au quart du coût horaire au lieu de se figer ; en retard de plus de 5 centimes, il saute.
 - Jour rouge : clim « exclue », radiateurs « coupés » quand l'appli les a éteints.
 - **Flux proportionnel** : vitesse et épaisseur des impulsions de chaque appareil selon son coût horaire
   (racine carrée, plafond `FLOW_COST_MAX` = 1,5 €/h dans `script.js`).

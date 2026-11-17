@@ -474,8 +474,14 @@ function initRadiatorToggle(card) {
 
 // Compteur « dépensés depuis minuit » : coût du serveur + coût horaire en cours depuis son horodatage.
 // Ne recule jamais dans la journée (le serveur compte par pas de 10 min), repart de zéro au changement de jour.
+// Le coût horaire en cours n'est qu'une estimation (radiateurs à pleine puissance, appareil allumé entre deux
+// relevés) : plutôt que de se figer quand il a pris de l'avance sur le serveur, le compteur ralentit et
+// résorbe l'écart en douceur.
+const FLOW_COUNTER_CATCHUP_H = 5 / 60;   // écart avec le serveur résorbé en ~5 min
+const FLOW_COUNTER_MIN_PACE = 0.25;      // en avance, on avance encore au quart du coût horaire
+const FLOW_COUNTER_SNAP = 0.05;          // en retard de plus de 5 centimes (chargement, rattrapage) : saut direct
 const flowCounter = {
-  base: 0, asOf: null, perHour: 0, shown: 0, day: null, timer: null, euros: null,
+  base: 0, asOf: null, perHour: 0, shown: 0, day: null, timer: null, euros: null, last: null,
 
   sync(f) {
     this.base = f.today_cost || 0;
@@ -493,11 +499,19 @@ const flowCounter = {
   tick() {
     const now = Date.now();
     const day = new Date(now).toDateString();
-    if (day !== this.day) { this.day = day; this.shown = 0; this.euros = null; }
+    if (day !== this.day) { this.day = day; this.shown = 0; this.euros = null; this.last = null; }
     // asOf est en général dans le futur (la dernière lecture compte d'avance ses 10 min) : on retire la part
     // pas encore écoulée, puis on avance au coût horaire en cours une fois asOf dépassé
-    const extra = (now - this.asOf) / 3600000 * this.perHour;
-    this.shown = Math.max(this.shown, this.base + extra, 0);
+    const target = Math.max(this.base + (now - this.asOf) / 3600000 * this.perHour, 0);
+    const drift = target - this.shown;
+    if (this.last == null || drift > FLOW_COUNTER_SNAP) {
+      this.shown = Math.max(this.shown, target);
+    } else {
+      const dtH = Math.max(now - this.last, 0) / 3600000;
+      const step = this.perHour * dtH + drift * Math.min(1, dtH / FLOW_COUNTER_CATCHUP_H);
+      this.shown += Math.max(step, this.perHour * FLOW_COUNTER_MIN_PACE * dtH);
+    }
+    this.last = now;
     const el = document.getElementById('ft-today-odo');
     renderOdometer(el, this.shown);
     // Éclat à chaque euro franchi (pas au chargement de la page)
