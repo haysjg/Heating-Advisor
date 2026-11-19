@@ -1174,6 +1174,9 @@ def index():
                 presence = "home" if raw else "away" if raw is False else None
             thermostat_state["everyone_away"] = presence == "away"
             thermostat_state["presence_status"] = presence
+            thermostat_state["people"] = ha_client.get_people_status(
+                config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []),
+                config.THERMOSTAT.get("nearby_zone_name", ""))
         else:
             thermostat_state["everyone_away"] = False
             thermostat_state["presence_status"] = None
@@ -1252,6 +1255,9 @@ def api_dashboard_refresh():
                 presence = "home" if raw else "away" if raw is False else None
             thermostat_state["everyone_away"] = presence == "away"
             thermostat_state["presence_status"] = presence
+            thermostat_state["people"] = ha_client.get_people_status(
+                config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []),
+                config.THERMOSTAT.get("nearby_zone_name", ""))
         else:
             thermostat_state["everyone_away"] = False
             thermostat_state["presence_status"] = None
@@ -1320,6 +1326,7 @@ def api_dashboard_refresh():
                 "suspended_until": thermostat_state.get("suspended_until"),
                 "everyone_away": thermostat_state.get("everyone_away", False),
                 "presence_status": thermostat_state.get("presence_status"),
+                "people": thermostat_state.get("people"),
                 "last_turned_on": thermostat_state.get("last_turned_on"),
                 "system_history": thermostat_state.get("system_history", {
                     "poele": {"last_turned_on": None, "last_turned_off": None},

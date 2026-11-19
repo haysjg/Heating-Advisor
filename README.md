@@ -206,6 +206,7 @@ Le système le moins cher est recommandé.
 | `get_presence(cfg, person_entities)` | Retourne `True` si au moins une personne est `"home"`, `False` si tout le monde est absent, `None` en cas d'erreur. |
 | `get_entities(cfg, entity_ids)` | États bruts de plusieurs entités (entités inconnues omises), `None` si HA injoignable. |
 | `get_presence_extended(cfg, person_entities, nearby_zone_name)` | Retourne `"home"` / `"nearby"` / `"away"` selon la position des personnes par rapport aux zones HA. |
+| `get_people_status(cfg, person_entities, nearby_zone_name)` | Position de chaque personne (`home` / `nearby` / `away` / `unknown`, nom = `friendly_name` HA) — affichée sous forme de pastilles dans la carte Thermostat de l'accueil. |
 | `apply_recommendation(cfg, system)` | Allume le poêle si `system == "poele"`, l'éteint sinon. Utilisé en mode pilotage automatique. |
 
 ### `radiateurs.py` — Radiateurs Tempo Rouge
@@ -405,6 +406,8 @@ Nécessite deux zones configurées dans Home Assistant :
 **`nearby_restricted_since`** est persisté dans `thermostat_state.json` pour calculer la durée de la grâce de façon fiable entre deux cycles de 10 min.
 
 ### Alerte traqueur figé
+
+Dans la carte Thermostat de l'accueil, une pastille par personne suivie indique sa position (à la maison, à proximité, absent — avec le nom de la zone HA si elle est dans une autre zone —, ou inconnu), rafraîchie avec le reste du tableau de bord.
 
 Une entité `person` dont le téléphone n'envoie plus de position reste figée sur son dernier état (souvent `home`) : il suffit d'une personne figée à `home` pour que l'absence ne soit jamais détectée. Toutes les 30 min, `modules/presence_watch.py` vérifie le `last_updated` de chaque entité de `person_entities` ; au-delà de `tracker_stale_hours` heures (3 par défaut, 0 = désactivé), une notification ntfy « 📍 Traqueur figé » est envoyée, une seule fois par épisode, puis « ✅ Traqueur actif » quand les positions reviennent. Les alertes en cours sont mémorisées dans `data/tracker_alerts.json`.
 

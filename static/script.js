@@ -655,7 +655,29 @@ async function applyPelletEstimate(hours) {
   await _postPellet('/api/poele/refill-apply', {}, `Durée par sac réglée sur ${_fmtH(hours)} h`, 'Réglage non appliqué');
 }
 
+// Position de chaque personne suivie (person HA) : maison, zone de proximité, absente
+const PEOPLE_STATUS = {
+  home:    { glyph: 'house',      label: 'à la maison', cls: 'person-home' },
+  nearby:  { glyph: 'map-pin',    label: 'à proximité', cls: 'person-nearby' },
+  away:    { glyph: 'car',        label: 'absent',      cls: 'person-away' },
+  unknown: { glyph: 'circle-help', label: 'inconnu',    cls: 'person-unknown' },
+};
+
+function renderPeople(people) {
+  const el = document.querySelector('[data-value="people"]');
+  if (!el || !Array.isArray(people)) return;
+  el.innerHTML = people.map(p => {
+    const st = PEOPLE_STATUS[p.status] || PEOPLE_STATUS.unknown;
+    const label = p.zone ? `${st.label} (${p.zone})` : st.label;
+    return `<span class="person ${st.cls}">${icon(st.glyph)}<strong>${escapeHtml(p.name)}</strong> ${escapeHtml(label)}</span>`;
+  }).join('');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  const people = document.querySelector('[data-value="people"]');
+  if (people?.dataset.people) {
+    try { renderPeople(JSON.parse(people.dataset.people)); } catch (e) { /* ligne vide */ }
+  }
   const card = document.getElementById('refill-card');
   if (card?.dataset.pellet) {
     try { renderPelletRefill(JSON.parse(card.dataset.pellet)); } catch (e) { /* rendu serveur conservé */ }
@@ -854,6 +876,7 @@ const DashboardRefresh = {
       updateControlPanel(data);
       renderPelletRefill(data.pellet_refill);
       renderIgnitions(data.ignitions);
+      if (data.thermostat) renderPeople(data.thermostat.people);
       renderHeatingFlow(data.heating_flow);
       this.updateTempo(data.tempo);
       this.updateTomorrow(data.tomorrow);

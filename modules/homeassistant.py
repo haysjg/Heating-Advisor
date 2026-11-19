@@ -189,6 +189,43 @@ def get_presence_extended(cfg: dict, person_entities: list, nearby_zone_name: st
         return None
 
 
+def get_people_status(cfg: dict, person_entities: list, nearby_zone_name: str = "") -> list | None:
+    """
+    Position de chaque personne suivie, pour l'affichage :
+    [{"entity_id", "name", "status", "zone"}] où status vaut "home", "nearby", "away"
+    ou "unknown" (entité absente de HA ou état indisponible) et zone est l'état HA brut
+    (nom de zone, ex. "Travail", quand la personne est dans une autre zone que home/proximité).
+    None si HA n'est pas configuré ou injoignable.
+    """
+    if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
+        return None
+    if not person_entities:
+        return None
+    try:
+        states = _all_states(cfg)
+    except Exception as e:
+        logger.error("HA get_people_status échoué : %s", e)
+        return None
+    nearby_lower = (nearby_zone_name or "").lower()
+    people = []
+    for entity_id in person_entities:
+        entity = states.get(entity_id) or {}
+        raw = entity.get("state")
+        name = (entity.get("attributes") or {}).get("friendly_name") \
+            or entity_id.split(".", 1)[-1].replace("_", " ").title()
+        if raw in (None, "unavailable", "unknown"):
+            status = "unknown"
+        elif raw == "home":
+            status = "home"
+        elif nearby_lower and raw.lower() == nearby_lower:
+            status = "nearby"
+        else:
+            status = "away"
+        people.append({"entity_id": entity_id, "name": name, "status": status,
+                       "zone": raw if status == "away" and raw != "not_home" else None})
+    return people
+
+
 def get_presence(cfg: dict, person_entities: list) -> bool | None:
     """
     Retourne True si au moins une personne est à la maison,

@@ -353,6 +353,22 @@ main {
 .season-sub strong { color: var(--text); font-variant-numeric: tabular-nums; }
 .season-link { font-size: 0.78rem; color: var(--blue); margin: 0.45rem 0 0; }
 
+/* ── Présence par personne (card Thermostat) ──────────────── */
+.people { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.35rem; }
+.people:empty { display: none; }
+.person {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--person-tone) 30%, transparent);
+  background: color-mix(in srgb, var(--person-tone) 10%, transparent);
+  color: var(--person-tone);
+}
+.person strong { color: var(--text); font-weight: 600; }
+.person-home    { --person-tone: var(--green); }
+.person-nearby  { --person-tone: var(--yellow); }
+.person-away    { --person-tone: var(--warm); }
+.person-unknown { --person-tone: var(--text-sub); }
+
 /* ── Allumages du poêle (card Thermostat) ─────────────────── */
 .ignitions { min-width: 0; }
 .ignitions-title { color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }

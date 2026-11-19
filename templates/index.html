@@ -722,6 +722,8 @@
                 <span style="color:#4ade80">{{ icon('house') }}Quelqu'un à la maison</span>
               {% endif %}
             </p>
+            {# Position de chaque personne suivie, re-rendue par renderPeople() à chaque rafraîchissement #}
+            <p class="value-sub people" data-value="people" data-people="{{ (thermostat_state.people or [])|tojson|forceescape }}"></p>
           {% endif %}
           {% if not config.THERMOSTAT.enabled %}
             <p class="value-sub" style="color:#64748b">Thermostat désactivé — activez-le avec le bouton en haut.</p>

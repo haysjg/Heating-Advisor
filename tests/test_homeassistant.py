@@ -124,3 +124,35 @@ def test_find_energy_sensor_rejects_bad_entity(session):
     with pytest.raises(ValueError):
         ha.find_energy_sensor(CFG, 'climate.x") }}{{ states')
     session.post.assert_not_called()
+
+
+class TestGetPeopleStatus:
+    def test_status_per_person(self, session):
+        states = STATES + [
+            {"entity_id": "person.c", "state": "home", "attributes": {"friendly_name": "Carine"}},
+            {"entity_id": "person.d", "state": "Travail"},
+            {"entity_id": "person.e", "state": "unavailable"},
+        ]
+        session.request.side_effect = lambda method, url, **kw: _resp(states)
+        people = ha.get_people_status(
+            CFG, ["person.a", "person.b", "person.c", "person.d", "person.e", "person.jean_guy"], "nearby")
+        assert [(p["name"], p["status"], p["zone"]) for p in people] == [
+            ("A", "away", None),
+            ("B", "nearby", None),
+            ("Carine", "home", None),
+            ("D", "away", "Travail"),
+            ("E", "unknown", None),
+            ("Jean Guy", "unknown", None),
+        ]
+        assert len(_gets(session)) == 1
+
+    def test_without_nearby_zone(self, session):
+        assert ha.get_people_status(CFG, ["person.b"])[0]["status"] == "away"
+
+    def test_ha_down(self, session):
+        session.request.side_effect = ha.requests.ConnectionError("down")
+        assert ha.get_people_status(CFG, ["person.a"]) is None
+
+    def test_not_configured(self):
+        assert ha.get_people_status({"enabled": False}, ["person.a"]) is None
+        assert ha.get_people_status(CFG, []) is None
