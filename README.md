@@ -246,6 +246,7 @@ Enregistrement toutes les ~10 min dans une base SQLite (`data/history.db`).
 | `clim_state_for_history(real_state, thermostat_state, configured)` | État historisé de la clim (`readings.clim_state`) : `on` seulement en mode HA `heat` (le froid ne compte pas), repli sur le thermostat si HA ne répond pas, `None` si la clim n'est pas configurée. |
 | `aggregate_month(year_month, config)` | Agrège un mois dans `monthly_reports` : coût poêle, « clim équiv. » (heures de poêle facturées au prix de la clim), et pour la clim réelle : minutes, coût estimé, « poêle équiv. » (heures de clim au prix du poêle). Colonnes clim à `NULL` pour un mois sans suivi de la clim. |
 | `refresh_clim_daily(clim_cfg)` | Recalcule `clim_daily` (minutes et kWh estimés par jour, jamais purgée) pour les jours encore présents dans `readings`. Au démarrage et chaque nuit à 2h30. |
+| `refresh_hp_daily(hp_start, hp_end)` / `get_hp_daily(since)` | Recalcule `hp_daily` (par jour, lectures des heures pleines : nombre, température extérieure moyenne, minutes de poêle, clim et radiateurs ; jamais purgée) pour les jours encore présents dans `readings`. Au démarrage et chaque nuit à 2h30. Base du verdict « relais du poêle les jours rouges ». |
 | `season_balance(reports, today)` | Bilan de la saison (1er sept → 31 août) : coût réel poêle + clim, scénarios « tout clim » et « tout poêle », économie par rapport au plus cher des deux. Affiché sur `/reports` et dans la card Thermostat. |
 
 **Suivi de la clim.** Historisé depuis la migration 9 (reprise des 7 derniers jours depuis `diagnose_log`). Coût estimé = heures × `nominal_capacity_kw` ÷ COP de `cop_curve` × tarif Tempo : estimation haute, la clim inverter module sa puissance. Les scénarios « tout clim » / « tout poêle » gardent les mêmes heures de chauffe.
@@ -314,9 +315,13 @@ Calcul pur de la page `/stock` (`compute_stock_stats`), à partir des livraisons
 | `sync(linky_cfg)` | Job quotidien : récupère via MyElectricalData les jours manquants (d'abord les récents, puis l'historique en remontant, par tranches de 7 jours), dans la limite de 40 appels par jour. Stocke dans `linky_load_curve`. |
 | `compare_options(curve, colors, tempo_prices, options, hp_start, hp_end)` | Pur : coût de la même consommation en Tempo, Base et Heures Creuses (abonnement au prorata des jours), répartition kWh par couleur et HP/HC (avec % HP/HC par couleur, part de chaque couleur, nombre de jours Tempo
   couverts, conso moyenne **par jour** et écart au jour moyen, ligne Total), détail mensuel.
-- **Relais du poêle les jours rouges** (`red_day_verdict`) : heures pleines d'un jour rouge comparées à celles d'un
-  jour blanc (deux couleurs de temps froid). À partir de 3 jours de chaque : ≥ 90 % → « le poêle ne prend pas assez le
-  relais de la clim et des radiateurs », sinon « le poêle prend bien le relais ». |
+- **Relais du poêle les jours rouges** (`red_day_verdict(curve, colors, hp_daily, hp_start, hp_end)`, pur) :
+  kWh HP Linky **par degré-jour** (base 18 °C, température extérieure moyenne des heures pleines) d'un jour rouge
+  comparés à ceux d'un jour blanc, donc à température égale. Seuls comptent les jours suivis par l'appli
+  (`hp_daily`, ≥ 80 % des heures pleines couvertes par la courbe et par les lectures) et froids (≤ 12 °C) :
+  l'historique Linky d'avant l'appli et les jours doux, où le talon de conso pèse plus que le chauffage, sont
+  écartés. À partir de 3 jours de chaque : ≥ 90 % → « Relais insuffisant », sinon « Bon relais », avec la part des
+  heures pleines rouges où tournaient poêle, clim et radiateurs. Avant : « verdict en attente » et les jours retenus. |
 | `test_access(linky_cfg)` | Vérifie la clé et le consentement (`/valid_access`) : date de fin du consentement, appels du jour. |
 
 ---

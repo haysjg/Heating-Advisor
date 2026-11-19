@@ -603,6 +603,51 @@ def refresh_clim_daily(clim_cfg: dict) -> None:
         logger.error("History : erreur recalcul clim_daily : %s", e)
 
 
+def refresh_hp_daily(hp_start: int, hp_end: int) -> None:
+    """Recalcule hp_daily (lectures des heures pleines par jour) pour les jours encore présents dans readings.
+    Les jours purgés de readings gardent leur dernière valeur : hp_daily n'est jamais purgée.
+    Lancé au démarrage et chaque nuit avec l'agrégation mensuelle."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT ts, outdoor_temp, poele_state, clim_state, radiators_on FROM readings").fetchall()
+            days: dict = {}
+            for ts, outdoor_temp, poele_state, clim_state, radiators_on in rows:
+                if not hp_start <= int(ts[11:13]) < hp_end:
+                    continue
+                d = days.setdefault(ts[:10], [0, 0.0, 0, 0, 0, 0])
+                d[0] += 1
+                if outdoor_temp is not None:
+                    d[1] += outdoor_temp
+                    d[2] += 1
+                d[3] += 10 if _is_on(poele_state) else 0
+                d[4] += 10 if clim_state == "on" else 0
+                d[5] += 10 if radiators_on else 0
+            conn.executemany(
+                "INSERT INTO hp_daily (day, readings, outdoor_temp, poele_minutes, clim_minutes, radiator_minutes) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(day) DO UPDATE SET readings = excluded.readings, "
+                "outdoor_temp = excluded.outdoor_temp, poele_minutes = excluded.poele_minutes, "
+                "clim_minutes = excluded.clim_minutes, radiator_minutes = excluded.radiator_minutes",
+                [(day, n, round(t / nt, 2) if nt else None, p, c, r) for day, (n, t, nt, p, c, r) in days.items()],
+            )
+    except Exception as e:
+        logger.error("History : erreur recalcul hp_daily : %s", e)
+
+
+def get_hp_daily(since_date: str) -> dict:
+    """{jour: {readings, outdoor_temp, poele_minutes, clim_minutes, radiator_minutes}} des heures pleines (hp_daily)."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT day, readings, outdoor_temp, poele_minutes, clim_minutes, radiator_minutes FROM hp_daily "
+                "WHERE day >= ? ORDER BY day", (since_date,)).fetchall()
+        keys = ("readings", "outdoor_temp", "poele_minutes", "clim_minutes", "radiator_minutes")
+        return {r[0]: dict(zip(keys, r[1:])) for r in rows}
+    except Exception as e:
+        logger.error("History : erreur lecture hp_daily : %s", e)
+        return {}
+
+
 def get_clim_daily(since_date: str) -> dict:
     """{jour: kWh estimés} de la clim depuis une date (clim_daily, jours suivis uniquement)."""
     try:

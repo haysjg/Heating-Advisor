@@ -490,6 +490,7 @@ def api_mfa_recovery_codes():
 try:
     history_module.init_db()
     history_module.refresh_clim_daily(config.CLIM)
+    history_module.refresh_hp_daily(config.HP_START, config.HP_END)
     warmup_module.refresh_events()
 except Exception as e:
     logger.error("Migration de la base échouée : %s", e)
@@ -1003,6 +1004,7 @@ def _run_monthly_aggregation():
         prev_month = prev.strftime("%Y-%m")
         history_module.aggregate_month(prev_month, cfg)
         history_module.refresh_clim_daily(config.CLIM)
+        history_module.refresh_hp_daily(config.HP_START, config.HP_END)
         warmup_module.refresh_events()
     except Exception as e:
         logger.error("Agrégation mensuelle échouée : %s", e)
@@ -2030,6 +2032,8 @@ def api_electricity_tariff_comparison():
             colors = get_day_colors(first - timedelta(days=1), until)
             result["comparison"] = linky_module.compare_options(
                 curve, colors, config.TEMPO_PRICES, config.TARIFF_OPTIONS, config.HP_START, config.HP_END)
+            result["comparison"]["red_day"] = linky_module.red_day_verdict(
+                curve, colors, history_module.get_hp_daily(first.isoformat()), config.HP_START, config.HP_END)
         return jsonify(result)
     except Exception as e:
         return _internal_error(e)

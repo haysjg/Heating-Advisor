@@ -39,7 +39,10 @@ SERVER_ERROR_PAUSE = timedelta(hours=1)   # relance après une erreur serveur (H
 SERVER_RETRIES_PER_DAY = 3
 OPTIONS = ("TEMPO", "BASE", "HPHC")
 VERDICT_MIN_DAYS = 3        # jours rouges et blancs nécessaires pour juger le relais du poêle
-RED_VS_WHITE_WARN = 0.9     # HP d'un jour rouge ≥ 90 % de celles d'un jour blanc → relais insuffisant
+RED_VS_WHITE_WARN = 0.9     # kWh HP par degré-jour d'un jour rouge ≥ 90 % de ceux d'un jour blanc → relais insuffisant
+DJU_BASE = 18.0             # base des degrés-jours de chauffage (°C)
+VERDICT_MAX_OUTDOOR = 12.0  # jours plus doux écartés : le talon de conso y pèserait plus que le chauffage
+MIN_COVERAGE = 0.8          # part minimale des heures pleines couvertes par la courbe Linky et par les lectures
 
 _PDL_RE = re.compile(r"\d{14}")
 _INTERVAL_RE = re.compile(r"PT(\d+)M")
@@ -388,7 +391,6 @@ def compare_options(curve: list, colors: dict, tempo_prices: dict, options: dict
         "savings": {o: round(totals[o] - totals["TEMPO"], 2) for o in ("BASE", "HPHC")},
         "best": min(OPTIONS, key=lambda o: totals[o]) if days else None,
         "breakdown": by_color,
-        "red_day": red_day_verdict(by_color),
         "months": month_rows,
         "unpriced_kwh": round(unpriced, 1),
     }
@@ -420,22 +422,63 @@ def _breakdown_with_days(breakdown: dict, intervals: dict, step_minutes: int) ->
     return result
 
 
-def red_day_verdict(breakdown: dict) -> dict | None:
-    """Le poêle prend-il le relais les jours rouges ?
+def red_day_verdict(curve: list, colors: dict, hp_daily: dict, hp_start: int, hp_end: int) -> dict:
+    """Le poêle prend-il le relais les jours rouges ? Pur.
 
-    Compare les heures pleines d'un jour rouge à celles d'un jour blanc : deux couleurs tirées par
-    temps froid, donc à besoin de chauffage comparable, mais au kWh HP 3,8 fois plus cher en rouge.
-    None tant qu'il y a moins de VERDICT_MIN_DAYS jours rouges ou blancs.
+    Compare, à température égale, les heures pleines d'un jour rouge à celles d'un jour blanc : kWh HP Linky par
+    degré-jour (base DJU_BASE, température extérieure moyenne des heures pleines). Seuls comptent les jours suivis
+    par l'appli (hp_daily, lectures toutes les 10 min) et assez froids (≤ VERDICT_MAX_OUTDOOR) ; l'historique
+    Linky d'avant l'appli est écarté. Donne aussi la part des heures pleines où tournaient poêle, clim et radiateurs.
+
+    curve    : [(ts début d'intervalle ISO, kWh)]
+    colors   : {"AAAA-MM-JJ": "BLUE"|"WHITE"|"RED"}
+    hp_daily : {"AAAA-MM-JJ": {readings, outdoor_temp, poele_minutes, clim_minutes, radiator_minutes}}
+    status « pending » (avec le nombre de jours retenus) tant qu'il y a moins de VERDICT_MIN_DAYS jours
+    rouges ou blancs, sinon « warn » ou « ok ».
     """
-    red, white = breakdown.get("RED", {}), breakdown.get("WHITE", {})
-    if (red.get("days") or 0) < VERDICT_MIN_DAYS or (white.get("days") or 0) < VERDICT_MIN_DAYS:
-        return None
-    if not white.get("hp_per_day"):
-        return None
-    ratio = red["hp_per_day"] / white["hp_per_day"]
+    step = _interval_minutes(curve)
+    hp_minutes = (hp_end - hp_start) * 60
+    kwh, intervals = {}, {}
+    for ts, value in curve:
+        if hp_start <= int(ts[11:13]) < hp_end:
+            kwh[ts[:10]] = kwh.get(ts[:10], 0.0) + value
+            intervals[ts[:10]] = intervals.get(ts[:10], 0) + 1
+
+    sums = {c: {"days": 0, "kwh": 0.0, "dju": 0.0, "outdoor": 0.0, "minutes": 0,
+                "poele": 0, "clim": 0, "radiators": 0} for c in ("RED", "WHITE")}
+    for day, stats in hp_daily.items():
+        color, outdoor = colors.get(day), stats.get("outdoor_temp")
+        if color not in sums or outdoor is None or outdoor > VERDICT_MAX_OUTDOOR:
+            continue
+        if intervals.get(day, 0) * step < MIN_COVERAGE * hp_minutes or stats["readings"] * 10 < MIN_COVERAGE * hp_minutes:
+            continue
+        s = sums[color]
+        s["days"] += 1
+        s["kwh"] += kwh[day]
+        s["dju"] += max(0.0, DJU_BASE - outdoor)
+        s["outdoor"] += outdoor
+        s["minutes"] += stats["readings"] * 10
+        s["poele"] += stats["poele_minutes"]
+        s["clim"] += stats["clim_minutes"]
+        s["radiators"] += stats["radiator_minutes"]
+
+    red, white = sums["RED"], sums["WHITE"]
+    if red["days"] < VERDICT_MIN_DAYS or white["days"] < VERDICT_MIN_DAYS or not white["kwh"]:
+        return {"status": "pending", "red_days": red["days"], "white_days": white["days"], "min_days": VERDICT_MIN_DAYS}
+
+    def _summary(s: dict) -> dict:
+        return {
+            "days": s["days"],
+            "hp_per_day": round(s["kwh"] / s["days"], 1),
+            "outdoor_temp": round(s["outdoor"] / s["days"], 1),
+            "kwh_per_dju": round(s["kwh"] / s["dju"], 2),
+            "share": {k: round(s[k] / s["minutes"] * 100) for k in ("poele", "clim", "radiators")},
+        }
+
+    ratio = (red["kwh"] / red["dju"]) / (white["kwh"] / white["dju"])
     return {
         "status": "warn" if ratio >= RED_VS_WHITE_WARN else "ok",
         "ratio": round(ratio, 2),
-        "red_hp_per_day": red["hp_per_day"],
-        "white_hp_per_day": white["hp_per_day"],
+        "red": _summary(red),
+        "white": _summary(white),
     }

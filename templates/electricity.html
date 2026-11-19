@@ -56,6 +56,7 @@
     .tariff-redday.is-warn { border-color: rgba(245,158,11,0.5); }
     .tariff-redday.is-warn svg { color: #f59e0b; }
     .tariff-redday.is-ok svg { color: #22c55e; }
+    .tariff-redday.is-pending svg { color: var(--text-sub); }
     .tariff-months { margin-top: 1rem; }
     .tariff-months summary { cursor: pointer; font-size: 0.85rem; color: var(--text-sub); margin-bottom: 0.5rem; }
     .tariff-note { margin: 1rem 0 0; font-size: 0.76rem; color: var(--text-sub); line-height: 1.5; }
@@ -828,15 +829,29 @@
   function renderRedDayVerdict(v) {
     const el = document.getElementById('tariff-redday');
     if (!v) { el.style.display = 'none'; return; }
-    const red = fmtKwh(v.red_hp_per_day), white = fmtKwh(v.white_hp_per_day);
+    const fmtDju = x => x.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kWh';
+    const fmtTemp = t => t.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' °C';
+    if (v.status === 'pending') {
+      el.innerHTML = `${icon('hourglass')}<span><strong>Relais du poêle les jours rouges : verdict en attente.</strong> `
+        + `Il faut ${v.min_days} jours rouges et ${v.min_days} jours blancs froids (≤ 12 °C) suivis par l'appli `
+        + `(${v.red_days} rouge${v.red_days > 1 ? 's' : ''}, ${v.white_days} blanc${v.white_days > 1 ? 's' : ''} pour l'instant).</span>`;
+      el.className = 'tariff-redday is-pending';
+      el.style.display = 'flex';
+      return;
+    }
+    const r = v.red, w = v.white;
+    const compare = `Un jour rouge, tu consommes ${fmtDju(r.kwh_per_dju)} en heures pleines par degré-jour `
+      + `(${r.days} j, ${fmtTemp(r.outdoor_temp)} en moyenne), contre ${fmtDju(w.kwh_per_dju)} un jour blanc `
+      + `(${w.days} j, ${fmtTemp(w.outdoor_temp)})`;
+    const share = ` Heures pleines rouges : poêle ${r.share.poele} %, clim ${r.share.clim} %, radiateurs ${r.share.radiators} %.`;
     if (v.status === 'warn') {
-      const how = v.ratio > 1 ? "plus qu'un jour blanc" : "presque autant qu'un jour blanc";
-      el.innerHTML = `${icon('triangle-alert')}<span><strong>Relais insuffisant.</strong> Un jour rouge, tu consommes ${red} en heures pleines, `
-        + `${how} (${white}) : le poêle ne prend pas assez le relais de la clim et des radiateurs.</span>`;
+      const how = v.ratio > 1 ? 'plus' : 'presque autant';
+      el.innerHTML = `${icon('triangle-alert')}<span><strong>Relais insuffisant.</strong> ${compare} : ${how}, à température égale. `
+        + `Le poêle ne prend pas assez le relais de la clim et des radiateurs.${share}</span>`;
     } else {
       const less = Math.round((1 - v.ratio) * 100);
-      el.innerHTML = `${icon('circle-check')}<span><strong>Bon relais.</strong> Un jour rouge, tu consommes ${less} % de moins en heures pleines `
-        + `qu'un jour blanc (${red} contre ${white}) : le poêle prend bien le relais.</span>`;
+      el.innerHTML = `${icon('circle-check')}<span><strong>Bon relais.</strong> ${compare} : ${less} % de moins à température égale, `
+        + `le poêle prend bien le relais.${share}</span>`;
     }
     el.className = 'tariff-redday is-' + v.status;
     el.style.display = 'flex';

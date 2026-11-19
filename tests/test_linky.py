@@ -276,18 +276,52 @@ class TestPerDayAndVerdict:
         r = linky.compare_options(curve, {"2026-12-01": "BLUE"}, TEMPO_PRICES, OPTIONS, 6, 22)
         assert r["breakdown"]["BLUE"]["days"] == 0.5
 
-    def test_warn_when_red_close_to_white(self):
-        r = self._compare([("WHITE", 20, 10)] * 3 + [("RED", 19, 10)] * 3)
-        assert r["red_day"]["status"] == "warn"
-        assert r["red_day"]["ratio"] == 0.95
 
-    def test_ok_when_red_well_below_white(self):
-        r = self._compare([("WHITE", 20, 10)] * 3 + [("RED", 10, 10)] * 3)
-        assert r["red_day"] == {"status": "ok", "ratio": 0.5, "red_hp_per_day": 10.0, "white_hp_per_day": 20.0}
 
-    def test_no_verdict_with_too_few_days(self):
-        r = self._compare([("WHITE", 20, 10)] * 3 + [("RED", 19, 10)] * 2)
-        assert r["red_day"] is None
+class TestRedDayVerdict:
+    """Relais du poêle les jours rouges : jours suivis par l'appli, à température égale (kWh HP par degré-jour)."""
+
+    def _verdict(self, days):
+        """days : [(couleur, kWh HP, temp. ext., minutes poêle)] — un jour par entrée, lectures complètes."""
+        curve, colors, hp_daily = [], {}, {}
+        for i, (color, hp, outdoor, poele) in enumerate(days):
+            d = date(2026, 12, 1) + timedelta(days=i)
+            colors[d.isoformat()] = color
+            curve += _day_curve(d, hp, 8)
+            if outdoor is not None:
+                hp_daily[d.isoformat()] = {"readings": 96, "outdoor_temp": outdoor, "poele_minutes": poele,
+                                           "clim_minutes": 0, "radiator_minutes": 0}
+        return linky.red_day_verdict(curve, colors, hp_daily, 6, 22)
+
+    def test_warn_when_red_close_to_white_at_same_temperature(self):
+        v = self._verdict([("WHITE", 20, 8, 0)] * 3 + [("RED", 19, 8, 480)] * 3)
+        assert v["status"] == "warn"
+        assert v["ratio"] == 0.95
+        assert v["red"] == {"days": 3, "hp_per_day": 19.0, "outdoor_temp": 8.0, "kwh_per_dju": 1.9,
+                            "share": {"poele": 50, "clim": 0, "radiators": 0}}
+
+    def test_colder_red_days_judged_per_degree_day(self):
+        # Même conso HP, mais jours rouges bien plus froids : le poêle a pris le relais
+        v = self._verdict([("WHITE", 20, 10, 0)] * 3 + [("RED", 20, 2, 900)] * 3)
+        assert v["status"] == "ok"
+        assert v["ratio"] == 0.5
+
+    def test_days_before_the_app_are_ignored(self):
+        v = self._verdict([("WHITE", 20, None, 0)] * 3 + [("RED", 10, None, 0)] * 3 + [("WHITE", 20, 8, 0)] * 3)
+        assert v == {"status": "pending", "red_days": 0, "white_days": 3, "min_days": 3}
+
+    def test_mild_days_are_ignored(self):
+        v = self._verdict([("WHITE", 20, 15, 0)] * 3 + [("RED", 19, 8, 0)] * 3)
+        assert v["status"] == "pending"
+        assert v["white_days"] == 0
+
+    def test_partial_readings_are_ignored(self):
+        v = self._verdict([("WHITE", 20, 8, 0)] * 3 + [("RED", 19, 8, 0)] * 3)
+        assert v["status"] == "warn"
+        curve = _day_curve(date(2026, 12, 1), 20, 8)
+        hp_daily = {"2026-12-01": {"readings": 40, "outdoor_temp": 8, "poele_minutes": 0,
+                                   "clim_minutes": 0, "radiator_minutes": 0}}
+        assert linky.red_day_verdict(curve, {"2026-12-01": "WHITE"}, hp_daily, 6, 22)["white_days"] == 0
 
 
 class TestDailyTotalsAndResume:

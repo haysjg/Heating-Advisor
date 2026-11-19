@@ -311,6 +311,22 @@ def _migrate_014(conn):
     conn.execute("ALTER TABLE readings ADD COLUMN radiators_on INTEGER")
 
 
+def _migrate_015(conn):
+    """hp_daily : par jour, lectures des heures pleines (nombre, température extérieure moyenne, minutes de
+    marche du poêle, de la clim et des radiateurs). Jamais purgée : base du verdict « relais du poêle les jours
+    rouges » de /electricity, recalculée depuis readings (history.refresh_hp_daily)."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS hp_daily (
+            day              TEXT PRIMARY KEY,
+            readings         INTEGER NOT NULL,
+            outdoor_temp     REAL,
+            poele_minutes    INTEGER NOT NULL DEFAULT 0,
+            clim_minutes     INTEGER NOT NULL DEFAULT 0,
+            radiator_minutes INTEGER NOT NULL DEFAULT 0
+        );
+    """)
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -327,6 +343,7 @@ MIGRATIONS = [
     _migrate_012,
     _migrate_013,
     _migrate_014,
+    _migrate_015,
 ]
 
 

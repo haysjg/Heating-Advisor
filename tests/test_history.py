@@ -342,6 +342,33 @@ class TestClimDaily:
         }
 
 
+class TestHpDaily:
+    """Lectures des heures pleines par jour, jamais purgées (verdict du relais des jours rouges)."""
+
+    @pytest.fixture(autouse=True)
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(history, "DB_FILE", str(tmp_path / "history.db"))
+
+    def test_refresh_and_survives_purge(self):
+        from freezegun import freeze_time
+        with freeze_time("2026-08-01 05:50:00"):
+            history.record(0.0, 20.0, "on", "RED", "on")             # heure creuse : ignorée
+        with freeze_time("2026-08-01 10:00:00"):
+            history.record(4.0, 20.0, "on", "RED", "off", 0)
+        with freeze_time("2026-08-01 10:10:00"):
+            history.record(6.0, 20.0, "off", "RED", "on", 2)
+        with freeze_time("2026-08-01 10:20:00"):
+            history.record(None, 20.0, "poele", "RED", "off", 0)
+        history.refresh_hp_daily(6, 22)
+        expected = {"2026-08-01": {"readings": 3, "outdoor_temp": 5.0, "poele_minutes": 20,
+                                   "clim_minutes": 10, "radiator_minutes": 10}}
+        assert history.get_hp_daily("2026-07-01") == expected
+        with freeze_time("2026-10-20 10:00:00"):
+            history.purge_old(30)
+        history.refresh_hp_daily(6, 22)
+        assert history.get_hp_daily("2026-07-01") == expected
+
+
 def _all_readings():
     import sqlite3
     history.init_db()
