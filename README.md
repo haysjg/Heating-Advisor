@@ -413,6 +413,20 @@ Une entité `person` dont le téléphone n'envoie plus de position reste figée 
 
 Causes habituelles : localisation de l'app Home Assistant non réglée sur « Toujours autoriser », optimisation de batterie Android, app déconnectée du serveur. Un redémarrage de Home Assistant remet `last_updated` à jour pour toutes les entités : un traqueur figé peut alors être signalé « actif » à tort, puis de nouveau figé après le délai.
 
+### Connecter un téléphone à Home Assistant
+
+Dans l'app Home Assistant du téléphone :
+
+| Réglage | Valeur |
+|---------|--------|
+| Adresse du serveur / URL externe | `https://ha.nas-hays.synology.me` (DDNS Synology, fonctionne aussi hors de la maison) |
+| URL interne | `http://192.168.1.2:8123` (Wi-Fi de la maison uniquement) |
+| SSID du réseau domestique | le Wi-Fi de la maison |
+
+L'URL externe est indispensable à la détection de présence : sans elle, le téléphone ne peut pas envoyer sa position hors du Wi-Fi. Les téléphones ne passent pas par Nabu Casa (aucun cloudhook).
+
+Ensuite : localisation « Toujours autoriser », optimisation de batterie désactivée, puis, dans HA, **Paramètres → Personnes → la personne → Suivre l'appareil** : rattacher le `device_tracker` du téléphone. Si l'app se réenregistre (nouvel appareil, par exemple après une mise à jour de HA), elle crée un nouveau `device_tracker` : l'ancien passe à `unknown`, la personne aussi, et il faut rattacher le nouveau.
+
 ### Surveillance des sources de température mesurée
 
 Météo-France ne servant qu'en secours d'Infoclimat, une clé refusée sur l'une ou l'autre passerait inaperçue. Toutes les 6 h (et 2 min après le démarrage), `modules/source_watch.py` teste chaque source configurée :
