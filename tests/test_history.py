@@ -504,6 +504,30 @@ class TestRecordRadiators:
         assert _radiator_rows()["climate.lecture"] == (20, 1.0, 0.1654)
         assert history.radiators_today(now=self.NOW)["climate.lecture"] == {"on_minutes": 20, "kwh": 1.0, "cost": 0.17}
 
+    def test_metered_coarse_counter_estimated_until_step(self, base_config):
+        # Index au kWh entier : figé pendant la chauffe → estimation provisoire, déduite au saut suivant
+        step = timedelta(minutes=10)
+        rad = lambda on, kwh: [_rad("climate.r", on, power_kw=1.2, metered=True, meter_kwh=kwh)]
+        history.record_radiators(rad(False, 100.0), 0.2, now=self.NOW)
+        history.record_radiators(rad(True, 100.0), 0.2, now=self.NOW + step)
+        assert _radiator_rows()["climate.r"] == (10, 0.2, 0.04)
+        history.record_radiators(rad(True, 101.0), 0.2, now=self.NOW + 2 * step)
+        assert _radiator_rows()["climate.r"] == (20, 1.0, 0.2)
+
+    def test_metered_coarse_estimate_capped_and_uses_observed_power(self, base_config):
+        step = timedelta(minutes=10)
+        # Jours précédents : 1 kWh pour 300 min de chauffe → 0,2 kW en moyenne
+        with history._connect() as conn:
+            conn.execute("INSERT INTO radiator_daily VALUES ('2026-11-13', 'climate.r', 300, 1.0, 0.2)")
+        history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=50.0)], 0.2, now=self.NOW)
+        history.record_radiators([_rad("climate.r", True, metered=True, meter_kwh=50.0)], 0.2, now=self.NOW + step)
+        assert history.radiators_today(now=self.NOW)["climate.r"]["kwh"] == round(0.2 / 6, 2)
+        # Compteur figé très longtemps : jamais plus d'un pas d'index estimé
+        for i in range(2, 40):
+            history.record_radiators([_rad("climate.r", True, metered=True, meter_kwh=50.0)], 0.2,
+                                     now=self.NOW + i * step)
+        assert history.radiators_today(now=self.NOW)["climate.r"]["kwh"] == 1.0
+
     def test_metered_unavailable_then_catch_up(self, base_config):
         step = timedelta(minutes=10)
         history.record_radiators([_rad("climate.r", False, metered=True, meter_kwh=10.0)], 0.2, now=self.NOW)

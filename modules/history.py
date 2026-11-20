@@ -715,6 +715,21 @@ def season_balance(reports: list[dict], today: date | None = None) -> dict:
 # Au-delà de cet écart entre deux relevés du compteur d'un radiateur (appli arrêtée), on repart du relevé
 # courant plutôt que d'attribuer d'un bloc à l'intervalle en cours une consommation d'heures passées
 RADIATOR_METER_MAX_GAP = timedelta(hours=6)
+RADIATOR_METER_PENDING_MAX_KWH = 1.0        # estimation entre deux sauts du compteur : jamais plus d'un pas d'index
+RADIATOR_AVG_KW_DAYS = 14
+RADIATOR_AVG_KW_MIN_MINUTES = 120           # minutes de chauffe avant de se fier à la puissance moyenne observée
+
+
+def _radiator_avg_kw(conn, entity_id: str, power_kw: float, day: str) -> float:
+    """Puissance moyenne d'un radiateur mesuré pendant sa chauffe, sur les jours précédents (≤ sa pleine puissance) ;
+    pleine puissance tant que l'historique est trop court."""
+    start = (date.fromisoformat(day) - timedelta(days=RADIATOR_AVG_KW_DAYS)).isoformat()
+    minutes, kwh = conn.execute(
+        "SELECT COALESCE(SUM(on_minutes), 0), COALESCE(SUM(kwh), 0) FROM radiator_daily "
+        "WHERE entity_id = ? AND day >= ? AND day < ?", (entity_id, start, day)).fetchone()
+    if minutes < RADIATOR_AVG_KW_MIN_MINUTES:
+        return power_kw
+    return min(kwh / (minutes / 60), power_kw)
 
 
 def record_radiators(radiators: list, price: float, now: datetime | None = None) -> None:
@@ -723,6 +738,8 @@ def record_radiators(radiators: list, price: float, now: datetime | None = None)
 
     Radiateur mesuré : kWh = écart avec le relevé précédent du compteur (radiator_meter), au tarif du moment ;
     compteur indisponible → rien n'est compté, l'écart sera rattrapé au relevé suivant.
+    Compteur figé alors que le radiateur chauffe (index au kWh entier) : estimation provisoire à sa puissance
+    moyenne observée, plafonnée à RADIATOR_METER_PENDING_MAX_KWH et déduite du saut suivant du compteur.
     Sans compteur, estimation haute : un radiateur en chauffe est compté à pleine puissance.
     """
     now = now or datetime.now()
@@ -738,12 +755,23 @@ def record_radiators(radiators: list, price: float, now: datetime | None = None)
                     kwh = 0.0
                     current = r.get("meter_kwh")
                     if current is not None:
-                        prev = conn.execute("SELECT kwh, ts FROM radiator_meter WHERE entity_id = ?",
+                        prev = conn.execute("SELECT kwh, ts, pending_kwh FROM radiator_meter WHERE entity_id = ?",
                                             (r["entity_id"],)).fetchone()
+                        pending = 0.0
                         if prev and current >= prev[0] and now - datetime.fromisoformat(prev[1]) <= RADIATOR_METER_MAX_GAP:
-                            kwh = current - prev[0]
-                        conn.execute("INSERT OR REPLACE INTO radiator_meter (entity_id, kwh, ts) VALUES (?, ?, ?)",
-                                     (r["entity_id"], current, ts))
+                            delta = current - prev[0]
+                            if delta > 0:
+                                # Saut du compteur : l'estimation déjà comptée en est déduite
+                                kwh = max(delta - prev[2], 0.0)
+                            elif r["on"]:
+                                pending = prev[2]
+                                kwh = min(_radiator_avg_kw(conn, r["entity_id"], r["power_kw"], day) * 10 / 60,
+                                          max(RADIATOR_METER_PENDING_MAX_KWH - pending, 0.0))
+                                pending += kwh
+                            else:
+                                pending = prev[2]
+                        conn.execute("INSERT OR REPLACE INTO radiator_meter (entity_id, kwh, ts, pending_kwh) "
+                                     "VALUES (?, ?, ?, ?)", (r["entity_id"], current, ts, pending))
                 if minutes or kwh:
                     rows.append((day, r["entity_id"], minutes, kwh, kwh * price))
             conn.executemany(

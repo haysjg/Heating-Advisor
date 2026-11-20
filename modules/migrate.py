@@ -327,6 +327,12 @@ def _migrate_015(conn):
     """)
 
 
+def _migrate_016(conn):
+    """radiator_meter.pending_kwh : kWh estimés déjà comptés depuis le dernier saut du compteur, pour les compteurs
+    à faible résolution (kWh entier) qui restent figés pendant des heures alors que le radiateur chauffe."""
+    conn.execute("ALTER TABLE radiator_meter ADD COLUMN pending_kwh REAL NOT NULL DEFAULT 0")
+
+
 # Liste ordonnée des migrations. L'index+1 correspond au numéro de version.
 MIGRATIONS = [
     _migrate_001,
@@ -344,6 +350,7 @@ MIGRATIONS = [
     _migrate_013,
     _migrate_014,
     _migrate_015,
+    _migrate_016,
 ]
 
 

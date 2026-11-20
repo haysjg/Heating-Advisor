@@ -94,8 +94,11 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
   (minutes de chauffe, kWh et coût par jour et par radiateur, alimentée toutes les 10 min avec l'historique).
   Radiateur avec **compteur d'énergie** HA (`energy_entity_id`, `sensor.*` en Wh/kWh/MWh) : kWh réels = écart avec
   le relevé précédent (`radiator_meter`), au tarif du moment ; compteur indisponible → rattrapé au relevé suivant ;
-  compteur qui recule ou relevé de plus de 6 h → nouvelle référence sans rien compter. Sans compteur : estimation
-  à pleine puissance pendant la chauffe.
+  compteur qui recule ou relevé de plus de 6 h → nouvelle référence sans rien compter. Compteur figé pendant la
+  chauffe (index au kWh entier, qui ne saute qu'une fois par heure ou moins) : estimation provisoire à la puissance
+  moyenne observée du radiateur sur 14 jours (pleine puissance sous 2 h d'historique), plafonnée à 1 kWh et déduite
+  du saut suivant (`radiator_meter.pending_kwh`, migration 16) — le coût du jour avance au lieu de rester à 0 €.
+  Sans compteur : estimation à pleine puissance pendant la chauffe.
 - **Compteur « dépensés depuis minuit »** façon odomètre (4 décimales, chiffres qui roulent) : coût du jour du
   serveur (`today_cost`, compté jusqu'à `today_cost_as_of` = dernière lecture + 10 min) interpolé côté navigateur
   au coût horaire en cours, sans jamais reculer, remis à zéro à minuit. L'écart avec le serveur se résorbe en
