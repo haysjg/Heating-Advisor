@@ -732,6 +732,16 @@ def _radiator_avg_kw(conn, entity_id: str, power_kw: float, day: str) -> float:
     return min(kwh / (minutes / 60), power_kw)
 
 
+def radiator_avg_kw(entity_id: str, power_kw: float, now: datetime | None = None) -> float:
+    """Puissance moyenne observée d'un radiateur mesuré pendant sa chauffe (coût horaire en cours de l'accueil)."""
+    try:
+        with _connect() as conn:
+            return _radiator_avg_kw(conn, entity_id, power_kw, (now or datetime.now()).date().isoformat())
+    except Exception as e:
+        logger.error("History : puissance moyenne du radiateur %s illisible : %s", entity_id, e)
+        return power_kw
+
+
 def record_radiators(radiators: list, price: float, now: datetime | None = None) -> None:
     """Ajoute l'intervalle de 10 min écoulé à radiator_daily, pour chaque radiateur :
     {"entity_id", "on" (en chauffe), "power_kw", "metered" (compteur d'énergie HA configuré), "meter_kwh"}.
@@ -854,5 +864,6 @@ def heating_today(config: dict, now: datetime | None = None) -> dict:
     costs = result["today_cost"]
     costs["radiateurs"] = radiator_cost
     costs["total"] = costs["poele"] + costs["clim"] + costs["radiateurs"]
-    result["today_cost"] = {k: round(v, 2) for k, v in costs.items()}
+    # Total à 4 décimales : base du compteur « dépensés depuis minuit », qui en affiche 4
+    result["today_cost"] = {k: round(v, 4 if k == "total" else 2) for k, v in costs.items()}
     return result

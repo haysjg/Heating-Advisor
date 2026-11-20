@@ -104,6 +104,8 @@ tuyaux des appareils en chauffe ; les appareils à l'arrêt s'estompent, ceux ab
   au coût horaire en cours, sans jamais reculer, remis à zéro à minuit. L'écart avec le serveur se résorbe en
   ~5 min : en avance (radiateurs estimés à pleine puissance, appareil allumé entre deux relevés), le compteur
   ralentit au quart du coût horaire au lieu de se figer ; en retard de plus de 5 centimes, il saute.
+  `today_cost` total à 4 décimales et coût horaire d'un radiateur mesuré à sa puissance moyenne observée
+  (`history.radiator_avg_kw`), pour que le compteur ne prenne pas d'avance qu'un rechargement effacerait.
 - Jour rouge : clim « exclue », radiateurs « coupés » quand l'appli les a éteints.
 - **Flux proportionnel** : vitesse et épaisseur des impulsions de chaque appareil selon son coût horaire
   (racine carrée, plafond `FLOW_COST_MAX` = 1,5 €/h dans `script.js`).

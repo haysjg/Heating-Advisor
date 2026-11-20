@@ -178,6 +178,21 @@ def test_linky_test_utilise_les_valeurs_du_formulaire(client, app_module, monkey
 
 # ── Flux d'énergie de l'accueil ───────────────────────────────────────────
 
+def test_heating_flow_metered_radiator_uses_observed_power(app_module, monkeypatch):
+    # Radiateur mesuré qui chauffe en moyenne à 0,2 kW : le compteur ne doit pas filer à pleine puissance
+    monkeypatch.setattr(app_module.history_module, "heating_today",
+                        lambda cfg: {"since": {"poele": None, "clim": None},
+                                     "today_cost": {"poele": 0, "clim": 0, "total": 0.0123}})
+    monkeypatch.setattr(app_module.history_module, "radiator_avg_kw", lambda entity_id, power: 0.2)
+    data = {"tempo": {"today": {"color": "BLUE", "label": "Bleu"}, "current_period": "HC"}}
+    radiateurs = [{"entity_id": "climate.r", "name": "Salon", "state": "auto", "on": True, "known": True,
+                   "metered": True}]
+    f = app_module._heating_flow(data, {"state": "off"}, None, radiateurs)
+    price = app_module.config.TEMPO_PRICES["BLUE"]["HC"]
+    assert f["cost_per_hour"] == round(0.2 * price, 4)
+    assert f["today_cost"] == 0.0123
+
+
 def test_heating_flow_jour_rouge(app_module, monkeypatch):
     monkeypatch.setattr(app_module.history_module, "heating_today",
                         lambda cfg: {"since": {"poele": "2026-11-14T13:00:00", "clim": None},
@@ -201,7 +216,7 @@ def test_heating_flow_jour_rouge(app_module, monkeypatch):
     # Suivi seul (non piloté) mais bien présent ; en chauffe d'après hvac_action
     assert lecture["power_kw"] == 2.0 and lecture["metered"] and lecture["today_kwh"] == 1.0
     assert lecture["cost_per_hour"] == round(2.0 * app_module.config.TEMPO_PRICES["RED"]["HP"], 2)
-    assert f["cost_per_hour"] == round(f["poele"]["cost_per_hour"] + lecture["cost_per_hour"], 2)
+    assert round(f["cost_per_hour"], 2) == round(f["poele"]["cost_per_hour"] + lecture["cost_per_hour"], 2)
     assert f["today_cost"] == 1.2 and f["indoor"] == 20.1
 
 

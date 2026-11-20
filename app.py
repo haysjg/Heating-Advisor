@@ -1120,17 +1120,19 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
     pellet = _pellet_status()
     poele_cost = compute_poele_cost(config.POELE).get("cost_per_hour", 0) if poele_on else 0
     clim_cost = history_module.clim_electric_kw(outdoor, config.CLIM) * price if clim_on else 0
-    radiator_items = []
+    radiator_items, radiators_cost = [], 0.0
     for r in radiateurs_info:
         on = bool(r.get("on"))
         power = _radiator_power(r.get("entity_id", ""))
+        # Radiateur mesuré : sa puissance moyenne observée, pas la pleine puissance (thermostat qui module)
+        draw = history_module.radiator_avg_kw(r.get("entity_id", ""), power) if r.get("metered") and on else power
         radiator_items.append({"name": r.get("name") or r.get("entity_id", ""),
                                "known": bool(r.get("known")),
                                "on": on, "off": r.get("state") == "off", "cut": bool(r.get("managed_off")),
                                "power_kw": power, "metered": bool(r.get("metered")),
                                "today_kwh": r.get("today_kwh", 0.0), "today_cost": r.get("today_cost", 0.0),
-                               "cost_per_hour": round(power * price, 2) if on else 0})
-    radiators_cost = sum(item["cost_per_hour"] for item in radiator_items)
+                               "cost_per_hour": round(draw * price, 2) if on else 0})
+        radiators_cost += draw * price if on else 0
     indoor = data.get("indoor") or {}
     return {
         "tempo": {"color": color, "period": period, "label": (tempo.get("today") or {}).get("label", "")},
@@ -1152,7 +1154,8 @@ def _heating_flow(data: dict, poele_ha: dict | None, clim_ha: dict | None, radia
                        "items": radiator_items},
         "indoor": indoor.get("temperature"),
         "comfort": [config.THERMOSTAT.get("temp_on"), config.THERMOSTAT.get("temp_off")],
-        "cost_per_hour": round(poele_cost + clim_cost + radiators_cost, 2),
+        # 4 décimales : le compteur « dépensés depuis minuit » avance à ce rythme (quelques centimes par heure)
+        "cost_per_hour": round(poele_cost + clim_cost + radiators_cost, 4),
         "today_cost": today["today_cost"]["total"],
         "timeline": today.get("timeline", []),
         "hp": [config.HP_START, config.HP_END],
