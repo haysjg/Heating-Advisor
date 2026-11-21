@@ -22,8 +22,11 @@ OBSERVATIONS = {
 
 
 @pytest.fixture(autouse=True)
-def reset_state():
+def reset_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(weather, "BIAS_FILE", str(tmp_path / "station_bias.json"))
+
     def _reset():
+        weather._last_choice = None
         weather._last_known = None
         weather._last_measured = None
         weather._mf_token = None
@@ -72,7 +75,7 @@ class TestSourceOrder:
         assert result["measured"] is True
         assert result["source"] == "Infoclimat Massy"
         assert result["observed_at"]
-        mf.assert_not_called()  # Météo-France sollicité seulement si Infoclimat n'a rien donné
+        assert mf.call_count == 2  # toutes les stations interrogées (fraîcheur, écart appris)
 
     @freeze_time("2026-11-01 08:00:00")
     def test_meteofrance_when_infoclimat_down(self):
@@ -111,6 +114,94 @@ class TestSourceOrder:
         result, mf = _current(openmeteo=12.0, observations={})
         assert result["source"] == "Open-Meteo"
         mf.assert_not_called()
+
+
+class TestFreshestStation:
+    """Massy en retard : la station la plus fraîche prend le relais, avec l'écart appris."""
+
+    MASSY = "ME113"
+
+    def _massy(self, temp, observed):
+        return {self.MASSY: {**_obs(temp, observed), "name": "Massy"}}
+
+    @freeze_time("2026-11-01 17:00:00")
+    def test_late_reference_replaced_by_fresher_station(self):
+        result, _ = _current(mf={"91000001": _obs(8.0, "2026-11-01T16:48:00Z")},
+                             ic=self._massy(9.0, "2026-11-01 15:40:00"))
+        assert result["source"] == "Météo-France Station Un"
+        assert result["temperature"] == 8.0  # pas encore d'écart appris : mesure brute
+
+    @freeze_time("2026-11-01 17:00:00")
+    def test_reference_kept_when_fresh_enough(self):
+        result, _ = _current(mf={"91000001": _obs(8.0, "2026-11-01T16:54:00Z")},
+                             ic=self._massy(9.0, "2026-11-01 16:40:00"))
+        assert result["source"] == "Infoclimat Massy"
+
+    @freeze_time("2026-11-01 17:00:00")
+    def test_small_freshness_gain_keeps_preferred_order(self):
+        # Massy à 45 min, Villacoublay à 35 min : 10 min de mieux seulement, Massy gardée
+        result, _ = _current(mf={"91000001": _obs(8.0, "2026-11-01T16:25:00Z")},
+                             ic=self._massy(9.0, "2026-11-01 16:15:00"))
+        assert result["source"] == "Infoclimat Massy"
+
+    def test_learned_bias_applied_to_fallback(self):
+        for hour in ("13", "14", "15"):
+            with freeze_time(f"2026-11-01 {hour}:05:00"):
+                _current(mf={"91000001": _obs(8.0, f"2026-11-01T{hour}:00:00Z")},
+                         ic=self._massy(8.6, f"2026-11-01 {hour}:00:00"))
+        with freeze_time("2026-11-01 17:00:00"):
+            result, _ = _current(mf={"91000001": _obs(7.5, "2026-11-01T16:48:00Z")},
+                                 ic=self._massy(9.0, "2026-11-01 15:40:00"))
+        assert result["temperature"] == 8.1
+        assert result["source"] == "Météo-France Station Un (corrigée +0,6 °C)"
+
+    def test_same_reference_measurement_counted_once(self):
+        for minute in ("05", "35"):
+            with freeze_time(f"2026-11-01 13:{minute}:00"):
+                _current(mf={"91000001": _obs(8.0, "2026-11-01T13:00:00Z")},
+                         ic=self._massy(8.6, "2026-11-01 13:00:00"))
+        bias = json.load(open(weather.BIAS_FILE))
+        assert bias["stations"]["meteofrance:91000001"]["samples"] == 1
+
+    def test_stale_bias_not_applied(self):
+        for hour in ("01", "02", "03"):
+            with freeze_time(f"2026-11-01 {hour}:05:00"):
+                _current(mf={"91000001": _obs(8.0, f"2026-11-01T{hour}:00:00Z")},
+                         ic=self._massy(8.6, f"2026-11-01 {hour}:00:00"))
+        with freeze_time("2026-11-01 17:00:00"):
+            result, _ = _current(mf={"91000001": _obs(7.5, "2026-11-01T16:48:00Z")})
+        assert result["temperature"] == 7.5
+
+    def test_outlier_sample_ignored(self):
+        with freeze_time("2026-11-01 13:05:00"):
+            _current(mf={"91000001": _obs(8.0, "2026-11-01T13:00:00Z")},
+                     ic=self._massy(19.0, "2026-11-01 13:00:00"))
+        assert not weather.os.path.exists(weather.BIAS_FILE)
+
+    def test_sticky_choice_avoids_flip_flop(self):
+        with freeze_time("2026-11-01 17:00:00"):
+            first, _ = _current(mf={"91000001": _obs(8.0, "2026-11-01T16:48:00Z")},
+                                ic=self._massy(9.0, "2026-11-01 15:40:00"))
+        assert first["source"].startswith("Météo-France")
+        # Massy revient à 25 min : pas assez fraîche pour reprendre la main (anti-saut)
+        with freeze_time("2026-11-01 17:30:00"):
+            second, _ = _current(mf={"91000001": _obs(8.1, "2026-11-01T17:18:00Z")},
+                                 ic=self._massy(9.0, "2026-11-01 17:05:00"))
+        assert second["source"].startswith("Météo-France")
+        # Massy à 10 min : elle reprend la main
+        with freeze_time("2026-11-01 18:00:00"):
+            third, _ = _current(mf={"91000001": _obs(8.1, "2026-11-01T17:48:00Z")},
+                                ic=self._massy(9.0, "2026-11-01 17:50:00"))
+        assert third["source"] == "Infoclimat Massy"
+
+    def test_sticky_reference_tolerates_slight_delay(self):
+        with freeze_time("2026-11-01 16:00:00"):
+            _current(mf={"91000001": _obs(8.0, "2026-11-01T15:54:00Z")}, ic=self._massy(9.0, "2026-11-01 15:50:00"))
+        # Massy à 35 min (au-delà des 30 min) mais tolérée grâce à l'anti-saut
+        with freeze_time("2026-11-01 16:30:00"):
+            result, _ = _current(mf={"91000001": _obs(8.0, "2026-11-01T16:24:00Z")},
+                                 ic=self._massy(9.0, "2026-11-01 15:55:00"))
+        assert result["source"] == "Infoclimat Massy"
 
 
 class TestFallbacks:

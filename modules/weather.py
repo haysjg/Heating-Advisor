@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import logging
+import os
 import re
 import time
 import urllib.error
@@ -15,6 +16,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+from modules import jsonstore
 from modules.crypto import decrypt_password
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,25 @@ LAST_KNOWN_MAX_AGE_HOURS = 3
 _last_known: dict | None = None
 _last_measured: dict | None = None
 _paused_until: dict[str, datetime] = {}
+
+# Choix de la station : la station de référence (la première configurée, la plus proche) est gardée
+# tant que sa mesure a moins de FRESH_MINUTES ; sinon la plus fraîche, une station mieux classée
+# restant préférée si elle n'a que PREFERENCE_MARGIN_MINUTES de retard de plus.
+FRESH_MINUTES = 30
+PREFERENCE_MARGIN_MINUTES = 15
+# Anti-saut : la station retenue au tour précédent bénéficie de STICKY_MINUTES de tolérance,
+# une station mieux classée ne la remplace qu'avec STICKY_MINUTES d'avance.
+STICKY_MINUTES = 10
+_last_choice: str | None = None
+
+# Écart appris entre la station de référence et chaque station de secours (référence − secours),
+# ajouté à la mesure d'une station de secours quand elle est retenue.
+BIAS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "station_bias.json")
+BIAS_PAIR_MINUTES = 10        # mesures simultanées à 10 min près
+BIAS_ALPHA = 0.3              # moyenne glissante : ~2 h pour suivre un changement (jour/nuit, vent)
+BIAS_MAX_SAMPLE = 5.0         # écart plus grand : valeur aberrante, ignorée
+BIAS_MIN_SAMPLES = 3
+BIAS_MAX_AGE_HOURS = 12       # écart pas réappris depuis : plus appliqué
 
 # Les API officielles reçoivent un User-Agent honnête (pas d'imitation de navigateur)
 API_HEADERS = {"User-Agent": "heating-advisor/1.0 (usage personnel)"}
@@ -434,23 +455,97 @@ def get_tomorrow_forecast_openmeteo(lat: float, lon: float, hp_start: int = 6, h
 
 # ── Point d'entrée ────────────────────────────────────────────
 
-def _measurements(observations: dict):
-    """Mesures de station, dans l'ordre de préférence : (libellé, {"temperature", "observed_at"})."""
+def _measurements(observations: dict) -> tuple[str | None, list]:
+    """Mesures de toutes les stations configurées, dans l'ordre de préférence.
+
+    Retourne (clé de la station de référence, [(clé, libellé, {"temperature", "observed_at"})]).
+    Toutes les stations sont interrogées : il faut leurs mesures pour choisir la plus fraîche
+    et pour apprendre l'écart avec la référence."""
+    reference, found_all = None, []
     # Infoclimat d'abord : la station de Massy (2 km) est la plus représentative de la maison
     ic_token = decrypt_password(observations.get("infoclimat_token", ""))
     ic_stations = observations.get("infoclimat_stations") or []
     if ic_token and ic_stations:
+        reference = f"infoclimat:{ic_stations[0]}"
         found = get_temperatures_infoclimat(ic_stations, ic_token)
         for sid in ic_stations:
             if sid in found:
-                yield f"Infoclimat {found[sid]['name'] or sid}", found[sid]
+                found_all.append((f"infoclimat:{sid}", f"Infoclimat {found[sid]['name'] or sid}", found[sid]))
 
     mf_id = decrypt_password(observations.get("meteofrance_application_id", ""))
-    if mf_id:
-        for sid in observations.get("meteofrance_stations") or []:
+    mf_stations = observations.get("meteofrance_stations") or []
+    if mf_id and mf_stations:
+        reference = reference or f"meteofrance:{mf_stations[0]}"
+        for sid in mf_stations:
             obs = get_temperature_meteofrance(sid, mf_id)
             if obs:
-                yield f"Météo-France {meteofrance_station_name(sid, mf_id)}", obs
+                found_all.append((f"meteofrance:{sid}", f"Météo-France {meteofrance_station_name(sid, mf_id)}", obs))
+    return reference, found_all
+
+
+def _choose_station(candidates: list) -> dict | None:
+    """Station retenue parmi les mesures récentes (ordre de préférence), avec l'anti-saut."""
+    if not candidates:
+        return None
+    best_age = min(c["age"] for c in candidates)
+
+    def eligible(c, slack):
+        return c["age"] <= max(FRESH_MINUTES, best_age + PREFERENCE_MARGIN_MINUTES) + slack
+
+    previous = next((c for c in candidates if c["key"] == _last_choice), None)
+    if previous and eligible(previous, STICKY_MINUTES):
+        better = [c for c in candidates[:candidates.index(previous)] if eligible(c, -STICKY_MINUTES)]
+        return better[0] if better else previous
+    return next(c for c in candidates if eligible(c, 0))
+
+
+def _load_bias(reference: str) -> dict:
+    data = jsonstore.load(BIAS_FILE, {})
+    if not isinstance(data, dict) or data.get("reference") != reference:
+        return {"reference": reference, "stations": {}}  # référence changée : on réapprend
+    return data
+
+
+def _learn_bias(candidates: list, reference: str | None, now: datetime) -> None:
+    """Met à jour l'écart référence − station pour chaque mesure simultanée à celle de la référence."""
+    ref = next((c for c in candidates if c["key"] == reference), None)
+    if not ref:
+        return
+    pair = ref["obs"]["observed_at"].isoformat()
+    with jsonstore.lock_for(BIAS_FILE):
+        data = _load_bias(reference)
+        changed = False
+        for c in candidates:
+            if c is ref:
+                continue
+            if abs((c["obs"]["observed_at"] - ref["obs"]["observed_at"]).total_seconds()) > BIAS_PAIR_MINUTES * 60:
+                continue
+            entry = data["stations"].get(c["key"]) or {}
+            sample = ref["obs"]["temperature"] - c["obs"]["temperature"]
+            if entry.get("pair") == pair or abs(sample) > BIAS_MAX_SAMPLE:
+                continue  # mesure de référence déjà comptée, ou écart aberrant
+            offset = sample if not entry.get("samples") else entry["offset"] + BIAS_ALPHA * (sample - entry["offset"])
+            data["stations"][c["key"]] = {"offset": round(offset, 2), "samples": entry.get("samples", 0) + 1,
+                                          "pair": pair, "updated_at": now.isoformat()}
+            changed = True
+        if changed:
+            jsonstore.save(BIAS_FILE, data)
+
+
+def _bias_for(key: str, reference: str | None, now: datetime) -> float | None:
+    """Écart à ajouter à la mesure de la station `key`, None si inconnu ou périmé."""
+    if not reference or key == reference:
+        return None
+    entry = _load_bias(reference)["stations"].get(key) or {}
+    if entry.get("samples", 0) < BIAS_MIN_SAMPLES:
+        return None
+    try:
+        updated = datetime.fromisoformat(entry["updated_at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if now - updated > timedelta(hours=BIAS_MAX_AGE_HOURS):
+        return None
+    return entry["offset"]
 
 
 def get_current_temperature(config: dict, observations: dict | None = None) -> dict:
@@ -458,8 +553,9 @@ def get_current_temperature(config: dict, observations: dict | None = None) -> d
     Retourne la température extérieure avec la source utilisée.
     config = LOCATION dict depuis config.py, observations = OBSERVATIONS dict.
 
-    Ordre : stations Infoclimat → stations Météo-France → dernière mesure (≤ 1 h)
-    → Open-Meteo (modèle) → dernière valeur connue (≤ 3 h).
+    Ordre : mesure de station récente (voir _choose_station ; une station de secours reçoit
+    l'écart appris avec la référence) → dernière mesure (≤ 1 h) → Open-Meteo (modèle)
+    → dernière valeur connue (≤ 3 h).
     "measured" distingue une mesure de station d'une valeur de modèle.
     """
     global _last_known, _last_measured
@@ -470,14 +566,32 @@ def get_current_temperature(config: dict, observations: dict | None = None) -> d
     max_age = float(observations.get("max_age_minutes", OBSERVATION_MAX_AGE_MINUTES))
 
     # 1. Mesures de station récentes
-    for label, obs in _measurements(observations):
+    global _last_choice
+    reference, measurements = _measurements(observations)
+    candidates = []
+    for key, label, obs in measurements:
         age = _age_minutes(obs["observed_at"])
         if age > max_age:
             logger.info("%s : mesure trop ancienne (%d min), ignorée", label, age)
             continue
-        observed = obs["observed_at"].astimezone().strftime("%Hh%M")
-        result.update(temperature=obs["temperature"], source=label, measured=True, observed_at=observed)
-        _last_measured = {"temperature": obs["temperature"], "source": label, "observed_at": observed, "at": now}
+        candidates.append({"key": key, "label": label, "obs": obs, "age": age})
+    try:
+        _learn_bias(candidates, reference, now)
+    except Exception as e:  # l'apprentissage ne doit jamais priver de température
+        logger.warning("Écart entre stations non mis à jour : %s", e)
+    chosen = _choose_station(candidates)
+    if chosen:
+        _last_choice = chosen["key"]
+        temp, label = chosen["obs"]["temperature"], chosen["label"]
+        offset = _bias_for(chosen["key"], reference, now)
+        if offset is not None and round(offset, 1) != 0:
+            temp = round(temp + offset, 1)
+            label = f"{label} (corrigée {offset:+.1f} °C)".replace(".", ",")
+        if chosen["key"] != reference:
+            logger.info("Température extérieure : %s retenue (mesure de %d min)", label, chosen["age"])
+        observed = chosen["obs"]["observed_at"].astimezone().strftime("%Hh%M")
+        result.update(temperature=temp, source=label, measured=True, observed_at=observed)
+        _last_measured = {"temperature": temp, "source": label, "observed_at": observed, "at": now}
         _last_known = {**_last_measured, "measured": True}
         return result
 

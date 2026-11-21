@@ -186,7 +186,7 @@ Le système le moins cher est recommandé.
 
 | Fonction | Description |
 |---|---|
-| `get_current_temperature(config, observations)` | Récupère la température extérieure **mesurée** : stations Infoclimat (une seule requête), puis stations Météo-France (API DPObs v2, OAuth2), chacune dans l'ordre configuré. Une mesure plus vieille que `max_age_minutes` est ignorée. Sans mesure récente : dernière mesure obtenue il y a moins de 1 h, puis modèle **Open-Meteo** (badge « modèle »), puis dernière valeur connue de moins de 3 h ; sans aucune valeur, la recommandation vaut `unknown` et le thermostat garde le système en cours. Une source est mise en pause 1 h après un HTTP 429. |
+| `get_current_temperature(config, observations)` | Récupère la température extérieure **mesurée** : toutes les stations sont interrogées à chaque rafraîchissement (Infoclimat en une seule requête, puis Météo-France, API DPObs v2, OAuth2) et une mesure plus vieille que `max_age_minutes` est ignorée. La station de référence (la première configurée, Massy) est retenue tant que sa mesure a moins de 30 min ; sinon la plus fraîche, une station mieux classée restant préférée si elle n'a que 15 min de retard de plus. Anti-saut : la station retenue au tour précédent garde 10 min de tolérance, et une station mieux classée ne reprend la main qu'avec 10 min d'avance. Une station de secours reçoit l'écart appris avec la référence (moyenne glissante des écarts entre mesures simultanées à 10 min près, dans `data/station_bias.json`, appliquée après 3 mesures et tant qu'elle a moins de 12 h) : la source affichée l'indique, par ex. « Météo-France Villacoublay (corrigée +0,6 °C) ». Sans mesure récente : dernière mesure obtenue il y a moins de 1 h, puis modèle **Open-Meteo** (badge « modèle »), puis dernière valeur connue de moins de 3 h ; sans aucune valeur, la recommandation vaut `unknown` et le thermostat garde le système en cours. Une source est mise en pause 1 h après un HTTP 429. |
 | `get_tomorrow_weather(config)` | Récupère la température moyenne prévue pour demain via Open-Meteo. |
 | `get_hourly_forecast(lat, lon, hours)` | Récupère les prévisions horaires sur N heures via Open-Meteo (utilisé pour le graphique du dashboard). |
 
@@ -435,7 +435,7 @@ Ensuite : localisation « Toujours autoriser », optimisation de batterie désac
 
 ### Surveillance des sources de température mesurée
 
-Météo-France ne servant qu'en secours d'Infoclimat, une clé refusée sur l'une ou l'autre passerait inaperçue. Toutes les 6 h (et 2 min après le démarrage), `modules/source_watch.py` teste chaque source configurée :
+Une station de secours n'étant retenue que lorsque Massy est en retard, une clé refusée sur l'une ou l'autre source passerait inaperçue. Toutes les 6 h (et 2 min après le démarrage), `modules/source_watch.py` teste chaque source configurée :
 - identifiants refusés (clé Infoclimat liée à une IP publique qui a changé, Application ID ou abonnement Météo-France refusé) : notification ntfy « 🔑 … refuse les identifiants » immédiate, avec la marche à suivre ;
 - autre panne : « ⚠️ … ne répond plus » si elle dure 2 tests de suite ;
 - une seule alerte par épisode, puis « ✅ … répond de nouveau ».
