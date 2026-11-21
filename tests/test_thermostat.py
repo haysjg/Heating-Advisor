@@ -1012,3 +1012,47 @@ class TestOptimalStart:
         cfg = self._cfg(base_thermostat_cfg, "pilot")
         with patch("modules.warmup.plan", side_effect=RuntimeError("boom")):
             self._run(cfg, base_ha_cfg, "2025-01-06 05:45:00", 19.9).assert_called_once()
+
+
+class TestUnknownPresence:
+    """Traqueur inconnu (téléphone déconnecté) : présence indéterminée, jamais d'extinction pour absence."""
+
+    @pytest.fixture
+    def store(self):
+        data = {"state": {
+            "state": "on", "active_system": "poele", "sensor_failures": 0, "suspended_until": None,
+            "away_since": "2025-01-06T09:00:00",
+            "system_history": {"poele": {"last_turned_on": "2025-01-06T07:00:00", "last_turned_off": None},
+                               "clim": {"last_turned_on": None, "last_turned_off": None}},
+        }}
+        with patch("modules.thermostat._load_state", side_effect=lambda: dict(data["state"])), \
+             patch("modules.thermostat._save_state", side_effect=lambda s: data.__setitem__("state", s)), \
+             patch("modules.thermostat.is_on_vacation", return_value=False), \
+             patch("modules.thermostat.is_in_absence_schedule", return_value=False), \
+             freeze_time("2025-01-06 10:00:00"):
+            yield data
+
+    def _check(self, base_ha_cfg, base_thermostat_cfg, presence):
+        cfg = {**base_thermostat_cfg, "presence_enabled": True, "person_entities": ["person.a", "person.b"],
+               "away_grace_minutes": 5}
+        with patch("modules.homeassistant.get_indoor_climate", return_value={"temperature": 19.0, "humidity": 50.0}), \
+             patch("modules.homeassistant.get_state", return_value={"state": "heat"}), \
+             patch("modules.homeassistant.get_presence", return_value=presence), \
+             patch("modules.homeassistant.turn_off", return_value=True) as off, \
+             patch("modules.ntfy_push.send"):
+            check_and_apply(base_ha_cfg, cfg, "poele", ntfy_cfg={"enabled": True})
+        return off
+
+    def test_indeterminate_keeps_heating_and_resets_grace(self, store, base_ha_cfg, base_thermostat_cfg):
+        self._check(base_ha_cfg, base_thermostat_cfg, None).assert_not_called()
+        assert store["state"]["state"] == "on"
+        assert store["state"]["away_since"] is None
+
+    def test_away_after_indeterminate_restarts_grace(self, store, base_ha_cfg, base_thermostat_cfg):
+        self._check(base_ha_cfg, base_thermostat_cfg, None)
+        self._check(base_ha_cfg, base_thermostat_cfg, False).assert_not_called()
+        assert store["state"]["away_since"] == "2025-01-06T10:00:00"
+
+    def test_confirmed_absence_still_turns_off(self, store, base_ha_cfg, base_thermostat_cfg):
+        self._check(base_ha_cfg, base_thermostat_cfg, False).assert_called_once()
+        assert store["state"]["state"] == "off"

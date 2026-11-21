@@ -126,6 +126,34 @@ def test_find_energy_sensor_rejects_bad_entity(session):
     session.post.assert_not_called()
 
 
+class TestUnknownPresence:
+    @pytest.fixture
+    def states(self, session):
+        states = list(STATES) + [
+            {"entity_id": "person.home", "state": "home"},
+            {"entity_id": "person.lost", "state": "unknown"},
+            {"entity_id": "person.off", "state": "unavailable"},
+        ]
+        session.request.side_effect = lambda method, url, **kw: _resp(states)
+        return states
+
+    @pytest.mark.parametrize("lost", ["person.lost", "person.off"])
+    def test_unknown_with_others_away_is_indeterminate(self, states, lost):
+        assert ha.get_presence_extended(CFG, ["person.a", lost], "nearby") is None
+        assert ha.get_presence(CFG, ["person.a", lost]) is None
+
+    def test_unknown_with_someone_nearby_is_indeterminate(self, states):
+        assert ha.get_presence_extended(CFG, ["person.b", "person.lost"], "nearby") is None
+
+    def test_someone_home_wins_over_unknown(self, states):
+        assert ha.get_presence_extended(CFG, ["person.lost", "person.home"], "nearby") == "home"
+        assert ha.get_presence(CFG, ["person.lost", "person.home"]) is True
+
+    def test_all_away_still_away(self, states):
+        assert ha.get_presence_extended(CFG, ["person.a"], "nearby") == "away"
+        assert ha.get_presence(CFG, ["person.a"]) is False
+
+
 class TestGetPeopleStatus:
     def test_status_per_person(self, session):
         states = STATES + [

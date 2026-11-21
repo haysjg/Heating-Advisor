@@ -877,9 +877,13 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
 
         if presence is None:
             logger.warning(
-                "Thermostat : présence indéterminée (HA injoignable ou entités non configurées) — "
+                "Thermostat : présence indéterminée (HA injoignable, entités non configurées ou traqueur inconnu) — "
                 "thermostat continue sans vérification de présence"
             )
+            # Les délais de grâce repartiront de zéro : pas d'extinction immédiate au retour d'un état « absent »
+            if state.get("nearby_restricted_since") or state.get("away_since"):
+                state = {**state, "nearby_restricted_since": None, "away_since": None}
+                _save_state(state)
 
         if presence == "home":
             if state.get("nearby_restricted_since") or state.get("away_since"):

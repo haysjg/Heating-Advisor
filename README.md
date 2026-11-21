@@ -208,9 +208,9 @@ Le système le moins cher est recommandé.
 | `turn_off(cfg)` | Éteint le poêle via l'API HA (`climate/turn_off`). |
 | `get_state(cfg)` | Retourne l'état brut de l'entité poêle dans HA. |
 | `get_indoor_climate(cfg)` | Récupère la température et l'humidité intérieure depuis le Shelly via HA. |
-| `get_presence(cfg, person_entities)` | Retourne `True` si au moins une personne est `"home"`, `False` si tout le monde est absent, `None` en cas d'erreur. |
+| `get_presence(cfg, person_entities)` | Retourne `True` si au moins une personne est `"home"`, `False` si tout le monde est absent, `None` en cas d'erreur ou si personne n'est `"home"` mais qu'un état est `unknown`/`unavailable`. |
 | `get_entities(cfg, entity_ids)` | États bruts de plusieurs entités (entités inconnues omises), `None` si HA injoignable. |
-| `get_presence_extended(cfg, person_entities, nearby_zone_name)` | Retourne `"home"` / `"nearby"` / `"away"` selon la position des personnes par rapport aux zones HA. |
+| `get_presence_extended(cfg, person_entities, nearby_zone_name)` | Retourne `"home"` / `"nearby"` / `"away"` selon la position des personnes par rapport aux zones HA ; `None` en cas d'erreur ou si personne n'est `"home"` mais qu'un état est `unknown`/`unavailable`. |
 | `get_people_status(cfg, person_entities, nearby_zone_name)` | Position de chaque personne (`home` / `nearby` / `away` / `unknown`, nom = `friendly_name` HA) — affichée sous forme de pastilles dans la carte Thermostat de l'accueil. |
 | `apply_recommendation(cfg, system)` | Allume le poêle si `system == "poele"`, l'éteint sinon. Utilisé en mode pilotage automatique. |
 
@@ -407,6 +407,7 @@ Nécessite deux zones configurées dans Home Assistant :
 | Tout le monde dans `nearby`, avant `nearby_no_ignition_after` | Fonctionnement normal |
 | Tout le monde dans `nearby`, après `nearby_no_ignition_after` | Grâce `nearby_grace_minutes` → plus d'allumage, puis extinction |
 | Tout le monde hors `nearby` | Extinction immédiate, pas d'allumage |
+| Personne dans `home` et au moins un traqueur `unknown`/`unavailable` | Présence indéterminée : fonctionnement normal, délais de grâce remis à zéro |
 
 **`nearby_restricted_since`** est persisté dans `thermostat_state.json` pour calculer la durée de la grâce de façon fiable entre deux cycles de 10 min.
 
@@ -414,7 +415,7 @@ Nécessite deux zones configurées dans Home Assistant :
 
 Dans la carte Thermostat de l'accueil, une pastille par personne suivie indique sa position (à la maison, à proximité, absent — avec le nom de la zone HA si elle est dans une autre zone —, ou inconnu), rafraîchie avec le reste du tableau de bord.
 
-Une entité `person` dont le téléphone n'envoie plus de position reste figée sur son dernier état (souvent `home`) : il suffit d'une personne figée à `home` pour que l'absence ne soit jamais détectée. Toutes les 30 min, `modules/presence_watch.py` vérifie le `last_updated` de chaque entité de `person_entities` ; au-delà de `tracker_stale_hours` heures (3 par défaut, 0 = désactivé), une notification ntfy « 📍 Traqueur figé » est envoyée, une seule fois par épisode, puis « ✅ Traqueur actif » quand les positions reviennent. Les alertes en cours sont mémorisées dans `data/tracker_alerts.json`.
+Une entité `person` dont le téléphone n'envoie plus de position reste figée sur son dernier état (souvent `home`) : il suffit d'une personne figée à `home` pour que l'absence ne soit jamais détectée. Toutes les 30 min, `modules/presence_watch.py` vérifie le dernier signe de vie de chaque entité de `person_entities` : le plus récent entre son `last_updated` et le `last_reported` de son traqueur source (attribut `source`, le `device_tracker` de l'app). Le `last_reported` avance à chaque envoi du téléphone, même sans déplacement : un téléphone posé toute la nuit n'est donc pas signalé à tort ; au-delà de `tracker_stale_hours` heures (3 par défaut, 0 = désactivé), une notification ntfy « 📍 Traqueur figé » est envoyée, une seule fois par épisode, puis « ✅ Traqueur actif » quand les positions reviennent. Les alertes en cours sont mémorisées dans `data/tracker_alerts.json`.
 
 Causes habituelles : localisation de l'app Home Assistant non réglée sur « Toujours autoriser », optimisation de batterie Android, app déconnectée du serveur. Un redémarrage de Home Assistant remet `last_updated` à jour pour toutes les entités : un traqueur figé peut alors être signalé « actif » à tort, puis de nouveau figé après le délai.
 

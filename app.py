@@ -694,20 +694,22 @@ def _pellet_status() -> dict:
     return pellet_refill.status(_pellet_cycle_hours(), _pellet_bag_kg())
 
 
+def _presence_status() -> str | None:
+    """Présence du foyer : "home", "nearby", "away", ou None (désactivée, HA injoignable, traqueur inconnu)."""
+    if not config.THERMOSTAT.get("presence_enabled"):
+        return None
+    person_entities = config.THERMOSTAT.get("person_entities", [])
+    nearby_zone = config.THERMOSTAT.get("nearby_zone_name", "")
+    if nearby_zone:
+        return ha_client.get_presence_extended(config.HOME_ASSISTANT, person_entities, nearby_zone)
+    raw = ha_client.get_presence(config.HOME_ASSISTANT, person_entities)
+    return "home" if raw else "away" if raw is False else None
+
+
 def _record_diagnose():
     """Enregistre un snapshot de diagnostic toutes les 10 min."""
     try:
-        nearby_zone = config.THERMOSTAT.get("nearby_zone_name", "")
-        if config.THERMOSTAT.get("presence_enabled"):
-            if nearby_zone:
-                presence = ha_client.get_presence_extended(
-                    config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), nearby_zone
-                )
-            else:
-                raw = ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []))
-                presence = "home" if raw else "away" if raw is False else None
-        else:
-            presence = None
+        presence = _presence_status()
 
         th_state = thermostat_module.get_state()
         indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
@@ -1169,12 +1171,7 @@ def index():
         data = get_analysis()
         thermostat_state = thermostat_module.get_state()
         if config.THERMOSTAT.get("presence_enabled"):
-            nearby_zone = config.THERMOSTAT.get("nearby_zone_name", "")
-            if nearby_zone:
-                presence = ha_client.get_presence_extended(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), nearby_zone)
-            else:
-                raw = ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []))
-                presence = "home" if raw else "away" if raw is False else None
+            presence = _presence_status()
             thermostat_state["everyone_away"] = presence == "away"
             thermostat_state["presence_status"] = presence
             thermostat_state["people"] = ha_client.get_people_status(
@@ -1243,19 +1240,7 @@ def api_dashboard_refresh():
         # Récupérer l'état du thermostat
         thermostat_state = thermostat_module.get_state()
         if config.THERMOSTAT.get("presence_enabled"):
-            nearby_zone = config.THERMOSTAT.get("nearby_zone_name", "")
-            if nearby_zone:
-                presence = ha_client.get_presence_extended(
-                    config.HOME_ASSISTANT,
-                    config.THERMOSTAT.get("person_entities", []),
-                    nearby_zone
-                )
-            else:
-                raw = ha_client.get_presence(
-                    config.HOME_ASSISTANT,
-                    config.THERMOSTAT.get("person_entities", [])
-                )
-                presence = "home" if raw else "away" if raw is False else None
+            presence = _presence_status()
             thermostat_state["everyone_away"] = presence == "away"
             thermostat_state["presence_status"] = presence
             thermostat_state["people"] = ha_client.get_people_status(
@@ -1596,6 +1581,7 @@ def api_thermostat_diagnose():
     state = get_state()
     indoor = ha_client.get_indoor_climate(config.HOME_ASSISTANT)
     ha_state = ha_client.get_state(config.HOME_ASSISTANT)
+    presence = _presence_status()
     job = _scheduler.get_job("thermostat_job")
     next_run = None
     if job and job.next_run_time:
@@ -1625,20 +1611,8 @@ def api_thermostat_diagnose():
         "nearby_zone_name": config.THERMOSTAT.get("nearby_zone_name", ""),
         "nearby_no_ignition_after": config.THERMOSTAT.get("nearby_no_ignition_after", 20),
         "nearby_grace_minutes": config.THERMOSTAT.get("nearby_grace_minutes", 20),
-        "presence_status": (
-            ha_client.get_presence_extended(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), config.THERMOSTAT.get("nearby_zone_name", ""))
-            if config.THERMOSTAT.get("presence_enabled") and config.THERMOSTAT.get("nearby_zone_name")
-            else ("away" if ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", [])) is False else "home")
-            if config.THERMOSTAT.get("presence_enabled")
-            else None
-        ),
-        "everyone_away": (
-            ha_client.get_presence_extended(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", []), config.THERMOSTAT.get("nearby_zone_name", "")) == "away"
-            if config.THERMOSTAT.get("presence_enabled") and config.THERMOSTAT.get("nearby_zone_name")
-            else ha_client.get_presence(config.HOME_ASSISTANT, config.THERMOSTAT.get("person_entities", [])) is False
-            if config.THERMOSTAT.get("presence_enabled")
-            else None
-        ),
+        "presence_status": presence,
+        "everyone_away": presence == "away" if config.THERMOSTAT.get("presence_enabled") else None,
     })
 
 

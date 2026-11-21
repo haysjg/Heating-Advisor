@@ -3,7 +3,7 @@ Surveillance des traqueurs de présence.
 
 Une entité person dont le téléphone n'envoie plus de position reste figée sur son dernier état
 (souvent « home ») : la détection d'absence est alors bloquée sans que rien ne le signale.
-Ce module repère les entités person qui ne se sont pas mises à jour depuis
+Ce module repère les entités person dont le téléphone n'a rien envoyé depuis
 THERMOSTAT.tracker_stale_hours heures et envoie une alerte ntfy (une seule par épisode),
 puis une notification quand le traqueur redonne signe de vie.
 """
@@ -27,20 +27,37 @@ def _format_age(hours: float) -> str:
     return f"{int(hours // 24)} j"
 
 
-def stale_ages(states: dict, now: datetime) -> dict:
-    """Âge en heures de la dernière mise à jour de chaque entité (entités sans date ignorées)."""
+def _parse(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def last_seen(state: dict, trackers: dict) -> datetime | None:
+    """Dernier signe de vie d'une entité person.
+
+    Le last_updated de la person ne bouge que si sa position change : un téléphone posé toute la nuit
+    paraîtrait figé. Le last_reported du traqueur source (device_tracker de l'app) avance à chaque
+    envoi, même identique ; on retient la date la plus récente des deux."""
+    dates = [_parse(state.get("last_updated"))]
+    tracker = trackers.get((state.get("attributes") or {}).get("source"))
+    if tracker:
+        dates += [_parse(tracker.get("last_reported")), _parse(tracker.get("last_updated"))]
+    dates = [d for d in dates if d]
+    return max(dates) if dates else None
+
+
+def stale_ages(states: dict, now: datetime, trackers: dict | None = None) -> dict:
+    """Âge en heures du dernier signe de vie de chaque entité (entités sans date ignorées)."""
     ages = {}
     for entity_id, state in states.items():
-        raw = state.get("last_updated")
-        if not raw:
-            continue
-        try:
-            updated = datetime.fromisoformat(raw)
-        except ValueError:
-            continue
-        if updated.tzinfo is None:
-            updated = updated.replace(tzinfo=timezone.utc)
-        ages[entity_id] = (now - updated).total_seconds() / 3600
+        seen = last_seen(state, trackers or {})
+        if seen:
+            ages[entity_id] = (now - seen).total_seconds() / 3600
     return ages
 
 
@@ -60,8 +77,10 @@ def check(ha_cfg: dict, thermostat_cfg: dict, ntfy_cfg: dict, now: datetime | No
     states = ha_client.get_entities(ha_cfg, entities)
     if states is None:
         return  # HA injoignable : on ne conclut rien
+    sources = [(s.get("attributes") or {}).get("source") for s in states.values()]
+    trackers = ha_client.get_entities(ha_cfg, [t for t in sources if t]) or {}
     now = now or datetime.now(timezone.utc)
-    ages = stale_ages(states, now)
+    ages = stale_ages(states, now, trackers)
 
     with jsonstore.lock_for(ALERTS_FILE):
         alerted = jsonstore.load(ALERTS_FILE, {})
@@ -72,7 +91,7 @@ def check(ha_cfg: dict, thermostat_cfg: dict, ntfy_cfg: dict, now: datetime | No
         for entity_id in newly_stale:
             state = states[entity_id]
             name = state.get("attributes", {}).get("friendly_name") or entity_id
-            last = datetime.fromisoformat(state["last_updated"]).astimezone().strftime("%d/%m %Hh%M")
+            last = last_seen(state, trackers).astimezone().strftime("%d/%m %Hh%M")
             logger.warning("Traqueur figé : %s (dernière mise à jour %s, %.1f h)", entity_id, last, ages[entity_id])
             ntfy_send(
                 f"📍 Traqueur figé — {name}",

@@ -151,13 +151,16 @@ def get_indoor_climate(cfg: dict) -> dict | None:
     return result or None
 
 
+UNKNOWN_PERSON_STATES = (None, "unknown", "unavailable")
+
+
 def get_presence_extended(cfg: dict, person_entities: list, nearby_zone_name: str) -> str | None:
     """
     Retourne le statut de présence étendu :
     - "home"   : au moins une personne est à la maison (zone home)
     - "nearby" : personne à la maison, mais au moins une dans la zone de proximité
     - "away"   : tout le monde hors des deux zones
-    - None     : erreur ou config manquante
+    - None     : erreur, config manquante, ou personne à la maison mais au moins un état inconnu
     """
     if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
         return None
@@ -172,6 +175,11 @@ def get_presence_extended(cfg: dict, person_entities: list, nearby_zone_name: st
             logger.info("HA présence — %s: %s", entity_id, person_state)
         if any(s == "home" for s in states):
             return "home"
+        unknown = [e for e, s in zip(person_entities, states) if s in UNKNOWN_PERSON_STATES]
+        if unknown:
+            # Téléphone déconnecté ou HA qui redémarre : la personne est peut-être à la maison
+            logger.warning("HA présence — état inconnu pour %s : présence indéterminée", ", ".join(unknown))
+            return None
         nearby_lower = nearby_zone_name.lower()
         if any(s.lower() == nearby_lower for s in states):
             if not any(s == nearby_zone_name for s in states):
@@ -213,7 +221,7 @@ def get_people_status(cfg: dict, person_entities: list, nearby_zone_name: str = 
         raw = entity.get("state")
         name = (entity.get("attributes") or {}).get("friendly_name") \
             or entity_id.split(".", 1)[-1].replace("_", " ").title()
-        if raw in (None, "unavailable", "unknown"):
+        if raw in UNKNOWN_PERSON_STATES:
             status = "unknown"
         elif raw == "home":
             status = "home"
@@ -229,17 +237,20 @@ def get_people_status(cfg: dict, person_entities: list, nearby_zone_name: str = 
 def get_presence(cfg: dict, person_entities: list) -> bool | None:
     """
     Retourne True si au moins une personne est à la maison,
-    False si tout le monde est absent, None en cas d'erreur ou config manquante.
+    False si tout le monde est absent, None en cas d'erreur, de config manquante
+    ou si personne n'est à la maison mais qu'au moins un état est inconnu.
     """
     if not cfg.get("enabled") or not cfg.get("url") or not cfg.get("token"):
         return None
     if not person_entities:
         return None
     try:
-        for entity_id in person_entities:
-            state = _get_entity(cfg, entity_id)
-            if state.get("state") == "home":
-                return True
+        states = [_get_entity(cfg, e).get("state", "not_home") for e in person_entities]
+        if "home" in states:
+            return True
+        if any(s in UNKNOWN_PERSON_STATES for s in states):
+            logger.warning("HA présence — état inconnu : présence indéterminée")
+            return None
         return False
     except Exception as e:
         logger.error("HA get_presence échoué : %s", e)
