@@ -332,9 +332,12 @@
           Dans les <strong>{{ config.THERMOSTAT.get('poele_no_start_before_end_minutes', 60) }} dernières minutes</strong>
           de la plage horaire, le poêle n'est plus allumé (cycle trop court). La clim le remplace si elle
           est disponible (jamais un jour rouge), sinon rien n'est allumé. Un poêle déjà allumé continue normalement.
+          Exception : sous le seuil de confort clim ({{ config.CLIM.get('comfort_min_temp') }}°C extérieur), si rien ne chauffe,
+          le poêle démarre quand même.
         </div>
         <div class="rule-example">
           Exemple : clim en marche, recommandation passe à poêle à 21h54 (fin 22h00) → la clim continue.
+          Rien d'allumé à 21h30 avec 4,5°C dehors → le poêle démarre.
         </div>
       </div>
 

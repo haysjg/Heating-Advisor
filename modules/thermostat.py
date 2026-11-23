@@ -815,12 +815,15 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
         recommendation = "poele"
 
     # Fin de plage proche : pas de nouvel allumage du poêle (cycle trop court),
-    # la clim prend le relais si elle le peut, sinon rien
+    # la clim prend le relais si elle le peut, sinon rien. Sous le seuil de confort clim,
+    # le poêle démarre quand même, sauf si la clim chauffe déjà (elle continue)
     poele_late_window = thermostat_cfg.get("poele_no_start_before_end_minutes", 60)
     minutes_left = minutes_until_schedule_end(thermostat_cfg)
+    clim_too_cold = comfort_min_temp is not None and outdoor_temp is not None and outdoor_temp < comfort_min_temp
     poele_blocked_late = (
         recommendation == "poele" and not (current == "on" and active_system == "poele")
         and minutes_left is not None and minutes_left <= poele_late_window
+        and (not clim_too_cold or (current == "on" and active_system == "clim"))
     )
     if poele_blocked_late:
         recommendation = "clim" if clim_available and clim_fallback_ok else "none"

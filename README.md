@@ -360,7 +360,7 @@ Le thermostat automatique pilote le poêle selon la température intérieure mes
 | `min_on_minutes` | Durée minimale de fonctionnement avant extinction par température |
 | `end_of_schedule_grace_minutes` | Délai avant extinction après la fin de la plage horaire |
 | `clim_comfort_hysteresis` | Marge (°C) au-dessus du seuil de confort clim avant de repasser du poêle à la clim |
-| `poele_no_start_before_end_minutes` | Pas d'allumage du poêle dans les N dernières minutes de la plage (clim à la place si possible) |
+| `poele_no_start_before_end_minutes` | Pas d'allumage du poêle dans les N dernières minutes de la plage (clim à la place si possible), sauf sous le seuil de confort clim si rien ne chauffe |
 | `manual_off_suspend_hours` | Suspension du thermostat après extinction manuelle |
 | `use_felt_temperature` | Utilise la température ressentie (corrigée par l'humidité) |
 

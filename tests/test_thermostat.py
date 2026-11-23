@@ -774,14 +774,29 @@ class TestComfortHysteresisAndLateWindow:
 
     def test_late_ignition_uses_clim_instead_of_poele(self, store, base_ha_cfg, base_thermostat_cfg):
         poele_on, _, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
-                                               "2025-01-06 21:30:00", None, "poele", 5.0, indoor_temp=19.0)
+                                               "2025-01-06 21:30:00", None, "poele", 7.5, indoor_temp=19.0)
         poele_on.assert_not_called()
         clim_on.assert_called_once()
         assert store["state"]["active_system"] == "clim"
 
+    def test_late_ignition_poele_when_too_cold_for_clim(self, store, base_ha_cfg, base_thermostat_cfg):
+        """Cas réel du 23/11/2026 : 4,5 °C dehors, rien n'est allumé à 21h30 → poêle, pas la clim."""
+        poele_on, _, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                               "2025-01-06 21:30:00", None, "poele", 4.5, indoor_temp=19.0)
+        poele_on.assert_called_once()
+        clim_on.assert_not_called()
+        assert store["state"]["active_system"] == "poele"
+
+    def test_late_ignition_poele_when_too_cold_even_if_clim_not_allowed(self, store, base_ha_cfg, base_thermostat_cfg):
+        poele_on, _, clim_on, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                               "2025-01-06 21:30:00", None, "poele", 4.5,
+                                               indoor_temp=19.0, clim_fallback_ok=False)
+        poele_on.assert_called_once()
+        clim_on.assert_not_called()
+
     def test_late_ignition_nothing_when_clim_not_allowed(self, store, base_ha_cfg, base_thermostat_cfg):
         poele_on, _, clim_on, _, ntfy = self._run(store, base_ha_cfg, base_thermostat_cfg,
-                                                  "2025-01-06 21:30:00", None, "poele", 5.0,
+                                                  "2025-01-06 21:30:00", None, "poele", 7.5,
                                                   indoor_temp=19.0, clim_fallback_ok=False)
         poele_on.assert_not_called()
         clim_on.assert_not_called()
