@@ -6,6 +6,9 @@ Une entité person dont le téléphone n'envoie plus de position reste figée su
 Ce module repère les entités person dont le téléphone n'a rien envoyé depuis
 THERMOSTAT.tracker_stale_hours heures et envoie une alerte ntfy (une seule par épisode),
 puis une notification quand le traqueur redonne signe de vie.
+
+Il signale aussi un téléphone rattaché à plusieurs personnes : HA donne à chaque personne la position
+du traqueur le plus récent, donc le départ de l'une rend l'autre absente alors qu'elle est à la maison.
 """
 
 import logging
@@ -68,11 +71,49 @@ def transitions(ages: dict, alerted: dict, max_age_hours: float) -> tuple[list, 
     return newly_stale, recovered
 
 
+SHARED_PREFIX = "shared:"
+
+
+def shared_trackers(states: dict) -> dict:
+    """Traqueurs rattachés à plusieurs entités person : {device_tracker: [person, ...]}."""
+    owners = {}
+    for entity_id, state in states.items():
+        for tracker in (state.get("attributes") or {}).get("device_trackers") or []:
+            owners.setdefault(tracker, []).append(entity_id)
+    return {t: sorted(p) for t, p in owners.items() if len(p) > 1}
+
+
+def _check_shared(states: dict, alerted: dict, ntfy_cfg: dict, now: datetime) -> bool:
+    """Alerte ntfy (une par épisode) pour chaque traqueur partagé. Retourne True si alerted a changé."""
+    shared = shared_trackers(states)
+    changed = False
+    for tracker, persons in shared.items():
+        key = SHARED_PREFIX + tracker
+        if key in alerted:
+            continue
+        names = [(states[p].get("attributes") or {}).get("friendly_name") or p for p in persons]
+        logger.warning("Traqueur %s rattaché à plusieurs personnes : %s", tracker, ", ".join(persons))
+        ntfy_send(
+            f"📍 Téléphone partagé — {tracker.split('.', 1)[-1]}",
+            f"Ce traqueur est rattaché à {' et '.join(names)} dans Home Assistant : le départ de l'un "
+            "fait passer l'autre pour absent et peut éteindre le chauffage. Le retirer des personnes "
+            "à qui il n'appartient pas (Paramètres → Personnes).",
+            ntfy_cfg,
+        )
+        alerted[key] = now.isoformat()
+        changed = True
+    for key in [k for k in alerted if k.startswith(SHARED_PREFIX) and k[len(SHARED_PREFIX):] not in shared]:
+        logger.info("Traqueur %s de nouveau rattaché à une seule personne", key[len(SHARED_PREFIX):])
+        del alerted[key]
+        changed = True
+    return changed
+
+
 def check(ha_cfg: dict, thermostat_cfg: dict, ntfy_cfg: dict, now: datetime | None = None) -> None:
-    """Job périodique : alerte ntfy si un traqueur de présence est figé."""
+    """Job périodique : alerte ntfy si un traqueur de présence est figé ou partagé entre personnes."""
     max_age = float(thermostat_cfg.get("tracker_stale_hours", 3) or 0)
     entities = thermostat_cfg.get("person_entities", [])
-    if not thermostat_cfg.get("presence_enabled") or max_age <= 0 or not entities:
+    if not thermostat_cfg.get("presence_enabled") or not entities:
         return
     states = ha_client.get_entities(ha_cfg, entities)
     if states is None:
@@ -80,12 +121,13 @@ def check(ha_cfg: dict, thermostat_cfg: dict, ntfy_cfg: dict, now: datetime | No
     sources = [(s.get("attributes") or {}).get("source") for s in states.values()]
     trackers = ha_client.get_entities(ha_cfg, [t for t in sources if t]) or {}
     now = now or datetime.now(timezone.utc)
-    ages = stale_ages(states, now, trackers)
+    ages = stale_ages(states, now, trackers) if max_age > 0 else {}
 
     with jsonstore.lock_for(ALERTS_FILE):
         alerted = jsonstore.load(ALERTS_FILE, {})
         if not isinstance(alerted, dict):
             alerted = {}
+        shared_changed = _check_shared(states, alerted, ntfy_cfg, now)
         newly_stale, recovered = transitions(ages, alerted, max_age)
 
         for entity_id in newly_stale:
@@ -109,9 +151,9 @@ def check(ha_cfg: dict, thermostat_cfg: dict, ntfy_cfg: dict, now: datetime | No
             del alerted[entity_id]
 
         # Entités retirées de la config : on oublie leur alerte
-        removed = [e for e in alerted if e not in entities]
+        removed = [e for e in alerted if e not in entities and not e.startswith(SHARED_PREFIX)]
         for entity_id in removed:
             del alerted[entity_id]
 
-        if newly_stale or recovered or removed:
+        if shared_changed or newly_stale or recovered or removed:
             jsonstore.save(ALERTS_FILE, alerted)

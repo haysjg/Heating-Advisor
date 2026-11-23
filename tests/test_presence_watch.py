@@ -92,3 +92,44 @@ class TestCheck:
         states["person.carine"] = _state("2026-10-21T02:19:00+00:00")
         pw.check({}, {**TH_CFG, **override}, {}, now=NOW)
         assert sent == []
+
+
+class TestSharedTrackers:
+    def _person(self, trackers, name=None):
+        state = _state("2026-10-29T15:50:00+00:00", name=name)
+        state["attributes"]["device_trackers"] = trackers
+        return state
+
+    def test_detects_tracker_on_two_persons(self):
+        states = {"person.jg": self._person(["device_tracker.pixel_8", "device_tracker.pixel_7a"]),
+                  "person.carine": self._person(["device_tracker.pixel_7a"])}
+        assert pw.shared_trackers(states) == {"device_tracker.pixel_7a": ["person.carine", "person.jg"]}
+
+    def test_no_shared_tracker(self):
+        states = {"person.jg": self._person(["device_tracker.pixel_8"]),
+                  "person.carine": self._person(["device_tracker.pixel_7a"])}
+        assert pw.shared_trackers(states) == {}
+
+    def test_alert_once_then_cleared(self, env):
+        sent, states = env
+        states["person.jg"] = self._person(["device_tracker.pixel_8", "device_tracker.pixel_7a"], name="JG")
+        states["person.carine"] = self._person(["device_tracker.pixel_7a"], name="Carine")
+
+        pw.check({}, TH_CFG, {}, now=NOW)
+        pw.check({}, TH_CFG, {}, now=NOW)
+        assert sent == ["📍 Téléphone partagé — pixel_7a"]
+
+        states["person.jg"] = self._person(["device_tracker.pixel_8"], name="JG")
+        pw.check({}, TH_CFG, {}, now=NOW)
+        assert pw.jsonstore.load(pw.ALERTS_FILE, {}) == {}
+
+        states["person.jg"] = self._person(["device_tracker.pixel_8", "device_tracker.pixel_7a"], name="JG")
+        pw.check({}, TH_CFG, {}, now=NOW)
+        assert len(sent) == 2  # nouvel épisode, nouvelle alerte
+
+    def test_checked_even_without_stale_alerts(self, env):
+        sent, states = env
+        states["person.jg"] = self._person(["device_tracker.pixel_7a"])
+        states["person.carine"] = self._person(["device_tracker.pixel_7a"])
+        pw.check({}, {**TH_CFG, "tracker_stale_hours": 0}, {}, now=NOW)
+        assert len(sent) == 1

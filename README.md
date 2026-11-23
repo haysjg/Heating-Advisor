@@ -419,6 +419,10 @@ Une entité `person` dont le téléphone n'envoie plus de position reste figée 
 
 Causes habituelles : localisation de l'app Home Assistant non réglée sur « Toujours autoriser », optimisation de batterie Android, app déconnectée du serveur. Un redémarrage de Home Assistant remet `last_updated` à jour pour toutes les entités : un traqueur figé peut alors être signalé « actif » à tort, puis de nouveau figé après le délai.
 
+### Alerte téléphone partagé
+
+Home Assistant donne à une personne la position de celui de ses `device_trackers` qui a envoyé la mise à jour la plus récente. Un téléphone rattaché à deux personnes les fait donc bouger ensemble : quand Carine part, JG devient absent lui aussi, et le poêle s'éteint au bout du délai de grâce (cas réel du 23/11/2026). Le même job de 30 min lit l'attribut `device_trackers` des entités de `person_entities` et envoie « 📍 Téléphone partagé » (une fois par épisode, indépendamment de `tracker_stale_hours`) dès qu'un traqueur appartient à plusieurs personnes. Correction : Paramètres → Personnes, ne laisser à chacun que son propre téléphone.
+
 ### Connecter un téléphone à Home Assistant
 
 Dans l'app Home Assistant du téléphone :
