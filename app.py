@@ -779,80 +779,93 @@ def _reschedule_thermostat():
 
 
 def _run_radiateurs_tempo_rouge():
-    """Vérifie et pilote les radiateurs lors des jours Tempo Rouge (HP uniquement)."""
+    """Éteint les radiateurs pilotés les jours Tempo Rouge (HP) et les rallume à leur horaire de reprise
+    ou au retour d'un jour bleu ou blanc."""
     cfg = config.RADIATEURS_TEMPO_ROUGE
     if not cfg.get("enabled"):
         return
     raw_entities = cfg.get("entities", [])
     # Supporte l'ancien format (liste de strings) et le nouveau (liste de dicts)
-    # Construit une liste de (entity_id, display_name)
-    entities = []
+    # Construit {entity_id: horaire de reprise} et les noms affichés
+    radiators, label_map = {}, {}
     for e in raw_entities:
         if isinstance(e, dict) and e.get("enabled", True) and e.get("entity_id"):
             eid = e["entity_id"]
-            label = e.get("name") or eid.split(".")[-1].replace("_", " ")
-            entities.append((eid, label))
+            label_map[eid] = e.get("name") or eid.split(".")[-1].replace("_", " ")
+            radiators[eid] = e.get("resume_at") or ""
         elif isinstance(e, str) and e:
-            entities.append((e, e.split(".")[-1].replace("_", " ")))
-    entity_ids = [eid for eid, _ in entities]
-    label_map  = {eid: lbl for eid, lbl in entities}
+            label_map[e] = e.split(".")[-1].replace("_", " ")
+            radiators[e] = ""
 
-    if not entity_ids or not config.HOME_ASSISTANT.get("enabled"):
+    if not radiators or not config.HOME_ASSISTANT.get("enabled"):
         return
 
     now = datetime.now()
-    if not (config.HP_START <= now.hour < config.HP_END):
-        return
-
     try:
         tempo = get_tempo_info(config.HP_START, config.HP_END)
         today_color = tempo.get("today", {}).get("color", "UNKNOWN")
     except Exception as e:
         logger.error("Radiateurs tempo rouge : erreur récupération tempo : %s", e)
-        return
-    if today_color not in ("BLUE", "WHITE", "RED"):
-        # Couleur inconnue (API indisponible) : ni extinction ni rallumage, on attend une couleur fiable
-        logger.warning("Radiateurs tempo rouge : couleur du jour inconnue — aucune action")
-        return
+        today_color = "UNKNOWN"
+    if today_color not in ("BLUE", "WHITE", "RED") and now.hour >= config.HP_START:
+        # Couleur inconnue (API indisponible) : pas d'extinction ; seuls les horaires de reprise s'appliquent
+        logger.warning("Radiateurs tempo rouge : couleur du jour inconnue — horaires de reprise seulement")
+
+    to_off, to_on = radiateurs_module.plan_red_day(now, today_color, radiators, _load_managed_off(),
+                                                   config.HP_START, config.HP_END)
 
     from modules.ntfy_push import send as ntfy_send
 
-    if today_color == "RED":
-        turned_off = []
-        for entity_id in entity_ids:
-            state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
-            if state and state.get("state") not in ("off", "unavailable", "unknown"):
-                if ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id):
-                    turned_off.append(entity_id)
-        if turned_off:
-            _update_managed_off(add=turned_off)
-            names = ", ".join(label_map.get(e, e) for e in turned_off)
-            ntfy_send("🔴 Jour Rouge — Radiateurs éteints", f"Extinction automatique : {names}", config.NTFY)
-            logger.info("Radiateurs éteints (jour rouge) : %s", turned_off)
-    else:
-        to_turn_on, postponed = radiateurs_module.split_turn_back_on(
-            _load_managed_off(), entity_ids, cfg.get("weekend_restricted_entities", []),
-            now, radiateurs_module.weekend_auto_allowed(),
-        )
-        if postponed:
-            logger.info("Radiateurs : rallumage reporté (week-end, gestion auto non autorisée) : %s", postponed)
-        turned_on = []
-        for entity_id in to_turn_on:
-            if ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id):
-                turned_on.append(entity_id)
-        if turned_on:
-            _update_managed_off(remove=turned_on)
-            names = ", ".join(label_map.get(e, e) for e in turned_on)
-            ntfy_send("🟢 Radiateurs rallumés", f"Jour non-rouge : {names}", config.NTFY)
-            logger.info("Radiateurs rallumés (jour non-rouge) : %s", turned_on)
+    turned_off = []
+    for entity_id in to_off:
+        state = ha_client.get_entity_state(config.HOME_ASSISTANT, entity_id)
+        if state and state.get("state") not in ("off", "unavailable", "unknown"):
+            if ha_client.turn_off_entity(config.HOME_ASSISTANT, entity_id):
+                turned_off.append(entity_id)
+    if turned_off:
+        _update_managed_off(add=turned_off)
+        names = ", ".join(label_map.get(e, e) for e in turned_off)
+        ntfy_send("🔴 Jour Rouge — Radiateurs éteints", f"Extinction automatique : {names}", config.NTFY)
+        logger.info("Radiateurs éteints (jour rouge) : %s", turned_off)
+
+    to_turn_on, postponed = radiateurs_module.split_turn_back_on(
+        to_on, list(radiators), cfg.get("weekend_restricted_entities", []),
+        now, radiateurs_module.weekend_auto_allowed(),
+    )
+    if postponed:
+        logger.info("Radiateurs : rallumage reporté (week-end, gestion auto non autorisée) : %s", postponed)
+    turned_on = []
+    for entity_id in to_turn_on:
+        if ha_client.turn_on_entity(config.HOME_ASSISTANT, entity_id):
+            turned_on.append(entity_id)
+    if turned_on:
+        _update_managed_off(remove=turned_on)
+        names = ", ".join(label_map.get(e, e) for e in turned_on)
+        reason = "Jour non-rouge" if today_color in ("BLUE", "WHITE") and now.hour >= config.HP_START \
+            else "Horaire de reprise"
+        ntfy_send("🟢 Radiateurs rallumés", f"{reason} : {names}", config.NTFY)
+        logger.info("Radiateurs rallumés (%s) : %s", reason.lower(), turned_on)
+
+
+def _radiateurs_cron_times() -> list:
+    """Heures (h, min) des passages exacts du job radiateurs : début des heures pleines et horaires de reprise."""
+    times = {(config.HP_START, 0)}
+    for e in config.RADIATEURS_TEMPO_ROUGE.get("entities", []):
+        if isinstance(e, dict) and e.get("enabled", True) and e.get("resume_at"):
+            h, m = e["resume_at"].split(":")
+            times.add((int(h), int(m)))
+    return sorted(times)
 
 
 def _reschedule_radiateurs():
-    """(Re)planifie le job radiateurs Tempo Rouge selon la config courante."""
-    try:
-        _scheduler.remove_job("radiateurs_job")
-    except Exception:
-        pass
+    """(Re)planifie le job radiateurs Tempo Rouge selon la config courante : toutes les 50 min (rattrapage)
+    et à heure exacte au début des heures pleines et à chaque horaire de reprise."""
+    for job in _scheduler.get_jobs():
+        if job.id == "radiateurs_job" or job.id.startswith("radiateurs_cron_"):
+            try:
+                _scheduler.remove_job(job.id)
+            except Exception:
+                pass
     if config.RADIATEURS_TEMPO_ROUGE.get("enabled"):
         _scheduler.add_job(
             _run_radiateurs_tempo_rouge,
@@ -861,7 +874,17 @@ def _reschedule_radiateurs():
             id="radiateurs_job",
             misfire_grace_time=120,
         )
-        logger.info("Radiateurs Tempo Rouge planifiés toutes les 50 min")
+        for h, m in _radiateurs_cron_times():
+            _scheduler.add_job(
+                _run_radiateurs_tempo_rouge,
+                "cron",
+                hour=h,
+                minute=m,
+                id=f"radiateurs_cron_{h:02d}{m:02d}",
+                misfire_grace_time=300,
+            )
+        logger.info("Radiateurs Tempo Rouge planifiés toutes les 50 min et à %s",
+                    ", ".join(f"{h:02d}:{m:02d}" for h, m in _radiateurs_cron_times()))
     else:
         logger.info("Radiateurs Tempo Rouge désactivés — aucun job planifié")
 
@@ -2354,6 +2377,7 @@ def api_config_save():
                 "entities": [
                     {"entity_id": e["entity_id"].strip(), "name": e.get("name", "").strip(), "enabled": bool(e.get("enabled", True)),
                      "power_kw": _radiator_power_value(e.get("power_kw")),
+                     "resume_at": radiateurs_module.parse_resume_at(e.get("resume_at")),
                      "energy_entity_id": _radiator_energy_entity(e.get("energy_entity_id"))}
                     for e in (data.get("radiateurs_entities") or [])
                     if isinstance(e, dict) and e.get("entity_id", "").strip()

@@ -194,7 +194,7 @@ Le système le moins cher est recommandé.
 
 | Fonction | Description |
 |---|---|
-| `get_tempo_info(hp_start, hp_end)` | Retourne la couleur Tempo d'aujourd'hui et de demain, la période courante (HP/HC) et l'heure. Utilise l'API communautaire `api-couleur-tempo.fr` ; une couleur publiée est mémorisée dans `data/tempo_cache.json` (elle ne change plus), ce qui protège d'une panne de l'API dans la journée. Couleur inconnue → `UNKNOWN` (les radiateurs ne sont alors ni éteints ni rallumés). |
+| `get_tempo_info(hp_start, hp_end)` | Retourne la couleur Tempo d'aujourd'hui et de demain, la période courante (HP/HC) et l'heure. Utilise l'API communautaire `api-couleur-tempo.fr` ; une couleur publiée est mémorisée dans `data/tempo_cache.json` (elle ne change plus), ce qui protège d'une panne de l'API dans la journée. Couleur inconnue → `UNKNOWN` (les radiateurs ne sont alors pas éteints ; seuls les horaires de reprise les rallument). |
 | `is_hp(hour, hp_start, hp_end)` | Retourne `True` si l'heure est en Heure Pleine. |
 | `get_current_period(hp_start, hp_end, now=None)` | Retourne `"HP"` ou `"HC"` selon l'heure (actuelle par défaut). |
 | `at_time(tempo, hp_start, hp_end, now=None)` | Copie des infos Tempo avec période HP/HC et heure recalculées (sans appel réseau). |
@@ -224,12 +224,16 @@ même quand la règle jour rouge est désactivée. Le bouton **« Détecter »**
 REST de HA ne relie pas une entité à son appareil, on passe donc par l'API template (`device_id` /
 `device_entities`) et on garde les `sensor.*` en Wh / kWh / MWh du même appareil, `device_class: energy` en premier.
 
-Le job radiateurs (toutes les 50 min, heures pleines) éteint les radiateurs configurés un jour rouge, puis rallume le premier jour non rouge **uniquement ceux qu'il a lui-même éteints** (`data/radiateurs_managed_off.json`). Un arrêt manuel depuis l'appli retire le radiateur de cette liste : il n'est jamais rallumé automatiquement.
+Le job radiateurs (toutes les 50 min, plus un passage à heure exacte à `HP_START` et à chaque horaire de reprise) éteint les radiateurs pilotés un jour rouge, en heures pleines et avant leur horaire de reprise, puis rallume **uniquement ceux qu'il a lui-même éteints** (`data/radiateurs_managed_off.json`). Un arrêt manuel depuis l'appli retire le radiateur de cette liste : il n'est jamais rallumé automatiquement.
+
+**Horaire de reprise** (`resume_at`, par radiateur dans `/config`) : vide = « au jour bleu ou blanc », le radiateur reste éteint jusqu'au premier jour Tempo non rouge (6h), nuits comprises ; « HH:MM » = rallumé à cette heure (le soir même, ou la nuit suivante si avant 6h), puis éteint de nouveau à 6h si le jour suivant est encore rouge. Un jour bleu ou blanc rallume toujours, même avant l'horaire (appli arrêtée la nuit). Pas d'extinction en heures creuses : un rallumage manuel la nuit est respecté. Couleur inconnue : pas d'extinction, seuls les horaires de reprise s'appliquent. Logique pure : `radiateurs.plan_red_day`.
 
 Les radiateurs de `RADIATEURS_TEMPO_ROUGE.weekend_restricted_entities` (par défaut le radiateur des combles) ne sont **jamais rallumés automatiquement le week-end** : le rallumage est reporté au lundi. L'interrupteur « Auto le week-end » de leur commande sur le dashboard lève cette restriction (réglage permanent, `data/radiateurs_weekend.json`). Les interrupteurs du panneau Contrôles restent toujours utilisables.
 
 | Fonction | Description |
 |---|---|
+| `plan_red_day(now, color, radiators, managed, hp_start, hp_end)` | Radiateurs à éteindre et à rallumer selon la couleur Tempo, l'heure et l'horaire de reprise de chacun (`{entity_id: "HH:MM" ou ""}`). |
+| `parse_resume_at(raw)` / `cut_minutes(resume_at, hp_start)` | Validation de l'horaire de reprise saisi ; durée de la coupure depuis `hp_start` (24 h sans horaire). |
 | `split_turn_back_on(managed, entity_ids, weekend_restricted, now, weekend_allowed)` | Sépare les radiateurs à rallumer maintenant de ceux reportés (week-end). |
 | `weekend_auto_allowed()` / `set_weekend_auto_allowed(allowed)` | Lecture / écriture de l'autorisation week-end (refusée par défaut). |
 | `is_heating(ha_state)` | Radiateur en chauffe : `hvac_action` s'il existe, sinon prise `on`. |

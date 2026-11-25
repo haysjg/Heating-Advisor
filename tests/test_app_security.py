@@ -301,3 +301,40 @@ def test_detecter_compteur_energie(app_module, monkeypatch):
     monkeypatch.setattr(app_module.ha_client, "find_energy_sensor", lambda cfg, eid: [])
     with app_module.app.test_request_context(json={"entity_id": "climate.i2g_actuator_4"}):
         assert app_module.api_radiateurs_detect_energy().get_json()["status"] == "error"
+
+
+# ── Radiateurs : horaire de reprise après un jour rouge ──────────
+
+def test_radiateurs_reprise_horaire(app_module, monkeypatch):
+    from datetime import datetime as real_dt
+    managed = ["climate.lecture"]
+    monkeypatch.setattr(app_module, "_load_managed_off", lambda: list(managed))
+    monkeypatch.setattr(app_module, "_update_managed_off", lambda add=(), remove=(): None)
+    monkeypatch.setitem(app_module.config.HOME_ASSISTANT, "enabled", True)
+    monkeypatch.setattr(app_module.config, "RADIATEURS_TEMPO_ROUGE", {
+        "enabled": True, "weekend_restricted_entities": [],
+        "entities": [{"entity_id": "climate.lecture", "name": "Lecture", "enabled": True, "resume_at": "22:00"},
+                     {"entity_id": "climate.salon", "name": "Salon", "enabled": True}]})
+    monkeypatch.setattr(app_module, "get_tempo_info", lambda *a: {"today": {"color": "RED"}})
+
+    class FakeDT(real_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return real_dt(2026, 12, 7, 22, 0)
+    monkeypatch.setattr(app_module, "datetime", FakeDT)
+    on, off = [], []
+    monkeypatch.setattr(app_module.ha_client, "turn_on_entity", lambda cfg, e: on.append(e) or True)
+    monkeypatch.setattr(app_module.ha_client, "turn_off_entity", lambda cfg, e: off.append(e) or True)
+    with mock.patch("modules.ntfy_push.send"):
+        app_module._run_radiateurs_tempo_rouge()
+    # 22h : lecture rallumé à son horaire ; salon (reprise au jour bleu/blanc) ni rallumé ni recoupé en HC
+    assert on == ["climate.lecture"] and off == []
+    assert app_module._radiateurs_cron_times() == [(6, 0), (22, 0)]
+
+
+def test_config_page_affiche_reprise(client, app_module, monkeypatch):
+    monkeypatch.setitem(app_module.config.RADIATEURS_TEMPO_ROUGE, "entities",
+                        [{"entity_id": "climate.lecture", "name": "Lecture", "enabled": True, "resume_at": "22:30"}])
+    _login(client)
+    html = client.get("/config").get_data(as_text=True)
+    assert 'class="radiateur-resume" value="22:30"' in html

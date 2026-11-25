@@ -7,6 +7,7 @@ reporté au premier jour ouvré non rouge. Les commandes manuelles ne sont pas c
 """
 
 import os
+import re
 from datetime import datetime
 
 from modules import jsonstore
@@ -40,6 +41,58 @@ def split_turn_back_on(managed: list, entity_ids: list, weekend_restricted: list
         return candidates, []
     postponed = [e for e in candidates if e in weekend_restricted]
     return [e for e in candidates if e not in postponed], postponed
+
+
+# Durée d'une journée Tempo (6h → 6h le lendemain), en minutes
+TEMPO_DAY_MINUTES = 24 * 60
+
+
+def parse_resume_at(raw) -> str:
+    """Horaire de reprise saisi pour un radiateur : « HH:MM », ou vide = au retour d'un jour bleu ou blanc."""
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", value)
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        raise ValueError("Reprise d'un radiateur : format HH:MM attendu")
+    return f"{int(m.group(1)):02d}:{m.group(2)}"
+
+
+def minutes_since_day_start(now: datetime, hp_start: int) -> int:
+    """Minutes écoulées depuis le début de la journée Tempo en cours (hp_start, 6h)."""
+    return (now.hour * 60 + now.minute - hp_start * 60) % TEMPO_DAY_MINUTES
+
+
+def cut_minutes(resume_at: str, hp_start: int) -> int:
+    """Durée de la coupure d'un jour rouge, en minutes depuis hp_start : jusqu'à l'horaire de reprise
+    (le soir même, ou la nuit suivante s'il est avant hp_start), toute la journée Tempo sans horaire."""
+    if not resume_at:
+        return TEMPO_DAY_MINUTES
+    h, m = (int(x) for x in resume_at.split(":"))
+    return (h * 60 + m - hp_start * 60) % TEMPO_DAY_MINUTES or TEMPO_DAY_MINUTES
+
+
+def plan_red_day(now: datetime, color: str, radiators: dict, managed: list,
+                 hp_start: int, hp_end: int) -> tuple[list, list]:
+    """Radiateurs à éteindre et à rallumer (avant la restriction week-end).
+
+    radiators : {entity_id: horaire de reprise} des radiateurs pilotés ; managed : ceux que l'appli a éteints.
+    Extinction : jour rouge, heures pleines, avant l'horaire de reprise (un rallumage manuel la nuit est respecté).
+    Rallumage, seulement de ceux que l'appli a éteints : horaire de reprise atteint, ou journée Tempo bleue
+    ou blanche. Couleur inconnue (UNKNOWN) : seul l'horaire de reprise compte.
+    """
+    elapsed = minutes_since_day_start(now, hp_start)
+    to_off, to_on = [], []
+    for entity_id, resume_at in radiators.items():
+        in_cut = elapsed < cut_minutes(resume_at, hp_start)
+        if entity_id in managed:
+            # Avant hp_start, color est celle de la journée Tempo qui commence à hp_start : ignorée
+            day_ok = now.hour >= hp_start and color in ("BLUE", "WHITE")
+            if not in_cut or day_ok:
+                to_on.append(entity_id)
+        elif color == "RED" and hp_start <= now.hour < hp_end and in_cut:
+            to_off.append(entity_id)
+    return to_off, to_on
 
 
 # Unités acceptées pour le compteur d'énergie HA d'un radiateur, en kWh

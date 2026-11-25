@@ -919,7 +919,7 @@
           Éteindre automatiquement les radiateurs pendant les HP des jours rouges
         </label>
       </div>
-      <span class="hint" style="margin-bottom:1rem;display:block">Vérification automatique toutes les 50 minutes entre 6h et 22h les jours Tempo ROUGE</span>
+      <span class="hint" style="margin-bottom:1rem;display:block">Jour Tempo ROUGE : extinction à 6h (puis vérification toutes les 50 min jusqu'à 22h), rallumage à l'horaire de reprise de chaque radiateur, ou au premier jour bleu ou blanc</span>
 
       <div class="form-group">
         <label>Radiateurs</label>
@@ -930,6 +930,7 @@
           {% set rad_enabled = r.enabled if r is mapping else True %}
           {% set rad_power = (r.power_kw if r is mapping and r.power_kw else config.RADIATEURS_TEMPO_ROUGE.get('default_power_kw', 2.0)) %}
           {% set rad_energy = (r.energy_entity_id or '') if r is mapping else '' %}
+          {% set rad_resume = (r.resume_at or '') if r is mapping else '' %}
           <div class="radiateur-row" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
             <input type="checkbox" class="radiateur-enabled"
                    {% if rad_enabled %}checked{% endif %}
@@ -948,6 +949,16 @@
                     style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--text-muted);font-size:0.85rem"
                     title="Supprimer">✕</button>
             <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
+            <label class="radiateur-resume-wrap" style="display:flex;align-items:center;gap:0.4rem;margin-left:1.6rem;font-size:0.8rem;color:var(--text-sub)"
+                   title="Jour rouge : quand rallumer ce radiateur après son extinction de 6h">
+              Reprise
+              <select class="radiateur-resume-mode" onchange="toggleResume(this)" style="font-size:0.8rem" aria-label="Reprise après un jour rouge">
+                <option value="day" {% if not rad_resume %}selected{% endif %}>au jour bleu ou blanc</option>
+                <option value="time" {% if rad_resume %}selected{% endif %}>à heure fixe</option>
+              </select>
+              <input type="time" class="radiateur-resume" value="{{ rad_resume or '22:00' }}"
+                     style="font-size:0.8rem;{% if not rad_resume %}display:none{% endif %}" aria-label="Horaire de reprise">
+            </label>
             <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
       <input type="text" class="radiateur-energy" value="{{ rad_energy }}"
                    placeholder="Compteur d'énergie (facultatif) : sensor.…_electric_energy_consumption"
@@ -1634,7 +1645,14 @@
       enabled:   row.querySelector('.radiateur-enabled').checked,
       power_kw:  parseFloat(row.querySelector('.radiateur-power').value),
       energy_entity_id: row.querySelector('.radiateur-energy').value.trim(),
+      resume_at: row.querySelector('.radiateur-resume-mode').value === 'time'
+        ? row.querySelector('.radiateur-resume').value : '',
     })).filter(r => r.entity_id);
+  }
+
+  function toggleResume(sel) {
+    sel.closest('.radiateur-row').querySelector('.radiateur-resume').style.display =
+      sel.value === 'time' ? '' : 'none';
   }
 
   function setRadiateurs(list) {
@@ -1645,7 +1663,8 @@
       const name      = typeof r === 'string' ? '' : (r.name || '');
       const enabled   = typeof r === 'string' ? true : (r.enabled !== false);
       addRadiateurRow(entity_id, name, enabled, typeof r === 'string' ? null : r.power_kw,
-                      typeof r === 'string' ? '' : r.energy_entity_id);
+                      typeof r === 'string' ? '' : r.energy_entity_id,
+                      typeof r === 'string' ? '' : r.resume_at);
     });
   }
 
@@ -1653,7 +1672,7 @@
     addRadiateurRow('', '', true);
   }
 
-  function addRadiateurRow(entity_id, name, enabled, power_kw, energy_entity_id) {
+  function addRadiateurRow(entity_id, name, enabled, power_kw, energy_entity_id, resume_at) {
     const container = document.getElementById('radiateurs_list');
     const row = document.createElement('div');
     row.className = 'radiateur-row';
@@ -1674,6 +1693,17 @@
       <button type="button" onclick="removeRadiateur(this)"
               style="background:none;border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;color:var(--text-muted);font-size:0.85rem"
               title="Supprimer">✕</button>
+      <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
+      <label class="radiateur-resume-wrap" style="display:flex;align-items:center;gap:0.4rem;margin-left:1.6rem;font-size:0.8rem;color:var(--text-sub)"
+             title="Jour rouge : quand rallumer ce radiateur après son extinction de 6h">
+        Reprise
+        <select class="radiateur-resume-mode" onchange="toggleResume(this)" style="font-size:0.8rem" aria-label="Reprise après un jour rouge">
+          <option value="day" ${resume_at ? '' : 'selected'}>au jour bleu ou blanc</option>
+          <option value="time" ${resume_at ? 'selected' : ''}>à heure fixe</option>
+        </select>
+        <input type="time" class="radiateur-resume" value="${escapeHtml(resume_at || '22:00')}"
+               style="font-size:0.8rem;${resume_at ? '' : 'display:none'}" aria-label="Horaire de reprise">
+      </label>
       <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
       <input type="text" class="radiateur-energy" value="${escapeHtml(energy_entity_id || '')}"
              placeholder="Compteur d'énergie (facultatif) : sensor.…_electric_energy_consumption"
