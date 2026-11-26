@@ -1219,7 +1219,20 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                 return
 
             # ── Température cible atteinte ──
-            if effective_temp >= temp_off and on_minutes >= min_on:
+            # Grand froid le soir : le poêle tourne jusqu'à la fin de plage (réserve de chaleur pour la nuit),
+            # seule la surchauffe l'arrête avant
+            cold_from = thermostat_cfg.get("cold_evening_keep_poele_from", 20)
+            cold_max = thermostat_cfg.get("cold_evening_max_outdoor", 5.0)
+            cold_evening = (
+                active_system == "poele" and outdoor_temp is not None
+                and outdoor_temp <= cold_max and datetime.now().hour >= cold_from
+            )
+            if effective_temp >= temp_off and on_minutes >= min_on and cold_evening:
+                logger.info(
+                    "Thermostat : poêle maintenu — grand froid le soir (%.1f°C dehors ≤ %.1f°C, après %dh), ressenti %.1f°C",
+                    outdoor_temp, cold_max, cold_from, effective_temp,
+                )
+            elif effective_temp >= temp_off and on_minutes >= min_on:
                 # Capturer le système actif AVANT de le mettre à None
                 prev_system = active_system
                 logger.info(

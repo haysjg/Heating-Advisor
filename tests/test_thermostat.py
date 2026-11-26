@@ -816,6 +816,52 @@ class TestComfortHysteresisAndLateWindow:
                                          "2025-01-06 21:30:00", None, "poele", 5.0, indoor_temp=19.0)
         poele_on.assert_called_once()
 
+    # ── Grand froid le soir : poêle maintenu jusqu'à la fin de plage ──
+
+    def test_cold_evening_keeps_poele_at_target(self, store, base_ha_cfg, base_thermostat_cfg):
+        """Cas réel du 25/11/2026 : grand froid, consigne atteinte le soir → le poêle continue."""
+        _, poele_off, _, _, ntfy = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                             "2025-01-06 20:30:00", "poele", "poele", 5.0, indoor_temp=23.0)
+        poele_off.assert_not_called()
+        ntfy.assert_not_called()
+        assert store["state"]["state"] == "on"
+
+    def test_cold_evening_inactive_before_hour(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, _, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                          "2025-01-06 19:50:00", "poele", "poele", 2.0, indoor_temp=23.0)
+        poele_off.assert_called_once()
+
+    def test_cold_evening_inactive_above_threshold(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, _, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                          "2025-01-06 20:30:00", "poele", "poele", 5.1, indoor_temp=23.0)
+        poele_off.assert_called_once()
+
+    def test_cold_evening_inactive_without_outdoor_temp(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, _, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                          "2025-01-06 20:30:00", "poele", "poele", None, indoor_temp=23.0)
+        poele_off.assert_called_once()
+
+    def test_cold_evening_overheat_still_stops(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, _, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                          "2025-01-06 21:00:00", "poele", "poele", 0.0, indoor_temp=24.5)
+        poele_off.assert_called_once()
+
+    def test_cold_evening_end_of_schedule_still_stops(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, poele_off, _, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                          "2025-01-06 22:10:00", "poele", "poele", 0.0, indoor_temp=23.0)
+        poele_off.assert_called_once()
+
+    def test_cold_evening_not_for_clim(self, store, base_ha_cfg, base_thermostat_cfg):
+        _, _, _, clim_off, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                         "2025-01-06 20:30:00", "clim", "clim", 5.0, indoor_temp=23.0)
+        clim_off.assert_called_once()
+
+    def test_cold_evening_configurable(self, store, base_ha_cfg, base_thermostat_cfg):
+        cfg = {**base_thermostat_cfg, "cold_evening_keep_poele_from": 21, "cold_evening_max_outdoor": 3.0}
+        _, poele_off, _, _, _ = self._run(store, base_ha_cfg, cfg,
+                                          "2025-01-06 20:30:00", "poele", "poele", 2.0, indoor_temp=23.0)
+        poele_off.assert_called_once()
+
 
 class TestTurnOffAll:
     """R-04 : une extinction « forte » coupe aussi la clim maintenue en chevauchement clim → poêle."""
