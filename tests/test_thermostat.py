@@ -819,16 +819,26 @@ class TestComfortHysteresisAndLateWindow:
     # ── Grand froid le soir : poêle maintenu jusqu'à la fin de plage ──
 
     def test_cold_evening_keeps_poele_at_target(self, store, base_ha_cfg, base_thermostat_cfg):
-        """Cas réel du 25/11/2026 : grand froid, consigne atteinte le soir → le poêle continue."""
+        """Cas réel du 25/11/2026 : 4,9 °C dehors, consigne atteinte à 19h20 → le poêle continue."""
         _, poele_off, _, _, ntfy = self._run(store, base_ha_cfg, base_thermostat_cfg,
-                                             "2025-01-06 20:30:00", "poele", "poele", 5.0, indoor_temp=23.0)
+                                             "2025-01-06 19:20:00", "poele", "poele", 4.9, indoor_temp=23.0)
+        poele_off.assert_not_called()
+        assert store["state"]["state"] == "on"
+        ntfy.assert_called_once()
+        assert "aurait dû s'éteindre" in ntfy.call_args[0][1]
+        assert "4.9°C dehors" in ntfy.call_args[0][1]
+
+    def test_cold_evening_notif_once_per_evening(self, store, base_ha_cfg, base_thermostat_cfg):
+        self._run(store, base_ha_cfg, base_thermostat_cfg,
+                  "2025-01-06 19:20:00", "poele", "poele", 4.9, indoor_temp=23.0)
+        _, poele_off, _, _, ntfy = self._run(store, base_ha_cfg, base_thermostat_cfg,
+                                             "2025-01-06 19:30:00", "poele", "poele", 4.9, indoor_temp=23.0)
         poele_off.assert_not_called()
         ntfy.assert_not_called()
-        assert store["state"]["state"] == "on"
 
     def test_cold_evening_inactive_before_hour(self, store, base_ha_cfg, base_thermostat_cfg):
         _, poele_off, _, _, _ = self._run(store, base_ha_cfg, base_thermostat_cfg,
-                                          "2025-01-06 19:50:00", "poele", "poele", 2.0, indoor_temp=23.0)
+                                          "2025-01-06 18:50:00", "poele", "poele", 2.0, indoor_temp=23.0)
         poele_off.assert_called_once()
 
     def test_cold_evening_inactive_above_threshold(self, store, base_ha_cfg, base_thermostat_cfg):

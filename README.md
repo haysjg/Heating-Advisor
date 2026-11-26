@@ -366,7 +366,7 @@ Le thermostat automatique pilote le poêle selon la température intérieure mes
 | `end_of_schedule_grace_minutes` | Délai avant extinction après la fin de la plage horaire |
 | `clim_comfort_hysteresis` | Marge (°C) au-dessus du seuil de confort clim avant de repasser du poêle à la clim |
 | `poele_no_start_before_end_minutes` | Pas d'allumage du poêle dans les N dernières minutes de la plage (clim à la place si possible), sauf sous le seuil de confort clim si rien ne chauffe |
-| `cold_evening_keep_poele_from` / `cold_evening_max_outdoor` | Grand froid (temp. extérieure actuelle ≤ 5 °C) à partir de 20h : le poêle n'est plus éteint sur consigne atteinte, il tourne jusqu'à la fin de plage (surchauffe, absence, proximité, extinction manuelle et fin de plage restent actives ; clim non concernée) |
+| `cold_evening_keep_poele_from` / `cold_evening_max_outdoor` | Grand froid (temp. extérieure actuelle ≤ 5 °C) à partir de 19h : le poêle n'est plus éteint sur consigne atteinte, il tourne jusqu'à la fin de plage (surchauffe, absence, proximité, extinction manuelle et fin de plage restent actives ; clim non concernée ; notification push explicative une fois par soir) |
 | `manual_off_suspend_hours` | Suspension du thermostat après extinction manuelle |
 | `use_felt_temperature` | Utilise la température ressentie (corrigée par l'humidité) |
 

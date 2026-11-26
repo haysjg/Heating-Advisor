@@ -1221,7 +1221,7 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
             # ── Température cible atteinte ──
             # Grand froid le soir : le poêle tourne jusqu'à la fin de plage (réserve de chaleur pour la nuit),
             # seule la surchauffe l'arrête avant
-            cold_from = thermostat_cfg.get("cold_evening_keep_poele_from", 20)
+            cold_from = thermostat_cfg.get("cold_evening_keep_poele_from", 19)
             cold_max = thermostat_cfg.get("cold_evening_max_outdoor", 5.0)
             cold_evening = (
                 active_system == "poele" and outdoor_temp is not None
@@ -1232,6 +1232,18 @@ def check_and_apply(ha_cfg: dict, thermostat_cfg: dict, recommendation: str, ema
                     "Thermostat : poêle maintenu — grand froid le soir (%.1f°C dehors ≤ %.1f°C, après %dh), ressenti %.1f°C",
                     outdoor_temp, cold_max, cold_from, effective_temp,
                 )
+                today = datetime.now().date().isoformat()
+                if state.get("cold_evening_notif_date") != today:
+                    state = {**state, "cold_evening_notif_date": today}
+                    _save_state(state)
+                    ntfy_send(
+                        "🥶 Poêle maintenu — grand froid",
+                        f"Consigne atteinte (ressenti {effective_temp:.1f}°C ≥ {temp_off}°C) : le poêle aurait dû s'éteindre. "
+                        f"Il continue jusqu'à la fin de plage car il fait {outdoor_temp:.1f}°C dehors "
+                        f"(≤ {cold_max:g}°C après {cold_from}h), pour garder une réserve de chaleur pour la nuit. "
+                        f"Arrêt anticipé seulement si surchauffe (≥ {temp_off + overheat_margin:g}°C).",
+                        ntfy_cfg,
+                    )
             elif effective_temp >= temp_off and on_minutes >= min_on:
                 # Capturer le système actif AVANT de le mettre à None
                 prev_system = active_system

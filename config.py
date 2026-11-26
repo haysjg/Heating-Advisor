@@ -118,7 +118,7 @@ THERMOSTAT = {
     "clim_to_poele_overlap_minutes": 20,  # maintien de la clim pendant la montée en température du poêle (clim → poêle)
     "clim_comfort_hysteresis": 1.0,       # retour poêle → clim seulement si temp ext ≥ seuil confort clim + cette marge (°C)
     "poele_no_start_before_end_minutes": 60,  # pas d'allumage du poêle dans les N dernières minutes de la plage
-    "cold_evening_keep_poele_from": 20,   # grand froid : poêle maintenu de cette heure à la fin de plage (0-23)
+    "cold_evening_keep_poele_from": 19,   # grand froid : poêle maintenu de cette heure à la fin de plage (0-23)
     "cold_evening_max_outdoor": 5.0,      # grand froid = temp extérieure actuelle ≤ cette valeur (°C)
     "check_interval_minutes": 10,         # fréquence de vérification
     "manual_off_suspend_hours": 4,        # suspension du thermostat après extinction manuelle (heures)

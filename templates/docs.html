@@ -344,14 +344,15 @@
       <div class="rule">
         <div class="rule-title">Grand froid le soir : poêle maintenu jusqu'à la fin de plage</div>
         <div class="rule-desc">
-          À partir de <strong>{{ config.THERMOSTAT.get('cold_evening_keep_poele_from', 20) }}h</strong>, si la température
+          À partir de <strong>{{ config.THERMOSTAT.get('cold_evening_keep_poele_from', 19) }}h</strong>, si la température
           extérieure actuelle est ≤ <strong>{{ config.THERMOSTAT.get('cold_evening_max_outdoor', 5.0) }}°C</strong>,
           le poêle n'est plus éteint quand la consigne ({{ config.THERMOSTAT.temp_off }}°C) est atteinte : il tourne
           jusqu'à la fin de plage pour constituer une réserve de chaleur pour la nuit. La surchauffe, l'absence,
           la zone de proximité, l'extinction manuelle et la fin de plage l'arrêtent toujours. La clim n'est pas concernée.
+          Une notification push l'explique, une fois par soir.
         </div>
         <div class="rule-example">
-          Exemple : 3°C dehors, ressenti 23°C à 20h30 → le poêle continue jusqu'à 22h00
+          Exemple : 4,9°C dehors, consigne atteinte à 19h20 → le poêle continue jusqu'à 22h00
           (sauf ressenti ≥ {{ config.THERMOSTAT.temp_off + config.THERMOSTAT.get('overheat_margin', 1.5) }}°C).
         </div>
       </div>
