@@ -276,6 +276,7 @@ Compteur d'heures de chauffe depuis le dernier remplissage de la trémie (`data/
 |---|---|
 | `tick(poele_on, cycle_hours, email_cfg, ntfy_cfg)` | Ajoute une lecture. Une heure avant la fin du sac (14 h sur 15) : alerte ntfy + email, une seule par plein. Passé la fin du sac : pas de remise à 0, la jauge reste à 100 % (le compteur continue) jusqu'au clic « Trémie remplie ». |
 | `reset(by, kg)` | Remise à 0 (bouton « Trémie remplie » de l'accueil, avec la quantité versée : ⅓, ½, ⅔ ou 1 sac). Enregistre le cycle de mesure écoulé. |
+| `forgotten()` | Remplissage non déclaré (lien « Remplie sans le déclarer ? » de la card) : remise à 0 du compteur, cycle de mesure en cours abandonné ; la mesure redémarre au clic « Trémie remplie » suivant. |
 | `estimate(refills, bag_kg)` | Débit réel : cumul kg / cumul heures sur les 8 derniers remplissages (3 minimum), ramené en heures par sac. |
 | `status(cycle_hours, bag_kg)` | Minutes, pourcentage, seuil d'alerte, mesure en cours et estimation — affichés dans la card « Remplissage du poêle ». |
 
@@ -683,6 +684,7 @@ le numéro PDL (14 chiffres ; espaces, tirets et points tolérés) et la clé d'
 | `DELETE /api/thermostat/vacation` | Annule l'absence programmée |
 | `POST /api/ui/background-theme` | Thème du fond animé `{ "background_theme": "sky" }`, enregistré au clic dans `/config` |
 | `POST /api/poele/refill-reset` | Remplissage `{ "bags": 0.5 }` (1 par défaut) : remet à 0 le compteur et enregistre le cycle de mesure |
+| `POST /api/poele/refill-forgotten` | Remplissage oublié : remet à 0 le compteur sans enregistrer de cycle, la mesure repart au prochain plein |
 | `POST /api/poele/refill-apply` | Applique la durée par sac mesurée (heures par sac + débit du poêle) |
 | `POST /api/config` | Sauvegarde la configuration depuis l'interface |
 | `POST /api/notify/test` | Déclenche manuellement l'email de recommandation |

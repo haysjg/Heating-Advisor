@@ -650,6 +650,14 @@ async function resetPelletRefill() {
   document.querySelector('input[name="refill-bags"][value="1"]').checked = true;
 }
 
+async function forgottenPelletRefill() {
+  if (!confirm("Trémie remplie sans l'avoir déclarée ? Le compteur repart de 0 et la mesure du débit réel redémarre au prochain « Trémie remplie » (le plein en cours n'est pas compté).")) return;
+  const btn = document.getElementById('refill-forgot');
+  btn.disabled = true;
+  await _postPellet('/api/poele/refill-forgotten', {}, 'Compteur remis à 0, plein non compté dans la mesure', 'Remise à 0 impossible');
+  btn.disabled = false;
+}
+
 async function applyPelletEstimate(hours) {
   if (!confirm(`Utiliser ${_fmtH(hours)} h par sac ? Le seuil d'alerte, la consommation du poêle et le stock de /stock seront recalculés avec cette valeur.`)) return;
   await _postPellet('/api/poele/refill-apply', {}, `Durée par sac réglée sur ${_fmtH(hours)} h`, 'Réglage non appliqué');

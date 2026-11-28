@@ -1383,6 +1383,16 @@ def api_poele_refill_reset():
         return _internal_error(e)
 
 
+@app.route("/api/poele/refill-forgotten", methods=["POST"])
+def api_poele_refill_forgotten():
+    """Clic « Remplissage oublié » : remise à 0 sans enregistrer de cycle (mesure relancée au prochain plein)."""
+    try:
+        pellet_refill.forgotten()
+        return jsonify(_pellet_status())
+    except Exception as e:
+        return _internal_error(e)
+
+
 @app.route("/api/poele/refill-apply", methods=["POST"])
 def api_poele_refill_apply():
     """Applique la durée par sac mesurée : heures par sac (/config), débit du poêle, stock, alerte."""

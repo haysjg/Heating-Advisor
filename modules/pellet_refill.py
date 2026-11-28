@@ -10,6 +10,10 @@ Mesure du débit : un second compteur (refill_minutes) ne repart de 0 qu'au clic
 Chaque clic enregistre un cycle (heures de chauffe depuis le clic précédent, kg versés). Le niveau
 restant au moment du remplissage varie d'une fois à l'autre ; le cumul des derniers cycles le dilue.
 L'estimation n'est jamais appliquée seule : l'utilisateur la valide (stock et alerte en dépendent).
+
+Remplissage oublié : la trémie a été remplie sans clic, à un moment et un niveau inconnus. Le compteur
+affiché repart de 0 (plus d'alerte à tort) et le cycle de mesure en cours est abandonné ; la mesure
+redémarre au clic « Trémie remplie » suivant, le cycle entre les deux ne reflétant pas un plein connu.
 """
 
 import logging
@@ -119,6 +123,17 @@ def reset(by: str = "manual", kg: float | None = None) -> dict:
             state["last_refill_at"] = _now()
         jsonstore.save(STATE_FILE, state)
     logger.info("Poêle : compteur de remplissage remis à 0 (%s)", by)
+    return state
+
+
+def forgotten() -> dict:
+    """Clic « Remplissage oublié » : remise à 0 du compteur, cycle de mesure en cours abandonné."""
+    with jsonstore.lock_for(STATE_FILE):
+        state = _load()
+        _start_cycle(state, "forgotten")
+        state.update(refill_minutes=0, last_refill_at=None)
+        jsonstore.save(STATE_FILE, state)
+    logger.info("Poêle : remplissage non déclaré, compteur remis à 0 et cycle de mesure abandonné")
     return state
 
 

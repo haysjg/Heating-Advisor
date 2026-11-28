@@ -137,6 +137,16 @@ def test_route_reset_rejects_bad_bags(client):
     assert c.post("/api/poele/refill-reset", json={"bags": "x"}, headers=FETCH).status_code == 400
 
 
+def test_route_forgotten(client):
+    c, _, _ = client
+    pr.reset("manual", kg=15)
+    _run(8 * 6, cycle=30)
+    resp = c.post("/api/poele/refill-forgotten", headers=FETCH)
+    body = resp.get_json()
+    assert resp.status_code == 200 and body["minutes"] == 0 and not body["measuring"]
+    assert pr._load()["refills"] == []
+
+
 def test_route_apply(client):
     c, patched, app_module = client
     assert c.post("/api/poele/refill-apply", headers=FETCH).status_code == 400
@@ -149,3 +159,33 @@ def test_route_apply(client):
     assert patched["_poele_purchase"]["hours_per_bag"] == 16.0
     assert patched["POELE"]["consumption_kg_per_hour"] == pytest.approx(0.9375)
     assert app_module.config.POELE["consumption_kg_per_hour"] == pytest.approx(0.9375)
+
+
+class TestForgotten:
+    def test_resets_counter_and_rearms_alert(self, sent):
+        _run(14 * 6)
+        assert pr.status()["alerted"]
+        pr.forgotten()
+        st = pr.status()
+        assert st["minutes"] == 0 and not st["alerted"] and st["reset_by"] == "forgotten"
+        _run(14 * 6)
+        assert len(sent) == 4  # nouvelle alerte sur le plein suivant
+
+    def test_drops_current_measure_cycle(self, sent):
+        pr.reset("manual", kg=15)
+        _run(20 * 6, cycle=30)
+        pr.forgotten()
+        st = pr.status()
+        assert not st["measuring"] and st["refill_hours"] == 0
+        _run(10 * 6, cycle=30)
+        pr.reset("manual", kg=15)  # niveau inconnu au clic oublié : ce cycle ne compte pas
+        st = pr.status()
+        assert st["measuring"] and st["refills_count"] == 0
+
+    def test_keeps_recorded_cycles(self, sent):
+        pr.reset("manual", kg=15)
+        for hours in (16, 17, 15):
+            _run(hours * 6, cycle=30)
+            pr.reset("manual", kg=15)
+        pr.forgotten()
+        assert pr.status()["estimate"]["cycles"] == 3

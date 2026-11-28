@@ -271,7 +271,21 @@ main {
   background: var(--text-sub);
   opacity: 0.6;
 }
-.refill-note { margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-sub); }
+.refill-foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 0.75rem; margin-top: 0.5rem; }
+.refill-note { font-size: 0.8rem; color: var(--text-sub); }
+.refill-forgot {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-sub);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.refill-forgot:hover { color: var(--text); }
+.refill-forgot:disabled { opacity: 0.5; cursor: default; }
 .refill-due .refill-note { color: var(--red); }
 .refill-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 /* Sélecteur segmenté (quantité versée) */
